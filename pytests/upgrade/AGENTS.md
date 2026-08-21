@@ -64,15 +64,15 @@ lifecycle, and debugging patterns:
    | `"system_event_logs" in cluster_features` | 7.1 |
    | `"cdc" in cluster_features` | 7.2 |
    | `"durability_impossible_fallback" in cluster_features` | 8.0 |
-   | `"10K_collections" in cluster_features` | 8.1 |
-   | `"file_based_rebalance" in cluster_features` | 8.1 |
+   | `"10K_collections" in cluster_features` | 8.5 |
+   | `"file_based_rebalance" in cluster_features` | 8.5 |
 
    **Other invariants:**
    - `self.spare_node` is `cluster.servers[nodes_init]` at setUp and rotates after each `online_swap` — new upgrade methods must maintain this rotation.
    - `upgrade_function` dispatch dict maps `upgrade_type` → method — new upgrade strategies must be registered here before `__validate_upgrade_type()` is called in setUp.
    - `validate_encryption_operations(expected_to_fail=True)` must be called inside the per-node upgrade loop (mixed-mode), and `validate_encryption_operations(expected_to_fail=False)` after full upgrade only — do not invert this order.
    - `add_system_scope_to_all_buckets()` is triggered by version crossing 7.6 — new tests that validate bucket schema post-7.6 upgrade must account for the `_system` scope in collection counts.
-   - `attempt_10k_collection_creation()` returns `True` only on 8.1+ — asserting `False` during upgrade and `True` after is the correct pattern.
+   - `attempt_10k_collection_creation()` returns `True` only on 8.5+ — asserting `False` during upgrade and `True` after is the correct pattern.
    - CBAS `UpgradeTests` (`cbas_upgrade.py`) calls `cluster_cleanup()` in tearDown to force-clean nodes; KV `UpgradeBase.tearDown` does not — do not rely on base tearDown for CBAS node cleanup.
 
 2. **Update [`agents/skills/test-flow-map/upgrade.md`](../../agents/skills/test-flow-map/upgrade.md)** to reflect:

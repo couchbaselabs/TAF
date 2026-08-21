@@ -22,7 +22,7 @@
 **Mixed-mode cluster constraints** (while any node runs old version):
 - `MAJORITY` SyncWrite may fail — requires all KV nodes at same version
 - AES-256 bucket encryption key creation blocked
-- 10K collections limit not unlocked until all nodes ≥ 8.1
+- 10K collections limit not unlocked until all nodes ≥ 8.5
 - Some REST settings rejected (e.g., `eventLogsLimit` blocked until full 7.1+)
 
 **Version chain mechanics:**
@@ -36,7 +36,7 @@ Cluster is upgraded through each intermediate version in order. See [upgrade-lib
 
 ## 2. Feature Gating
 
-`cluster_features` reflects the **currently installed** version, not the final target. Guards like `if "collections" in self.cluster_features` must not be removed based on target version alone — a chain starting at 6.5 has no collections during the first hop even if the target is 8.1.
+`cluster_features` reflects the **currently installed** version, not the final target. Guards like `if "collections" in self.cluster_features` must not be removed based on target version alone — a chain starting at 6.5 has no collections during the first hop even if the target is 8.5.
 
 | Version ≥ | Features added to `cluster_features` |
 |---|---|
@@ -45,13 +45,13 @@ Cluster is upgraded through each intermediate version in order. See [upgrade-lib
 | 7.1 | `magma`, `system_event_logs` |
 | 7.2 | `cdc` |
 | 8.0 | `durability_impossible_fallback` |
-| 8.1 | `file_based_rebalance`, `10K_collections`, `fusion`, `rate_limiting`, `jwt_auth`, `pitr` |
+| 8.5 | `file_based_rebalance`, `10K_collections`, `fusion`, `rate_limiting`, `jwt_auth`, `pitr` |
 
-**Supported upgrade paths to 8.1**
-- Direct: 8.0.x → 8.1, 7.6.x → 8.1, 7.2.9 → 8.1
-- 3-hop: 7.1.x / 7.0.x / 6.6.x → 7.2.3 → 7.2.9 → 8.1
-- 4-hop: 6.5.x → 6.6.5 → 7.2.3 → 7.2.9 → 8.1
-- NOT supported direct to 8.1: 7.1.x single-hop, 7.2.0–7.2.8 single-hop
+**Supported upgrade paths to 8.5**
+- Direct: 8.0.x → 8.5, 7.6.x → 8.5, 7.2.9 → 8.5
+- 3-hop: 7.1.x / 7.0.x / 6.6.x → 7.2.3 → 7.2.9 → 8.5
+- 4-hop: 6.0.x / 6.5.x → 6.6.5 → 7.2.3 → 7.2.9 → 8.5
+- NOT supported direct to 8.5: 7.1.x single-hop, 7.2.0–7.2.8 single-hop
 
 Source: `lib/upgrade_lib/couchbase.py` → `features` dict (cumulative — 7.2 cluster has all 6.5–7.2 features).
 

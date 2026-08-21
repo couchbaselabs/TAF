@@ -16,7 +16,7 @@ features = {
     "7.1": ["magma", "system_event_logs"],
     "7.2": ["cdc"],
     "8.0": ["durability_impossible_fallback"],
-    "8.1": ["file_based_rebalance", "10K_collections",
+    "8.5": ["file_based_rebalance", "10K_collections",
             "fusion", "rate_limiting", "jwt_auth", "pitr"]
 }
 ```
@@ -41,13 +41,14 @@ Two shapes exist:
 ```
 
 Coverage today (see the source file for the exact key list):
-- Single-hop direct-to-target: every `7.6.x` (through `7.6.12`) and `8.0.0`/`8.0.1`.
+- Single-hop direct-to-target: `7.2.9`, every `7.6.x` (through `7.6.12`), and `8.0.0`–`8.0.2`.
 - Multi-hop via `7.2.3` → `7.2.9` (latest 7.2.x): every `7.1.x`, `7.0.0`, every `6.6.x`.
 - Multi-hop via `6.6.5` → `7.2.3` → `7.2.9`: every `6.0.x`, every `6.5.x`.
 
-`8.0.x` stops at `8.0.1` even though `CB_RELEASE_BUILDS` (testconstants.py) lists `8.0.2`–`8.0.5`
-— those exist in the release manifest but aren't yet wired into the upgrade-chain registry. Add
-them once they're actually exercised by a conf file.
+`8.0.x` stops at `8.0.2` (wired for `conf/upgrade/cbas_upgrade.conf`) even though
+`CB_RELEASE_BUILDS` (testconstants.py) lists `8.0.3`–`8.0.5` — those exist in the release
+manifest but aren't yet wired into the upgrade-chain registry. Add them once they're
+actually exercised by a conf file.
 
 ---
 
@@ -61,27 +62,27 @@ self.upgrade_chain  = upgrade_chains[chain_to_test] + [upgrade_version]
 self.upgrade_version = self.upgrade_chain[0]   # initial install version
 ```
 
-Example: `upgrade_chain=6.6.5_7.2.3`, `upgrade_version=8.1.0-500`
-→ `self.upgrade_chain = ["6.6.5", "7.2.3", "8.1.0-500"]`
+Example: `upgrade_chain=6.6.5_7.2.3`, `upgrade_version=8.5.0-500`
+→ `self.upgrade_chain = ["6.6.5", "7.2.3", "8.5.0-500"]`
 
 The outer loop in `test_upgrade` iterates each entry and calls `upgrade_function[upgrade_type](node)` until `fetch_node_to_upgrade()` returns `None`.
 
 ---
 
-## Supported upgrade paths to 8.1 (Totoro)
+## Supported upgrade paths to 8.5 (Totoro)
 
 From `upgrade_path.png` — conf files must only contain entries for these paths (exact key
 ranges are in the "Coverage today" list above, not repeated here):
 
 | From | Via | To |
 |---|---|---|
-| 8.0.x | direct | 8.1 |
-| 7.6.x | direct | 8.1 |
-| 7.2.9 | direct | 8.1 |
-| 7.1.x, 7.0.x, 6.6.x | 7.2.3 → 7.2.9 | 8.1 |
-| 6.0.x, 6.5.x | 6.6.5 → 7.2.3 → 7.2.9 | 8.1 |
+| 8.0.x | direct | 8.5 |
+| 7.6.x | direct | 8.5 |
+| 7.2.9 | direct | 8.5 |
+| 7.1.x, 7.0.x, 6.6.x | 7.2.3 → 7.2.9 | 8.5 |
+| 6.0.x, 6.5.x | 6.6.5 → 7.2.3 → 7.2.9 | 8.5 |
 
-**NOT supported** (direct to 8.1): 7.1.x single-hop, 7.2.0–7.2.8 single-hop.
+**NOT supported** (direct to 8.5): 7.1.x single-hop, 7.2.0–7.2.8 single-hop.
 
 ---
 

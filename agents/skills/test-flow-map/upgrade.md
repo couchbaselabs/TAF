@@ -71,7 +71,7 @@ unittest.TestCase
 | `perform_collection_ops_load(collections_spec)` | Runs collection CRUD spec (drop/recreate scopes/collections) |
 | `run_queries_during_rebalance(upgrade_node)` | Runs N1QL queries in threads during rebalance (requires `include_indexing_query=True`) |
 | `validate_encryption_operations(expected_to_fail)` | Creates an AES-256 key, attempts bucket assignment; asserts fail/success by upgrade state |
-| `attempt_10k_collection_creation()` | Tests 10K collection limit (should fail pre-8.1, succeed post-8.1) |
+| `attempt_10k_collection_creation()` | Tests 10K collection limit (should fail pre-8.5, succeed post-8.5) |
 | `insert_new_docs_sdk(num_docs, bucket)` | Direct SDK insert of new docs |
 | `load_data_cbc_pillowfight(server, bucket, items, doc_size)` | SSH cbc-pillowfight load |
 | `check_resident_ratio(cluster)` | Prometheus query for per-bucket RR across kv_nodes |
@@ -378,7 +378,7 @@ self.upgrade_chain = upgrade_chains[chain_to_test] + [upgrade_version]
 7.1 → magma, system_event_logs
 7.2 → cdc
 8.0 → durability_impossible_fallback
-8.1 → file_based_rebalance, 10K_collections, fusion, rate_limiting, jwt_auth, pitr
+8.5 → file_based_rebalance, 10K_collections, fusion, rate_limiting, jwt_auth, pitr
 ```
 
 **`self.cluster_features` lifecycle:**
@@ -392,8 +392,8 @@ These guards exist because `upgrade_chain` may start from a version that does no
 
 ```
 upgrade_chain = ["6.5.0", "7.2.3", "8.0.0"]   ← base version is 6.5
-upgrade_version = "8.1.0"
-full chain = ["6.5.0", "7.2.3", "8.0.0", "8.1.0"]
+upgrade_version = "8.5.0"
+full chain = ["6.5.0", "7.2.3", "8.0.0", "8.5.0"]
 ```
 
 While upgrading from 6.5→7.2, `cluster_features` does **not** include `"collections"`. Removing `if "collections" in self.cluster_features` would cause collection-scoped operations to run against a pre-7.0 cluster and fail. The minimum supported base for a given target version does **not** determine what features are safe to assume — only the actual `cluster_features` at each step does.
@@ -404,8 +404,8 @@ While upgrading from 6.5→7.2, `cluster_features` does **not** include `"collec
 | `if "magma" in self.cluster_features` | Every chain entry is ≥ 7.1 |
 | `if "cdc" in self.cluster_features` | Every chain entry is ≥ 7.2 |
 | `if "system_event_logs" in self.cluster_features` | Every chain entry is ≥ 7.1 |
-| `if "10K_collections" in self.cluster_features` | Every chain entry is ≥ 8.1 |
-| `if "file_based_rebalance" in self.cluster_features` | Every chain entry is ≥ 8.1 |
+| `if "10K_collections" in self.cluster_features` | Every chain entry is ≥ 8.5 |
+| `if "file_based_rebalance" in self.cluster_features` | Every chain entry is ≥ 8.5 |
 
 ---
 
@@ -439,6 +439,6 @@ While upgrading from 6.5→7.2, `cluster_features` does **not** include `"collec
 | Storage migration fails or skips | Triggered only when `migrate_storage_backend=True`. Flow: `update_bucket_property(storageBackend=preferred_storage_mode)` → cycle each node via `migration_procedure`. Default is `swap_rebalance` → `swap_rebalance_all_nodes_iteratively()`. |
 | `validate_encryption_operations` assertion fails | Called with `expected_to_fail=True` during upgrade (mixed-mode blocks AES-256 key creation) and `expected_to_fail=False` after full upgrade. Uses `rest.create_secret()` + `bucket_helper.change_bucket_props(encryptionAtRestKeyId=...)`. If timing is off, cluster may not be fully upgraded yet. |
 | `add_system_scope_to_all_buckets()` called unexpectedly | Triggered by `float(upgrade_version[:3]) >= 7.6 and float(initial_version[:3]) < 7.6`. 7.6 added `_system` scope (`_query`, `_mobile` collections) — must be mirrored in local bucket objects for downstream validation to match. |
-| `attempt_10k_collection_creation()` wrong result | Returns `True` only on 8.1+ clusters. Asserted `False` during upgrade, `True` after. Failure = cluster not fully at 8.1+ when checked. |
+| `attempt_10k_collection_creation()` wrong result | Returns `True` only on 8.5+ clusters. Asserted `False` during upgrade, `True` after. Failure = cluster not fully at 8.5+ when checked. |
 | FBR check fails | `verify_and_configure_fbr()` only called when `float(upgrade_version[:3]) >= 8.1`. Checks `internalSettings.dataServiceFileBasedRebalanceEnabled == True`. On older versions the key is absent — guarded by `if 'dataServiceFileBasedRebalanceEnabled' in content`. |
-| `if "feature" in self.cluster_features` check seems redundant but must not be removed | `cluster_features` reflects the **current** cluster version at each step of the loop, not the final target. If `upgrade_chain` starts from a base version that predates the feature (e.g. chain `["6.5", "7.2", "8.0"] + "8.1"`), the guard is necessary during the 6.5→7.2 phase even though the target supports the feature. See "WARNING" block in Upgrade Chain Configuration for the full guard table. |
+| `if "feature" in self.cluster_features` check seems redundant but must not be removed | `cluster_features` reflects the **current** cluster version at each step of the loop, not the final target. If `upgrade_chain` starts from a base version that predates the feature (e.g. chain `["6.5", "7.2", "8.0"] + "8.5"`), the guard is necessary during the 6.5→7.2 phase even though the target supports the feature. See "WARNING" block in Upgrade Chain Configuration for the full guard table. |
