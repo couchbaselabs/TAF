@@ -2130,10 +2130,8 @@ class UpgradeTests(UpgradeBase):
 
         self.perform_collection_ops_load(self.collection_spec)
         self.task_manager.get_task_result(rebalance_passed)
-        if rebalance_passed.result is True:
-            self.log.info("Swap Rebalance successful")
-        else:
-            self.log.info("Swap Rebalance failed")
+        self.assertTrue(rebalance_passed.result, "Swap Rebalance failed")
+        self.log.info("Swap Rebalance successful")
 
         self.cluster.nodes_in_cluster = self.spare_nodes
         self.cluster.master = self.cluster.nodes_in_cluster[0]
@@ -2176,14 +2174,13 @@ class UpgradeTests(UpgradeBase):
             self.load_during_rebalance(self.sub_data_spec)
 
             self.task_manager.get_task_result(swap_reb_task)
-            if swap_reb_task.result is True:
-                self.log.info("Swap rebalance of node {0} passed".format(node.ip))
-                migrated_node_in = self.spare_node
-                self.spare_node = node
-                self.validate_mixed_storage_during_migration(migrated_node_in)
-            else:
-                self.log.info("Swap rebalance of node {0} failed".format(node.ip))
-                return
+            self.assertTrue(swap_reb_task.result,
+                            "Swap rebalance of node {0} failed".format(node.ip))
+
+            self.log.info("Swap rebalance of node {0} passed".format(node.ip))
+            migrated_node_in = self.spare_node
+            self.spare_node = node
+            self.validate_mixed_storage_during_migration(migrated_node_in)
 
         self.log.info("Iterative swap rebalance of all nodes done.")
 
@@ -2196,13 +2193,15 @@ class UpgradeTests(UpgradeBase):
 
             self.log.info("Failing over the node {0}".format(otp_node.ip))
             failover_task, _ = rest.perform_graceful_failover(otp_node.id)
-            self.assertTrue(failover_task, "Graceful Failover of node failed")
+            self.assertTrue(failover_task,
+                            "Graceful Failover of node {0} failed".format(otp_node.ip))
 
             self.sleep(10, "Wait before fetching rebalance stats")
             rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
+            self.assertTrue(rebalance_passed,
+                            "Graceful Failover of node {0} failed".format(otp_node.ip))
 
-            if rebalance_passed:
-                self.cluster_util.print_cluster_stats(self.cluster)
+            self.cluster_util.print_cluster_stats(self.cluster)
 
             rest.set_failover_recovery_type(otp_node.id, "full")
 
@@ -2214,11 +2213,12 @@ class UpgradeTests(UpgradeBase):
             rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
             self.log.info("Performing data load during failover rebalance")
             self.load_during_rebalance(self.sub_data_spec)
+            self.assertTrue(rebalance_passed,
+                            "Failover/recovery failed for node {0}".format(otp_node.ip))
 
-            if rebalance_passed:
-                self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
-                self.cluster_util.print_cluster_stats(self.cluster)
-                self.validate_mixed_storage_during_migration(otp_node)
+            self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.validate_mixed_storage_during_migration(otp_node)
 
     def verify_storage_key_for_migration(self, bucket, storage_backend):
         bucket_helper = BucketHelper(self.cluster.master)
@@ -2238,12 +2238,12 @@ class UpgradeTests(UpgradeBase):
             bucket_stats = bucket_helper.get_buckets_json(bucket.name)
             for node in bucket_stats['nodes']:
                 if migrated_node.ip == node['hostname'][:-5]:
-                    if 'storageBackend' not in node:
-                        self.log.info("Storage mode of node {0} is updated correctly"
-                            " and now set to the global storage mode".format(migrated_node.ip))
-                    else:
-                        self.log.info("Storage mode wasn't updated correctly for node {0}".format(
-                                                                                migrated_node.ip))
+                    self.assertNotIn(
+                        'storageBackend', node,
+                        "Storage mode wasn't updated correctly for node {0}".format(
+                                                                    migrated_node.ip))
+                    self.log.info("Storage mode of node {0} is updated correctly"
+                        " and now set to the global storage mode".format(migrated_node.ip))
 
         sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
@@ -2295,13 +2295,13 @@ class UpgradeTests(UpgradeBase):
             self.load_during_rebalance(self.sub_data_spec)
 
             self.task_manager.get_task_result(swap_reb_task)
-            if swap_reb_task.result is True:
-                self.log.info("Swap rebalance of node {0} passed".format(node.ip))
-                migrated_node_in = self.spare_node
-                self.spare_node = node
-                self.validate_mixed_storage_during_migration(migrated_node_in)
-            else:
-                self.log.info("Swap rebalance of node {0} failed".format(node.ip))
+            self.assertTrue(swap_reb_task.result,
+                            "Swap rebalance of node {0} failed".format(node.ip))
+
+            self.log.info("Swap rebalance of node {0} passed".format(node.ip))
+            migrated_node_in = self.spare_node
+            self.spare_node = node
+            self.validate_mixed_storage_during_migration(migrated_node_in)
 
         else:
             rest = ClusterRestAPI(node)
@@ -2312,13 +2312,15 @@ class UpgradeTests(UpgradeBase):
                     otp_node = n
             self.log.info("Failing over the node {0}".format(otp_node.ip))
             failover_task, _ = rest.perform_graceful_failover(otp_node.id)
-            self.assertTrue(failover_task, "Graceful Failover of node failed")
+            self.assertTrue(failover_task,
+                            "Graceful Failover of node {0} failed".format(otp_node.ip))
 
             self.sleep(10, "Wait before fetching rebalance stats")
             rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
+            self.assertTrue(rebalance_passed,
+                            "Graceful Failover of node {0} failed".format(otp_node.ip))
 
-            if rebalance_passed:
-                self.cluster_util.print_cluster_stats(self.cluster)
+            self.cluster_util.print_cluster_stats(self.cluster)
 
             rest.set_failover_recovery_type(otp_node.id, "full")
 
@@ -2331,11 +2333,12 @@ class UpgradeTests(UpgradeBase):
 
             self.log.info("Performing data load during failover rebalance")
             self.load_during_rebalance(self.sub_data_spec)
+            self.assertTrue(rebalance_passed,
+                            "Failover/recovery failed for node {0}".format(otp_node.ip))
 
-            if rebalance_passed:
-                self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
-                self.cluster_util.print_cluster_stats(self.cluster)
-                self.validate_mixed_storage_during_migration(otp_node)
+            self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.validate_mixed_storage_during_migration(otp_node)
 
     def swap_rebalance_batch_migrate(self, nodes):
         spare_node_list = self.spare_nodes[:2]
@@ -2351,13 +2354,12 @@ class UpgradeTests(UpgradeBase):
         self.load_during_rebalance(self.sub_data_spec)
 
         self.task_manager.get_task_result(swap_reb_task)
-        if swap_reb_task.result is True:
-            self.log.info("Batch Swap rebalance passed")
-            self.spare_nodes = nodes
-            for node in spare_node_list:
-                self.validate_mixed_storage_during_migration(node)
-        else:
-            self.log.info("Batch Swap rebalance failed")
+        self.assertTrue(swap_reb_task.result, "Batch Swap rebalance failed")
+
+        self.log.info("Batch Swap rebalance passed")
+        self.spare_nodes = nodes
+        for node in spare_node_list:
+            self.validate_mixed_storage_during_migration(node)
 
     def post_upgrade_migration_guardrail_validation(self):
         self.log.info("Performing post upgrade/migration guardrail validation")
