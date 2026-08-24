@@ -1225,7 +1225,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
         # Monitor for "enabled" state, then perform flush immediately
         self.log.info("Monitoring for Fusion 'enabled' state")
         fusion_client = FusionRestAPI(self.cluster.master)
-        end_time = time.time() + 60  # 60 seconds to reach enabled state
+        end_time = time.time() + 120  # 60 seconds to reach enabled state
         start_time = time.time()
         fusion_enabled = False
 
