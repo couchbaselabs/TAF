@@ -1,5 +1,6 @@
 from shell_util.platforms.constants import LinuxConstants
 from shell_util.shell_conn import ShellConnection
+from testconstants import NR_INSTALL_LOCATION_FILE
 
 
 class Linux(ShellConnection, LinuxConstants):

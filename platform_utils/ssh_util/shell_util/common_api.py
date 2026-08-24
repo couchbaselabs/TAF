@@ -4,6 +4,7 @@ from subprocess import PIPE, Popen
 from typing import re
 
 from shell_util.remote_machine import RemoteMachineProcess
+from testconstants import NR_INSTALL_LOCATION_FILE
 
 
 class CommonShellAPIs(object):
