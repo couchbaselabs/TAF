@@ -223,3 +223,10 @@ class MagmaRecovery(BaseTestCase):
             for node in self.first_cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.start_couchbase()
+            # start_couchbase() only confirms the beam.smp process is alive,
+            # not that ns_server has finished warmup. tearDown's
+            # encryption-at-rest check queries these same nodes right after
+            # this method returns, so wait for ns_server to actually be
+            # serving before handing back control.
+            self.cluster_util.wait_for_ns_servers_or_assert(
+                self.first_cluster.nodes_in_cluster)
