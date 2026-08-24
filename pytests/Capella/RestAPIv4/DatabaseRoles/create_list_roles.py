@@ -144,7 +144,24 @@ class CreateDatabaseRole(DatabaseRoleBase):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"], self.expected_res["access"],
                     self.expected_res["description"], header)
-            self.validate_testcase(result, [201], testcase, failures)
+            if self.validate_testcase(result, [201], testcase, failures):
+                self.log.debug(
+                    "Creation Successful, deleting role so the next "
+                    "role can reuse the name.")
+                del_res = self.capellaAPI.cluster_ops_apis.delete_database_role(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    result.json()["id"])
+                if del_res.status_code == 429:
+                    self.handle_rate_limit(
+                        int(del_res.headers["Retry-After"]))
+                    del_res = \
+                        self.capellaAPI.cluster_ops_apis.delete_database_role(
+                            self.organisation_id, self.project_id,
+                            self.cluster_id, result.json()["id"])
+                if del_res.status_code != 204:
+                    self.log.error(
+                        "Error while deleting role created during "
+                        "test_authorization: {}".format(del_res.content))
 
         if failures:
             for fail in failures:

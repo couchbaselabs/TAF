@@ -1293,6 +1293,10 @@ class APIBase(CouchbaseBaseTest):
             # create a new API key with expiry of approx 2 mins
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 self.organisation_id, "Expiry_Key", ["organizationOwner"])
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                    self.organisation_id, "Expiry_Key", ["organizationOwner"])
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_new"] = resp.json()
             else:
@@ -1307,6 +1311,10 @@ class APIBase(CouchbaseBaseTest):
             self.update_auth_with_api_token(self.curr_owner_key)
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 self.organisation_id, "Revoked_Key", ["organizationOwner"])
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                    self.organisation_id, "Revoked_Key", ["organizationOwner"])
             if resp.status_code == 201:
                 self.api_keys["revoked_key"] = resp.json()
             else:

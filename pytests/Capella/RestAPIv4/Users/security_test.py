@@ -275,8 +275,16 @@ class SecurityTest(SecurityBase):
         self.log.info("Token Expiry Test.")
         resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
                                                  ["organizationOwner"], "description", expiry=0.001)
+        if resp.status_code == 429:
+            self.log.info("Rate limit exceeded, sleep for 1 min.")
+            time.sleep(60)
+            resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
+                                                     ["organizationOwner"], "description", expiry=0.001)
 
         content = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating short-lived API key: {}"
+                         .format(resp.content))
         self.set_access_keys(content['token'])
 
         time.sleep(90)
@@ -433,7 +441,15 @@ class SecurityTest(SecurityBase):
         self.log.info("Token exp test.")
         resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
                                                     ["organizationOwner"], "description", expiry=0.001)
+        if resp.status_code == 429:
+            self.log.info("Rate limit exceeded, sleep for 1 min.")
+            time.sleep(60)
+            resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
+                                                        ["organizationOwner"], "description", expiry=0.001)
         content = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating short-lived API key: {}"
+                         .format(resp.content))
         self.set_access_keys(content['token'])
 
         time.sleep(90)
@@ -666,7 +682,15 @@ class SecurityTest(SecurityBase):
         self.log.info("Token exp test.")
         resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
                                                     ["organizationOwner"], "description", expiry=0.001)
+        if resp.status_code == 429:
+            self.log.info("Rate limit exceeded, sleep for 1 min.")
+            time.sleep(60)
+            resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
+                                                        ["organizationOwner"], "description", expiry=0.001)
         content = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating short-lived API key: {}"
+                         .format(resp.content))
         self.set_access_keys(content['token'])
 
         time.sleep(90)
@@ -766,8 +790,17 @@ class SecurityTest(SecurityBase):
         resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
                                                     ["organizationOwner"],
                                                     "description", expiry=0.001)
+        if resp.status_code == 429:
+            self.log.info("Rate limit exceeded, sleep for 1 min.")
+            time.sleep(60)
+            resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
+                                                        ["organizationOwner"],
+                                                        "description", expiry=0.001)
 
         api_key_resp = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating short-lived API key: {}"
+                         .format(resp.content))
         self.set_access_keys(api_key_resp['token'])
 
         time.sleep(90)
@@ -1017,8 +1050,16 @@ class SecurityTest(SecurityBase):
         self.log.info("Token Expiry Test.")
         resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
                                                  ["organizationOwner"], "description", expiry=0.001)
+        if resp.status_code == 429:
+            self.log.info("Rate limit exceeded, sleep for 1 min.")
+            time.sleep(60)
+            resp = self.capellaAPI.org_ops_apis.create_api_key(self.tenant_id, "name",
+                                                     ["organizationOwner"], "description", expiry=0.001)
 
         content = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating short-lived API key: {}"
+                         .format(resp.content))
         self.set_access_keys(content['token'])
 
         time.sleep(90)

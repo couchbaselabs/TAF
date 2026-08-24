@@ -99,6 +99,9 @@ class SecurityTest(SecurityBase):
                                                     "description", expiry=0.001)
 
         content = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating short-lived API key: {}"
+                         .format(resp.content))
         self.set_access_keys(content['token'])
 
         time.sleep(90)

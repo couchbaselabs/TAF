@@ -125,7 +125,7 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager"
+            "organizationOwner", "projectOwner"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
@@ -141,7 +141,24 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"], self.expected_res["password"], self.expected_res["credentialType"], self.expected_res["userRoles"],
                     headers=header)
-            self.validate_testcase(result, [201], testcase, failures)
+            if self.validate_testcase(result, [201], testcase, failures):
+                self.log.debug(
+                    "Creation Successful, deleting credential so the next "
+                    "role can reuse the name.")
+                del_res = self.capellaAPI.cluster_ops_apis.delete_database_user(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    result.json()["id"])
+                if del_res.status_code == 429:
+                    self.handle_rate_limit(
+                        int(del_res.headers["Retry-After"]))
+                    del_res = \
+                        self.capellaAPI.cluster_ops_apis.delete_database_user(
+                            self.organisation_id, self.project_id,
+                            self.cluster_id, result.json()["id"])
+                if del_res.status_code != 204:
+                    self.log.error(
+                        "Error while deleting credential created during "
+                        "test_authorization: {}".format(del_res.content))
 
         if failures:
             for fail in failures:
@@ -523,8 +540,7 @@ class ListDatabaseCredentials(DatabaseCredentialBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectViewer", "projectDataReaderWriter", "projectDataReader"
+            "organizationOwner", "projectOwner", "projectViewer"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

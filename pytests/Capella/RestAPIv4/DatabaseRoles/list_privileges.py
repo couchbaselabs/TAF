@@ -125,8 +125,7 @@ class ListCapellaPrivileges(DatabaseRoleBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectViewer",
-            "projectDataReaderWriter", "projectDataReader"
+            "organizationOwner", "projectOwner", "projectViewer"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

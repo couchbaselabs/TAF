@@ -1001,6 +1001,9 @@ class SecurityTest(SecurityBase):
                                               description="description", allowedCIDRs=['10.254.254.254/20'])
 
         content = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating API key with restricted CIDR: {}"
+                         .format(resp.content))
 
         self.append_to_api_keys(content['id'], self.tenant_id)
         self.set_access_keys(content['id'], content['token'])
@@ -1016,6 +1019,9 @@ class SecurityTest(SecurityBase):
                                               description="description", expiry=0.001)
 
         content = resp.json()
+        self.assertEqual(resp.status_code, 201,
+                         "Error creating short-lived API key: {}"
+                         .format(resp.content))
         self.set_access_keys(content['id'], content['token'])
 
         self.log.info("Sleep for 90 seconds for api-key to get expired.")

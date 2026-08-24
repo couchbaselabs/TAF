@@ -156,6 +156,50 @@ class GetDatabaseCredential(DatabaseCredentialBase):
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), len(testcases)))
 
+    def test_authorization(self):
+        self.log.info("Creating Database Credential for the test")
+        res = self.capellaAPI.cluster_ops_apis.create_database_user(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.expected_res["name"], self.expected_res["password"],
+            self.expected_res["credentialType"], self.expected_res["userRoles"])
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_database_user(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_res["name"], self.expected_res["password"],
+                self.expected_res["credentialType"],
+                self.expected_res["userRoles"])
+        if res.status_code != 201:
+            self.log.error("Result: {}".format(res.content))
+            self.tearDown()
+            self.fail("Error while creating Database Credential for the test.")
+        self.log.info("Database Credential created successfully.")
+
+        failures = list()
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectViewer", "projectDataReaderWriter", "projectDataReader"
+        ]):
+            self.log.info("Executing test: {}".format(testcase["description"]))
+            header = dict()
+            self.auth_test_setup(testcase, failures, header,
+                                 self.project_id, self.other_project_id)
+            result = self.capellaAPI.cluster_ops_apis.fetch_database_user_info(
+                self.organisation_id, self.project_id, self.cluster_id,
+                res.json()["id"], header)
+            if result.status_code == 429:
+                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                result = \
+                    self.capellaAPI.cluster_ops_apis.fetch_database_user_info(
+                        self.organisation_id, self.project_id,
+                        self.cluster_id, res.json()["id"], header)
+            self.validate_testcase(result, [200], testcase, failures)
+
+        if failures:
+            for fail in failures:
+                self.log.warning(fail)
+            self.fail("{} tests FAILED.".format(len(failures)))
+
 
 class UpdateDatabaseCredential(DatabaseCredentialBase):
 
@@ -333,12 +377,14 @@ class UpdateDatabaseCredential(DatabaseCredentialBase):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.update_database_user(
                 self.organisation_id, self.project_id, self.cluster_id,
-                res.json()["id"], self.update_access, headers=header)
+                res.json()["id"], None, headers=header,
+                userRoles=self.update_access["userRoles"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_database_user(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    res.json()["id"], self.update_access, headers=header)
+                    res.json()["id"], None, headers=header,
+                    userRoles=self.update_access["userRoles"])
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
