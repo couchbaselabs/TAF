@@ -159,10 +159,90 @@ class CRLTest(CRLBase):
         self.assertNotIn(filename, names, f"Deleted file still listed: {files}")
         self.log.info(f"File confirmed removed: {names}")
 
-        # Step 6 — restore default settings.
+        # Step 6 — directory validation: POST accepts any path regardless
+        # of whether it actually exists -- there's no synchronous check.
+        # The two failure modes are only distinguishable later, via
+        # diagnostics/status: a nonexistent path settles to "notFound"
+        # with an empty errors list (silent -- indistinguishable from a
+        # poll directory intentionally left unconfigured), while an
+        # existing-but-permission-denied one settles to "unreadable" with
+        # a populated errors list. Known gap: a typo'd path produces no
+        # observable error anywhere.
+        self.log.info("POST /settings/crl with a nonexistent directory path")
+        node_key = f"{self.cluster.master.ip}:8091"
+        status, updated = self.crl_utils.set_settings(
+            self.rest, directory="/nonexistent/totally/bogus/path/crls"
+        )
+        self.assertTrue(
+            status, f"A nonexistent directory should still be accepted at "
+            f"POST time (no synchronous path validation): {updated}"
+        )
+        deadline = time.monotonic() + 30
+        poll_dir = {}
+        while time.monotonic() < deadline:
+            status, diag = self.crl_utils.diagnostics_status(self.rest)
+            poll_dir = diag.get(node_key, {}).get("pollDirectory", {})
+            if poll_dir.get("directory") == "/nonexistent/totally/bogus/path/crls":
+                break
+            time.sleep(2)
+        self.assertEqual(
+            poll_dir.get("status"), "notFound",
+            f"Expected a nonexistent path to settle to 'notFound': {poll_dir}",
+        )
+        self.assertEqual(
+            poll_dir.get("errors"), [],
+            f"Known gap: a nonexistent/typo'd poll directory produces no "
+            f"observable error anywhere -- 'notFound' with an empty errors "
+            f"list is indistinguishable from an intentionally-unconfigured "
+            f"poll directory. Got: {poll_dir}",
+        )
+        self.log.info(
+            "Nonexistent directory: accepted at POST time, settles to a "
+            "silent 'notFound' with no error surfaced"
+        )
+
+        # Contrast: a directory that exists but the couchbase user can't
+        # read DOES surface a real error, via the same field.
+        unreadable_dir = "/opt/couchbase/var/lib/couchbase/settings_test_unreadable"
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            shell.execute_command(f"mkdir -p {unreadable_dir}")
+            shell.execute_command(f"chmod 000 {unreadable_dir}")
+            status, updated = self.crl_utils.set_settings(
+                self.rest, directory=unreadable_dir
+            )
+            self.assertTrue(status, f"POST /settings/crl failed: {updated}")
+            deadline = time.monotonic() + 30
+            poll_dir = {}
+            while time.monotonic() < deadline:
+                status, diag = self.crl_utils.diagnostics_status(self.rest)
+                poll_dir = diag.get(node_key, {}).get("pollDirectory", {})
+                if poll_dir.get("status") == "unreadable":
+                    break
+                time.sleep(2)
+            self.assertEqual(
+                poll_dir.get("status"), "unreadable",
+                f"Expected an existing-but-permission-denied directory to "
+                f"report 'unreadable': {poll_dir}",
+            )
+            self.assertTrue(
+                poll_dir.get("errors"),
+                f"Unlike 'notFound', 'unreadable' should populate the "
+                f"errors list: {poll_dir}",
+            )
+        finally:
+            shell.execute_command(f"chmod 755 {unreadable_dir} && rm -rf {unreadable_dir}")
+            shell.disconnect()
+        self.log.info(
+            "Existing-but-unreadable directory correctly surfaces a real "
+            "error, unlike the silent 'notFound' case"
+        )
+
+        # Step 7 — restore default settings.
         self.log.info("Restoring default settings")
         status, restored = self.crl_utils.set_settings(
-            self.rest, checkIntermediateCerts=False, dirPollIntervalMs=60000
+            self.rest, checkIntermediateCerts=False, dirPollIntervalMs=60000,
+            directory="/opt/couchbase/var/lib/couchbase/inbox/crls",
         )
         self.assertTrue(status, "Failed to restore default CRL settings")
         self.log.info(f"Defaults restored: {restored}")
