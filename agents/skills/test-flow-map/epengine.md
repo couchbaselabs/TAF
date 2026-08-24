@@ -157,6 +157,19 @@ See Base Class Capabilities table above for `DurabilityTestsBase` and `BucketDur
 | `test_failover_revid_conflict_resolution` | — | revid CR during failover |
 | `test_cas_getMeta_empty_vBucket` | — | `getMeta` on empty vbucket → validate response |
 | `test_meta_backup` | — | Load → backup → restore → `_check_cas()` |
+| `test_replica_max_cas_no_regression` | `nodes_init=2,replicas=1` | MB-73217. Pick vb with active+replica on different nodes → `set()` to seed HLC → `setWithMeta` a CAS 1h in the future (`SKIP_CONFLICT_RESOLUTION_FLAG`) → wait replica high_seqno catch-up → `setWithMeta` a CAS of 1000 at a higher seqno → assert replica `max_cas` never drops below the planted future CAS and still matches the active |
+| `test_max_cas_no_regression_after_failover` | `nodes_init=3,replicas=1` | MB-73217 black-box variant. Same planting sequence → hard failover the active node (driven from another node) → `monitor_rebalance()` → rebuild `VBucketAwareMemcached` → new `set()` on the promoted vbucket must return a CAS greater than the planted future CAS |
+
+
+**MB-73217 helpers** (private, name-mangled as `_OpsChangeCasTests__*` in stack traces):
+
+| Helper | Purpose |
+|---|---|
+| `__vb_stat(node_ip, vb, stat)` | Single `vbucket-details` stat off `self.node_data[node_ip]["cb_stat"]` |
+| `__wait_for_replication(vb, active_ip, replica_ip)` | Polls replica `high_seqno` until it reaches the active's — without it the `max_cas` assertions can pass vacuously |
+| `__pick_vb_with_remote_replica(client)` | First vbucket whose active and first replica sit on different KV nodes |
+| `__keys_for_vb(client, vb, n)` | Deterministic keys hashing to one vbucket, using the client's own `_get_vBucket_id` |
+| `__plant_future_then_low_cas(...)` | Seed HLC → plant future CAS → replicate a low CAS at a higher seqno; returns the future CAS |
 
 ---
 
