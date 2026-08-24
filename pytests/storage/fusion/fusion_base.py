@@ -1728,6 +1728,7 @@ class FusionBase(BaseTestCase):
                     stats = cbstats.all_stats(bucket.name)
                     sync_failures = int(stats.get('ep_fusion_sync_failures', 0))
                     migration_failures = int(stats.get('ep_fusion_migration_failures', 0))
+                    checkpoint_failures = int(stats.get('ep_fusion_checkpoint_failures', 0))
                     read_failures = int(stats.get('ep_data_read_failed', 0))
 
                     # Some tests intentionally induce migration failures (e.g.
@@ -1741,13 +1742,13 @@ class FusionBase(BaseTestCase):
                                       f"(skip_migration_failure_check enabled)")
                     counted_migration_failures = 0 if skip_migration else migration_failures
 
-                    if sync_failures or counted_migration_failures or read_failures:
+                    if sync_failures or counted_migration_failures or checkpoint_failures or read_failures:
                         self.log.error(f"Node {node.ip}, Bucket {bucket.name}: "
                                        f"sync={sync_failures}, migration={migration_failures}, "
-                                       f"read={read_failures}")
+                                       f"checkpoint={checkpoint_failures}, read={read_failures}")
                         failure_messages.append(f"{node.ip}:{bucket.name} - "
                                                 f"sync={sync_failures}, migration={migration_failures}, "
-                                                f"read={read_failures}")
+                                                f"checkpoint={checkpoint_failures}, read={read_failures}")
                 except Exception as e:
                     self.log.warning(f"Error getting stats from {node.ip}:{bucket.name} - {e}")
             cbstats.disconnect()
