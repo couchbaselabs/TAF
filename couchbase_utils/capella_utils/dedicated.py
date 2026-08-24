@@ -596,6 +596,250 @@ class CapellaUtils(object):
             time.sleep(5)
 
     @staticmethod
+    def kill_deployment_job(pod, tenant, job_id):
+        """
+        POST /internal/support/jobs/{job_id}/kill -- abort an in-flight CP job.
+
+        Sibling of get_deployment_jobs' /deployment-jobs listing under the same
+        internal-support job-tracking API; surfaced via a Capella support Slack
+        thread where an engineer used it to abort a job stuck retrying against a
+        bad cluster spec before applying a fix, so it is a sanctioned operation
+        on a real job id, not an undocumented/experimental one -- but that thread
+        killed an already-failing job as incident remediation, which does not by
+        itself confirm killing a currently-healthy, in-progress job behaves the
+        same way. Not wrapped in lib/capellaAPI (a submodule this repo does not
+        modify) since no such wrapper exists there today.
+
+        Uses capella_api.cbc_api_request_headers (built from
+        TOKEN_FOR_INTERNAL_SUPPORT, i.e. pod.TOKEN -- the sbx_token_for_
+        internal_support / dev_.../stage_... override token dedicatedbasetestcase.py
+        resolves from the environment), NOT get_authorization_internal()'s ordinary
+        user/pwd JWT session. A first version used the JWT path (the same one
+        get_deployment_jobs uses successfully for reads) and got a persistent 401
+        -- {"errorType":"Unauthorized","message":"Unauthorized"} -- every time, which
+        also caused CapellaAPI.do_internal_request's unbounded recurse-on-401 to run
+        for ~470s before hitting Python's own recursion limit (fixed separately by
+        calling _urllib_request directly instead). fusion_cp_billing_monitor.py's
+        trigger_internal_job -- the only other write call anywhere in this framework
+        against /internal/support/jobs/... -- already uses cbc_api_request_headers
+        for exactly this endpoint family, which is the precedent this follows.
+
+        No retry loop: cbc_api_request_headers is built once from a static token
+        (not refreshed the way a JWT session would be), so retrying a 401 against
+        the unchanged header would not accomplish anything -- and a kill is a
+        one-shot destructive action regardless, not safe to reissue blindly.
+
+        :return: (status_code, content) tuple from the raw response, or
+            (None, None) if the request itself could not be made at all
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        if pod.TOKEN:
+            # Masked fingerprint, not the raw token -- this is a live, reusable
+            # elevated credential, and this log line ends up in an archived
+            # Jenkins log. Length + a few characters from each end is enough to
+            # confirm the env var actually made it through without printing
+            # something that could be replayed straight out of the log.
+            CapellaUtils.log.info(
+                f"kill_deployment_job: using override token "
+                f"(len={len(pod.TOKEN)}, {pod.TOKEN[:4]!r}...{pod.TOKEN[-4:]!r})")
+        else:
+            CapellaUtils.log.warning(
+                "kill_deployment_job: pod.TOKEN (TOKEN_FOR_INTERNAL_SUPPORT) is not "
+                "set -- the kill request will carry 'Authorization: Bearer None' and "
+                "is expected to be rejected. Set the sbx_/dev_/stage_ "
+                "_token_for_internal_support environment variable matching this pod.")
+        url = f"{capella_api.internal_url}/internal/support/jobs/{job_id}/kill"
+        resp = capella_api._urllib_request(
+            url, method="POST", params='',
+            headers=capella_api.cbc_api_request_headers)
+        if resp is None:
+            return None, None
+        return resp.status_code, resp.content
+
+    @staticmethod
+    def redeploy_cluster_spec(pod, tenant, cluster, specs):
+        """
+        POST the SAME cluster specs a cluster is already targeting back to
+        PUT /v2/.../clusters/{clusterId}/specs (CapellaAPI.update_cluster_sepcs)
+        -- a "no-op deploy" that asks the CP to re-drive a deployment toward a
+        target it should already be converging on, without changing the
+        target itself.
+
+        KNOWN BROKEN for its actual purpose (recovering a cluster stuck behind a
+        killed job): this POSTs to the internal v2 /specs endpoint, which the CP
+        treats as a brand new scaling request, not a diff against current state --
+        confirmed directly against a real cluster: it gets rejected with a
+        "scaling already in progress" error, because the killed job already left
+        the cluster mid-scale. Re-submitting the same target through this endpoint
+        cannot un-stick that; it just collides with the very scale it is trying to
+        resume. Use CapellaUtils.redeploy_cluster_spec_v4 instead (see below), which
+        the same rejection led directly to. Kept only as a still-otherwise-correct
+        building block (redeploy toward a target the cluster is not currently mid-
+        scale for) -- not called anywhere in this codebase today.
+
+        Exists for recovering from a CP job killed via kill_deployment_job:
+        per the fusion/CP team, a killed deployment job does NOT get
+        auto-retried by the CP the way a job that failed for a real transient
+        reason does -- it simply stays "killed" forever, with the cluster
+        left mid-scale and no further progress. Re-submitting the identical
+        target spec is the CP-sanctioned way to un-stick that: it may either
+        revive the SAME job (status flips back from "killed" to
+        "processing") or have the CP mint a brand new job for the same
+        target -- both are normal, expected outcomes; the caller polls
+        get_deployment_jobs afterward to see which happened.
+
+        Deliberately NOT CapellaUtils.scale(), which wraps this same POST in
+        an unbounded `while True: ... wait_until_done() ... retry` loop
+        whenever the CP rejects the call with ClusterModifySpecsInvalidState/
+        EntityNotWritable/EntityStateInvalid -- exactly the rejection a
+        cluster stuck behind a killed job might return, and wait_until_done
+        silently returns after its own timeout without raising if the
+        cluster never reaches "healthy", so that loop has no real exit if
+        the cluster stays stuck. A caller specifically testing recovery from
+        a stuck cluster needs to observe that rejection, not have a shared
+        wrapper retry through it silently -- same reasoning as
+        kill_deployment_job bypassing do_internal_request's unbounded
+        recurse-on-401.
+
+        :param specs: the exact specs list the original scale/rebalance call
+            used (e.g. rebalance_task.scale_params["specs"] on the
+            RebalanceTaskCapella returned by async_rebalance_capella) --
+            NOT a freshly-built one, since rebalance_config()-style builders
+            mutate cumulative node counts on every call and would target one
+            MORE node than intended rather than replaying the same request.
+        :return: (status_code, content) tuple from the raw response
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.update_cluster_sepcs(
+            tenant.id, tenant.projects[0], cluster.id, specs)
+        return resp.status_code, resp.content
+
+    @staticmethod
+    def redeploy_cluster_spec_v4(pod, tenant, cluster, bearer_token,
+                                 project_id=None, force=False):
+        """
+        The v4-API "no-op deploy" that actually un-sticks a cluster left mid-scale
+        by a killed deployment job -- see redeploy_cluster_spec's docstring above
+        for why its v2 /specs POST cannot: the CP rejects that POST outright with
+        "scaling already in progress" instead of treating it as a diff-and-noop,
+        because the killed job already left the cluster mid-scale by the time this
+        runs.
+
+        This instead follows Capella support's documented no-op-deploy recipe
+        against the PUBLIC v4 Management API:
+          1. GET the cluster's OWN current name/description/support/serviceGroups
+             (fetch_cluster_info) -- not whatever the caller's own rebalance_task
+             happened to request, since that is exactly the target a mid-scale
+             cluster may not be sitting at cleanly.
+          2. PUT those same values back unmodified via update_cluster (ifmatch=True
+             attaches the required If-Match: Version header from that same fetch).
+        Because the payload is byte-for-byte what the CP already has on record for
+        this cluster, it calculates zero diff against actual state and Fleet
+        Manager's DeployG2Cluster pipeline completes in seconds with
+        "reason": "noOp" -- rather than being rejected as a competing scale. A 202
+        Accepted response is the documented success signal.
+
+        *bearer_token* must come from CapellaUtils.create_v4_api_key() -- v4 calls
+        need a real bearer token, not tenant.api_secret_key/api_access_key (see
+        that method's docstring for why). *project_id* defaults to
+        tenant.projects[0], matching redeploy_cluster_spec's own default.
+
+        *force*: EXPERIMENTAL, opt-in. A real run (jenkins_output9.log) got a
+        clean, structured rejection even from this endpoint -- 422 "The clusters
+        status is 'scaling' is not valid for performing a deployment. Only the
+        status' Draft or Healthy are allowed." -- while the Fleet Manager UI's own
+        "redeploy" button was reported to work against the same kind of stuck
+        cluster. Nothing in this codebase (or the capellaAPI submodule's own
+        docstring for update_cluster) documents a force flag for this endpoint;
+        the only evidence for one is that the killed DeployG2Cluster job's own
+        payload (logged by _log_deployment_jobs_snapshot) carries a
+        `'Force': False` field. This is not confirmed to be read by, or even
+        wired to, the v4 update-cluster endpoint at all -- when True, it is
+        passed straight through to update_cluster's **kwargs (merged into the
+        JSON body as "Force": true) purely to observe whether the CP's response
+        changes; it may just as easily be silently ignored or rejected as an
+        unknown field, and either outcome is itself useful evidence for the
+        fusion/CP team.
+
+        :return: (status_code, content) tuple from the update_cluster response, or
+            (status_code, content) from the fetch_cluster_info response if THAT
+            fails first (status_code will not be 202 either way, so callers can
+            gate on that alone without needing to distinguish the two failures).
+        """
+        if project_id is None:
+            project_id = tenant.projects[0]
+        cluster_ops = ClusterOpsAPIv4(pod.url_public, tenant.api_secret_key,
+                                      tenant.api_access_key, bearer_token)
+        get_url = "{}{}/{}".format(
+            cluster_ops.API_BASE_URL,
+            cluster_ops.cluster_endpoint.format(tenant.id, project_id),
+            cluster.id)
+        # Masked fingerprint, not the raw token -- same reasoning as
+        # kill_deployment_job's own bearer-token log line: this is a live,
+        # reusable elevated credential and this log line ends up in an
+        # archived Jenkins log.
+        token_fingerprint = (
+            "len={}, {!r}...{!r}".format(
+                len(bearer_token), bearer_token[:4], bearer_token[-4:])
+            if bearer_token else "MISSING")
+        CapellaUtils.log.info(
+            "redeploy_cluster_spec_v4: GET {} (bearer_token {})".format(
+                get_url, token_fingerprint))
+        info_resp = cluster_ops.fetch_cluster_info(tenant.id, project_id,
+                                                    cluster.id)
+        CapellaUtils.log.info(
+            "redeploy_cluster_spec_v4: fetch_cluster_info -> status={} "
+            "content={}".format(info_resp.status_code, info_resp.content))
+        if info_resp.status_code != 200:
+            CapellaUtils.log.error(
+                "redeploy_cluster_spec_v4: fetch_cluster_info failed for "
+                "cluster {}: status={} content={}".format(
+                    cluster.id, info_resp.status_code, info_resp.content))
+            return info_resp.status_code, info_resp.content
+        info = info_resp.json()
+        version = (info.get("audit") or {}).get("version")
+        payload = {
+            "name": info.get("name"),
+            "description": info.get("description"),
+            "support": info.get("support"),
+            "serviceGroups": info.get("serviceGroups"),
+        }
+        extra_kwargs = {}
+        if force:
+            extra_kwargs["Force"] = True
+            payload["Force"] = True
+        put_url = "{}{}/{}".format(
+            cluster_ops.API_BASE_URL,
+            cluster_ops.cluster_endpoint.format(tenant.id, project_id),
+            cluster.id)
+        # update_cluster(ifmatch=True) re-fetches the cluster internally to
+        # build this same header -- logged here from OUR OWN fetch above so
+        # the value is visible without having to instrument the submodule;
+        # it should read the same version, moments apart, unless something
+        # else modified the cluster in between.
+        CapellaUtils.log.info(
+            "redeploy_cluster_spec_v4: PUT {} headers={{'If-Match': "
+            "'Version: {}'}} payload={}".format(
+                put_url, version, json.dumps(payload, indent=2)))
+        resp = cluster_ops.update_cluster(
+            tenant.id, project_id, cluster.id, info.get("name"),
+            info.get("description"), info.get("support"),
+            info.get("serviceGroups"), True, **extra_kwargs)
+        CapellaUtils.log.info(
+            "redeploy_cluster_spec_v4: update_cluster -> status={} "
+            "content={}".format(resp.status_code, resp.content))
+        return resp.status_code, resp.content
+
+    @staticmethod
     def get_cluster_nodes_internal(pod, tenant, cluster_id, timeout=120):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,

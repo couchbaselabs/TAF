@@ -769,6 +769,7 @@ class FusionAWSUtil:
             f"({folders_deleted}), {len(files_deleted)} individual file(s) "
             f"deleted ({files_deleted})")
         return {"folders_deleted": folders_deleted, "files_deleted": files_deleted}
+
     def get_guest_volumes_for_cluster(self, cluster_id: str) -> dict:
         """
         Retrieve the guest volume inventory for a cluster via AWS EC2 API.

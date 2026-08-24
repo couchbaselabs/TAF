@@ -206,7 +206,7 @@ the CP recovers, fails cleanly, or the safety invariant holds.
 | C | guest-volume permissions toggled | `test_toggle_guest_volume_permissions_during_migration` | ⬜ |
 | C→D | host out of slots → fallback replacement | `test_slot_exhaustion_triggers_fallback_replacement` (fusion_accelerator_chaos_test.py) | ✅ |
 | D | CBS rebalance aborted → manifest Invalidated → teardown | `test_abort_rebalance_invalidates_manifest` (chaos) | ✅ |
-| D | ns_server loses PlanUUID (ErrFusionPlanNotFound) | `test_kill_memcached_during_rebalance` | gap |
+| D | ns_server loses PlanUUID (ErrFusionPlanNotFound) | `test_kill_memcached_during_rebalance` (cp-resiliency) | ✅ |
 | E | delete/corrupt guest volumes *during* migration | (port fusion_migration) | gap |
 | E | kill memcached during extent migration | `test_kill_memcached_during_extent_migration` (chaos) | ✅ |
 | E | node removed while its guest volumes are migrating | `test_remove_node_with_attached_guest_volumes` (chaos) | ✅ |

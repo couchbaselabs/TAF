@@ -247,18 +247,17 @@ hooks, or TB-scale / multi-region setups). Listed so the gap is explicit:
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
-| *(no file yet)* | — | Kill CP job during guest volume / accelerator creation | ⬜ |
-| *(no file yet)* | — | Delete S3 bucket → CP disables fusion, DCP fallback | ⬜ |
-| *(no file yet)* | — | Keep crashing CP job N times (retry resilience) | ⬜ |
-| *(no file yet)* | — | Kill CP job mid accelerator-cli download | ⬜ |
-| *(no file yet)* | — | Crash dp-accelerator during log file download | ⬜ |
-| *(no file yet)* | — | Restart / terminate node during guest volume mounting | ⬜ |
-| *(no file yet)* | — | Terminate node after all guest volumes attached | ⬜ |
-| *(no file yet)* | — | Delete log files from guest volumes during download | ⬜ |
-| *(no file yet)* | — | Delete log files from guest volumes after attachment | ⬜ |
-| *(no file yet)* | — | Corrupt log files on guest volumes (junk bytes) | ⬜ |
-| *(no file yet)* | — | Restart accelerator nodes mid-download | ⬜ |
-| *(no file yet)* | — | Delete log file from S3 → accelerator-cli failure | ⬜ |
+| `fusion_cp_resiliency_test.py` | `FusionCPResiliencyTest` | `test_dp_accelerator_crash_during_download` | ✅ |
+| | | `test_kill_cp_job_during_scaling` | ✅ |
+| | | `test_restart_kv_node_during_guest_volume_mounting` | ✅ |
+| | | `test_terminate_kv_node_during_guest_volume_mounting` | ✅ |
+| | | `test_terminate_kv_node_after_guest_volumes_attached` | ✅ |
+| | | `test_restart_accelerator_node_mid_download` | ✅ |
+| | | `test_delete_s3_log_file_accelerator_cli_failure` | ✅ |
+| | | `test_kill_memcached_during_rebalance` (ns_server loses PlanUUID / ErrFusionPlanNotFound) | ✅ |
+| | | `test_corrupt_log_files_on_guest_volumes` | ✅ |
+| | | `test_delete_log_files_from_guest_volumes_after_attachment` | ✅ |
+| | | `test_delete_log_files_from_guest_volumes_during_download` | ✅ |
 
 ---
 
@@ -266,9 +265,9 @@ hooks, or TB-scale / multi-region setups). Listed so the gap is explicit:
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
-| *(no file yet)* | — | Crash memcached during S3 upload | ⬜ |
-| *(no file yet)* | — | Crash memcached during file extent migration | ⬜ |
-| *(no file yet)* | — | Abort rebalance on backend after `/controller/rebalance` | ⬜ |
+| `fusion_accelerator_chaos_test.py` | `FusionAcceleratorChaosTest` | `test_kill_memcached_during_extent_migration` | ✅ |
+| | | `test_abort_rebalance_invalidates_manifest` | ✅ |
+| `fusion_cp_resiliency_test.py` | `FusionCPResiliencyTest` | `test_crash_memcached_during_s3_upload` | ✅ |
 
 ---
 
@@ -314,6 +313,26 @@ hooks, or TB-scale / multi-region setups). Listed so the gap is explicit:
 |---|---|---|---|
 | *(no file yet)* | — | XDCR replication during file extent migration | ⬜ |
 | *(no file yet)* | — | XDCR with migration rate = 0 | ⬜ |
+
+---
+
+## §15 Node Health / Auto-Failover
+
+> Two different mechanisms can make a node "unhealthy": classic ns_server auto-failover
+> (`autoFailoverSettings`) vs. Capella's own CP-driven node-replacement flow (the AWS-
+> instance-level faults already covered under §9/§10). See `fusion_node_health_test.py`'s
+> module docstring for the full breakdown and on-prem prior art (`pytests/failover/`,
+> `pytests/storage/fusion/fusion_failover_rebalance.py`).
+
+| TAF File | TAF Class | TAF Method | Status |
+|---|---|---|---|
+| `fusion_node_health_test.py` | `FusionNodeHealthTest` | `test_autofailover_kv_node_during_migration` | ✅ |
+| | | `test_pause_memcached_during_migration` (SIGSTOP, not SIGKILL) | ✅ |
+| | | `test_disk_failure_autofailover_kv_node_with_guest_volumes` | 🔲 |
+| | | `test_graceful_failover_kv_node_with_guest_volumes` | 🔲 |
+| | | `test_autofailover_blocked_by_max_count_during_scale_out` | 🔲 |
+| | | `test_node_addback_after_autofailover_during_migration` | 🔲 |
+| | | `test_repeated_memcached_crash_loop_kv_node_with_guest_volumes` | 🔲 |
 
 ---
 

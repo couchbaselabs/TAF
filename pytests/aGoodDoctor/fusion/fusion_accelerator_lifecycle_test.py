@@ -30,6 +30,7 @@ import contextlib
 import threading
 import time
 
+from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from constants.cloud_constants.capella_constants import AWS, AZURE, GCP
@@ -390,6 +391,208 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 + (f" ({noted} further non-fatal note(s) in the summary above)"
                    if noted else "")
                 + ":\n" + "\n".join(lines))
+
+    def _start_background_load(self, label):
+        """Launch a non-blocking mutation workload; return the loader tasks (or []).
+
+        Widens whatever narrow window a fault needs to land in during phase 7 (CBS
+        actively moving vBuckets): a fusion rebalance is quick precisely because the
+        data is already on the guest volumes when CBS starts moving them — but
+        mutations landing DURING that movement are not on any guest volume, so each
+        vBucket move has to chase a moving target through DCP. More to move means
+        longer to move it. Shared by test_abort_rebalance_invalidates_manifest and
+        test_kill_memcached_during_rebalance, both of which need that same window.
+
+        Deliberately update-only: creates would push the item count past what the rest
+        of the test (and tearDown's validation) expects, and deletes would fight a
+        read-workload validation step later. Rate comes from `rebl_ops_rate`, the same
+        param the volume suite uses for during-rebalance mutations.
+
+        Each bucket's loadDefn["ops"] is saved to bucket.original_ops and restored by
+        _stop_background_load, so a leftover rate cannot change later loads in the same
+        run.
+        """
+        rate = int(self.input.param("rebl_ops_rate", 5000))
+        buckets = list(self.cluster.buckets)
+        if not buckets:
+            self.log.warning(f"[bg-load] {label}: no buckets to mutate")
+            return []
+        update_end = int(self.input.param(
+            "bg_load_update_end", self.input.param("create_end", 20_000_000)))
+        for bucket in buckets:
+            JavaDocLoaderUtils.generate_docs(
+                bucket=bucket, doc_ops=["update"],
+                update_start=0, update_end=update_end)
+            bucket.original_ops = bucket.loadDefn.get("ops")
+            bucket.loadDefn["ops"] = rate
+        try:
+            tasks = JavaDocLoaderUtils.perform_load(
+                cluster=self.cluster, buckets=buckets,
+                overRidePattern={"create": 0, "read": 0, "update": 100,
+                                 "delete": 0, "expiry": 0},
+                wait_for_load=False, validate_data=False, wait_for_stats=False,
+                suppress_error_table=True, track_failures=False)
+        except Exception as e:
+            self.log.warning(
+                f"[bg-load] {label}: could not start the background load ({e}) — the "
+                f"rebalance window will be shorter than intended")
+            return []
+        # perform_load returns False on a task-creation failure, [] when nothing ran.
+        if not tasks:
+            self.log.warning(
+                f"[bg-load] {label}: no loader tasks were created — continuing without "
+                f"background mutations")
+            return []
+        self.log.info(
+            f"[bg-load] {label}: {len(tasks)} update task(s) running at "
+            f"{rate} ops/s over items [0, {update_end}) across {len(buckets)} bucket(s)")
+        return tasks
+
+    def _stop_background_load(self, tasks, label):
+        """Stop the background mutation tasks and restore each bucket's ops rate.
+
+        Never raises: this runs on the cleanup path, where a task that has already
+        finished or a loader that has gone away must not mask the finding the test was
+        after.
+        """
+        for task in (tasks or []):
+            try:
+                self.task_manager.stop_task(task)
+            except Exception as e:
+                self.log.warning(
+                    f"[bg-load] {label}: could not stop {getattr(task, 'thread_name', task)}"
+                    f" ({e}) — it may already have finished")
+        for bucket in list(self.cluster.buckets):
+            original = getattr(bucket, "original_ops", None)
+            if original is not None:
+                bucket.loadDefn["ops"] = original
+        if tasks:
+            self.log.info(f"[bg-load] {label}: background load stopped")
+
+    def _run_on_cluster_node(self, instance_id, command, timeout=60):
+        """Run a shell command on a KV node over SSM; return the result dict."""
+        self.log.info(f"[ssm] {instance_id}: {command}")
+        result = self.fusion_aws_util.ec2.run_shell_command(
+            instance_id, command, timeout=timeout)
+        self.log.info(
+            f"[ssm] {instance_id} -> success={result.get('success')} "
+            f"rc={result.get('return_code')} stdout={result.get('stdout', '')!r} "
+            f"stderr={result.get('stderr', '')!r}")
+        return result
+
+    def _cbs_rebalance_state(self, rest=None):
+        """What CBS itself says about a rebalance: (running, progress_pct, detail).
+
+        A fusion rebalance spends most of its life in CP-owned phases where ns_server has
+        no rebalance at all — accelerators launch (4), download shards (5), volumes are
+        transferred to the KV nodes (6) — and only at phase 7 does the CP call
+        `POST /controller/rebalance` and hand the actual vBucket movement to CBS. So
+        "the rebalance task is running" from the Capella task's point of view says nothing
+        about whether ns_server has anything to stop.
+
+        Two endpoints are read because they fail differently: rebalanceProgress reports
+        `status: none` between rebalances and per-node fractions while one runs, whereas
+        /pools/default/tasks carries the rebalance task's own status and progress and
+        survives the moment where progress is still empty. Either reporting 'running' is
+        taken as running.
+
+        progress_pct is None when nothing reports a number yet — that is normal in the
+        first seconds and must not be read as 0% progress.
+        """
+        rest = rest or ClusterRestAPI(self.cluster.master)
+        running = False
+        progress = None
+        detail = dict()
+
+        status, content = rest.rebalance_progress()
+        if status and isinstance(content, dict):
+            detail["rebalanceProgress"] = content
+            if str(content.get("status", "")).lower() == "running":
+                running = True
+                fractions = [v for k, v in content.items()
+                             if k != "status" and isinstance(v, (int, float))]
+                if fractions:
+                    progress = 100.0 * sum(fractions) / len(fractions)
+
+        status, tasks = rest.cluster_tasks()
+        if status and isinstance(tasks, list):
+            for task in tasks:
+                if task.get("type") != "rebalance":
+                    continue
+                detail["task"] = task
+                if str(task.get("status", "")).lower() == "running":
+                    running = True
+                    if task.get("progress") is not None:
+                        try:
+                            progress = float(task["progress"])
+                        except (TypeError, ValueError):
+                            pass
+                break
+        return running, progress, detail
+
+    def _wait_for_cbs_rebalance_running(self, rebalance_task, timeout,
+                                        min_progress=0.0, poll_interval=None):
+        """Block until CBS reports a rebalance running; return (running, progress, detail).
+
+        This is the gate for any fault that has to land on the ns_server rebalance rather
+        than on the CP's earlier phases. Returns running=False if the window never opened —
+        either the rebalance finished first (a fusion rebalance moves vBuckets quickly,
+        since the data is already on the guest volumes) or it failed before phase 7.
+
+        min_progress > 0 waits for the movement to be demonstrably under way rather than
+        merely accepted, at the cost of a smaller window before it completes.
+
+        find_master() is deliberately NOT called up front. It took 160s on a cluster that was
+        mid-scale-out, and every one of those seconds is spent blind: one run's first sample
+        landed 11s after CBS had started rebalancing, on a rebalance that lasted 17s in total.
+        The existing master answers these two read-only endpoints regardless of whether it is
+        still the orchestrator, so the refresh is deferred to the error path.
+
+        poll_interval defaults to `cbs_rebalance_poll_interval` (5s). It has to be short: on
+        Capella there is no way to stall the rebalance, so the window can be as narrow as the
+        ~17s a measured run took end to end, and a 15s cadence would routinely sample once
+        and miss it.
+        """
+        poll_interval = poll_interval if poll_interval is not None else int(
+            self.input.param("cbs_rebalance_poll_interval", 5))
+        self.fusion_monitor.set_admin_credentials(self.cluster)
+        rest = ClusterRestAPI(self.cluster.master)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if rebalance_task.state in self._FAILED_STATES:
+                self.log.error(
+                    f"Capella reports the rebalance failed ({rebalance_task.state}) before "
+                    f"CBS ever started one — phase 7 was never reached")
+                return False, None, dict()
+            if rebalance_task.state == "healthy":
+                self.log.warning(
+                    "The rebalance completed before CBS was observed rebalancing — the "
+                    "vBucket movement window was missed entirely")
+                return False, None, dict()
+            try:
+                running, progress, detail = self._cbs_rebalance_state(rest)
+            except Exception as e:
+                self.log.warning(
+                    f"Could not read the CBS rebalance state ({e}); refreshing master")
+                self.find_master(self.tenant, self.cluster)
+                rest = ClusterRestAPI(self.cluster.master)
+                time.sleep(poll_interval)
+                continue
+            self.log.info(
+                f"[cbs-rebalance] running={running} progress="
+                f"{'?' if progress is None else f'{progress:.1f}%'} "
+                f"(need >= {min_progress}%) task_state={rebalance_task.state} "
+                f"{int(deadline - time.time())}s left")
+            if running and (progress or 0.0) >= min_progress:
+                return True, progress, detail
+            # Not every subclass defines the wall-clock test-budget backstop
+            # (_budget_exhausted, fusion_accelerator_chaos_test.py) — skip the check
+            # rather than require it here.
+            if hasattr(self, "_budget_exhausted") and self._budget_exhausted(
+                    "waiting for the CBS rebalance to start"):
+                return False, None, dict()
+            time.sleep(poll_interval)
+        return False, None, dict()
 
     def _log_cluster_data_summary(self, label):
         """Log what is actually in the cluster at a checkpoint.
@@ -884,28 +1087,55 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             f"there is nothing to load otherwise")
         new_docs = create_end - create_start
         total_items = new_docs * collections * len(self.cluster.buckets)
+        bytes_loaded = total_items * doc_size
         self.log.info(
             f"[load] docs [{create_start}, {create_end}) = {new_docs} x {collections} "
             f"collection(s) x {len(self.cluster.buckets)} bucket(s) = {total_items} new "
             f"items at doc_size={doc_size} B => "
-            f"~{total_items * doc_size / (1024 ** 3):.1f} GiB logical; "
+            f"~{bytes_loaded / (1024 ** 3):.1f} GiB logical; "
             f"fusion_threshold_gib={self.input.param('fusion_threshold_gib', None)}")
 
         load_start = time.time()
         self._load_data(
             self.cluster, create_start=create_start, create_end=create_end)
         load_secs = time.time() - load_start
-        self._wait_for_log_store_sync(load_secs)
+        self._wait_for_log_store_sync(load_secs, bytes_loaded=bytes_loaded)
         self._log_cluster_data_summary("after initial load")
 
-    def _wait_for_log_store_sync(self, load_secs):
+    def _wait_for_log_store_sync(self, load_secs, bytes_loaded=None):
         """Wait for the fusion uploader to catch up after a load, then check S3.
 
-        Shared by every load path so none of them races the uploader. Waits for BOTH
-        floors: `fusion_upload_interval` since the load started, so a short load cannot
-        outrun the uploader, and `fusion_upload_settle` since it ended, so the final batch
-        can flush. Set settle == interval for the strict worst case (a doc written in the
-        last moment of the load needs a full interval after the load ENDS).
+        Shared by every load path so none of them races the uploader. The wait has two
+        parts, stacked rather than taking the max of one another — reaching the point
+        where a sync is guaranteed to have STARTED is not the same as it having
+        FINISHED:
+
+          1. When the sync starts: the greater of `fusion_upload_settle` since the load
+             ended (so the final batch, written in the load's last moment, gets a full
+             interval to be picked up) and `fusion_upload_interval` since the load
+             STARTED (so a short load cannot outrun the uploader and race a sync that
+             hasn't triggered yet).
+          2. How long that sync then takes to actually finish: `bytes_loaded` spread
+             evenly across the KV nodes (each node uploads its own share independently,
+             in parallel, so wall-clock is set by whichever node has the most to push),
+             divided by `fusion_sync_rate_limit` bytes/sec per node (default 78643200 B/s,
+             75 MB/s — the same setting fusion_bucket_ops_test.py and
+             fusion_backup_restore_volume.py apply as a memcached global setting).
+
+        Skipping (2) — i.e. assuming the interval boundary IS completion — under-waits
+        for any load big enough that the upload itself takes longer than the remaining
+        interval/settle time (e.g. 50 GiB at 75 MB/s is ~11.4 minutes, longer than the
+        default 10-minute interval on its own), which then races a rebalance against an
+        S3 log store that has not actually caught up.
+
+        `bytes_loaded` is the LOGICAL size (pre-compression) written since the last
+        sync — an upper bound on what actually has to move, in the same spirit as
+        treating provisioned EBS volume size as an upper bound elsewhere in this file.
+        There is no reliable way to know the true post-compression size ahead of the
+        wait without polling a stat (ep_fusion_log_store_data_size) that this codebase
+        has already found to be unreliable as a total (see
+        test_guest_volume_size_scales_with_data). None/0 skips this term and falls back
+        to the original interval/settle-only wait.
 
         The cloud base classes do not define fusion_upload_interval (only
         onPrem_basetestcase does, at 60s), so it defaults to 600s here to match the Capella
@@ -913,12 +1143,27 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         """
         upload_interval = int(self.input.param("fusion_upload_interval", 600))
         settle = int(self.input.param("fusion_upload_settle", 120))
-        wait_secs = max(settle, upload_interval - load_secs)
+        sync_rate_limit = int(self.input.param("fusion_sync_rate_limit", 78643200))
+        time_until_sync_starts = max(settle, upload_interval - load_secs)
+
+        sync_duration = 0.0
+        num_kv_nodes = max(int(self.num_nodes.get("data", 1) or 1), 1)
+        if bytes_loaded and sync_rate_limit:
+            per_node_bytes = bytes_loaded / num_kv_nodes
+            sync_duration = per_node_bytes / sync_rate_limit
+
+        wait_secs = time_until_sync_starts + sync_duration
         self.log.info(
             f"[load] load took {load_secs:.0f}s; fusion_upload_interval="
-            f"{upload_interval}s, fusion_upload_settle={settle}s => waiting "
-            f"{wait_secs:.0f}s more (total {load_secs + wait_secs:.0f}s since the load "
-            f"started) so the S3 log store catches up before the rebalance")
+            f"{upload_interval}s, fusion_upload_settle={settle}s => sync starts within "
+            f"{time_until_sync_starts:.0f}s."
+            + (f" Estimated sync duration for ~{bytes_loaded / (1024 ** 3):.1f} GiB "
+               f"logical across {num_kv_nodes} node(s) at "
+               f"{sync_rate_limit / (1024 ** 2):.1f} MB/s/node: {sync_duration:.0f}s."
+               if bytes_loaded else "")
+            + f" Waiting {wait_secs:.0f}s total (total {load_secs + wait_secs:.0f}s "
+              f"since the load started) so the S3 log store catches up before the "
+              f"rebalance")
         self.sleep(wait_secs, "Allow the fusion uploader to sync to S3 before rebalancing")
 
         # Direct evidence the upload actually happened, rather than trusting the clock.
@@ -1101,6 +1346,39 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         self._log_query("accelerator instances (by tag, no IOPS filter)", filters,
                         self._describe_instances(instances))
         return instances
+
+    def _kv_instance_ids(self):
+        """Instance IDs of the KV/cluster nodes currently in the cluster.
+
+        Matches the POSITIVE tag couchbase-cloud-function=couchbase (the same
+        filter fusion_cp_resource_monitor.py's track_peak_guest_volumes_per_
+        instance uses), not "cluster-tagged minus accelerator-tagged".
+
+        The exclusion approach was tried first and is wrong: it is built from two
+        separate, non-atomic AWS calls, so if an accelerator's fusion-accelerator
+        tag gets stripped (e.g. the CP already starting to retire it) BEFORE its
+        guest volume's IOPS actually scales down to the KV baseline, the instance
+        looks like a "KV node" by elimination for that window. Observed directly:
+        a run's target was still IOPS=16000 (accelerator-side) at the moment it
+        was picked, and its accelerator tag had only just been removed 4s
+        earlier — the test ended up terminating an accelerator already being
+        decommissioned, not a real data-serving KV node, which is why nothing
+        was disrupted and the rebalance completed with no sign of a lost node.
+        A positive match on the real function tag has no such race: an instance
+        either is tagged couchbase, or it isn't.
+
+        list_instances filters to State=='running' already, so a just-terminated
+        instance drops out of this on its own.
+
+        Shared here (not left on FusionCPResiliencyTest alone) because
+        fusion_node_health_test.py's node-health/auto-failover tests need the
+        same KV-node identification and would otherwise have to duplicate it.
+        """
+        return {i.get("InstanceId") for i in self.fusion_aws_util.list_instances(
+            self.fusion_aws_util._cluster_filter(
+                self.cluster.id,
+                [{"Name": "tag:couchbase-cloud-function", "Values": ["couchbase"]}]),
+            log="KvNodeFilter", suppress_log=True)}
 
     def _wait_for_accelerator_fleet_stable(self, rebalance_task, timeout=None):
         """Wait for the accelerator fleet to stop changing; return (instances, asgs).
@@ -2009,6 +2287,48 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             f"Background migration complete: guest volumes drained to 0, main_du "
             f"{baseline_du:.1f}% -> {max_du:.1f}%, no failures")
 
+    def _assert_no_orphan_accelerator_resources(self, label="teardown"):
+        """No orphaned guest volumes, ASGs, or accelerator instances survive.
+
+        Factored out of _validate_teardown (its items 1-4) so a test that needs just
+        the AWS-resource-leak check -- e.g. one that accepts a clean FAILURE as a
+        valid outcome, where the fuller _validate_teardown's healthy/fusion-enabled/
+        migration-settled/read-workload assertions would not hold -- does not have to
+        pull those in too. Safe to call regardless of whether the rebalance that
+        preceded it ultimately succeeded or failed cleanly: guest-volume/ASG/
+        accelerator teardown runs on any resolved outcome per ACCELERATION.md.
+        """
+        # 1: EBS guest volumes deleted
+        cleaned = self.cp_monitor.monitor_ebs_cleanup(
+            self.cluster, self.stop_run_event,
+            timeout=self.cp_monitor.EBS_CLEANUP_TIMEOUT)
+        self.assertTrue(
+            cleaned, f"EBS guest volumes were not cleaned up after {label}")
+        remaining = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+        self.assertEqual(len(remaining), 0,
+                         f"Guest volumes still present after {label}: {remaining}")
+
+        # 2: no orphaned 'available' (detached-but-undeleted) guest volumes. State is a
+        # volume attribute, not a tag, so it must be filtered client-side.
+        available = [v for v in self._list_accelerator_volumes(guest_only=False)
+                     if v.get("State") == "available"]
+        self.assertEqual(
+            len(available), 0,
+            f"Orphaned 'available' guest volumes remain after {label}: "
+            f"{[v.get('VolumeId') for v in available]}")
+
+        # 3: all fusion ASGs deleted (check_asg_cleanup_after_rebalance only logs)
+        asgs = self.fusion_aws_util.list_cluster_fusion_asg(self.cluster.id)
+        self.assertEqual(len(asgs), 0,
+                         f"Fusion ASGs still present after {label}: {len(asgs)}")
+
+        # 4: all accelerator instances terminated
+        accel = self.fusion_aws_util.list_accelerator_instances(
+            self._accelerator_filter(), log="PostTeardown")
+        self.assertEqual(len(accel), 0,
+                         f"Accelerator instances still present after {label}: {len(accel)}")
+        self.log.info(f"No orphaned guest volumes/ASGs/accelerator instances after {label}")
+
     def _validate_teardown(self, s3_bucket_name):
         """Stage F (phase 8 teardown): full infra cleanup and data durability.
 
@@ -2017,34 +2337,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         migration stats are clean, the cluster is healthy with fusion still enabled,
         the S3 log store survived, and reads still work.
         """
-        # 1: EBS guest volumes deleted
-        cleaned = self.cp_monitor.monitor_ebs_cleanup(
-            self.cluster, self.stop_run_event,
-            timeout=self.cp_monitor.EBS_CLEANUP_TIMEOUT)
-        self.assertTrue(cleaned, "EBS guest volumes were not cleaned up after teardown")
-        remaining = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
-        self.assertEqual(len(remaining), 0,
-                         f"Guest volumes still present after teardown: {remaining}")
-
-        # 2: no orphaned 'available' (detached-but-undeleted) guest volumes. State is a
-        # volume attribute, not a tag, so it must be filtered client-side.
-        available = [v for v in self._list_accelerator_volumes(guest_only=False)
-                     if v.get("State") == "available"]
-        self.assertEqual(
-            len(available), 0,
-            f"Orphaned 'available' guest volumes remain after teardown: "
-            f"{[v.get('VolumeId') for v in available]}")
-
-        # 3: all fusion ASGs deleted (check_asg_cleanup_after_rebalance only logs)
-        asgs = self.fusion_aws_util.list_cluster_fusion_asg(self.cluster.id)
-        self.assertEqual(len(asgs), 0,
-                         f"Fusion ASGs still present after teardown: {len(asgs)}")
-
-        # 4: all accelerator instances terminated
-        accel = self.fusion_aws_util.list_accelerator_instances(
-            self._accelerator_filter(), log="PostTeardown")
-        self.assertEqual(len(accel), 0,
-                         f"Accelerator instances still present after teardown: {len(accel)}")
+        self._assert_no_orphan_accelerator_resources(label="teardown")
 
         # 5: no migration failures, and all ep_fusion_migration_* stats settled to 0
         failures = self._sum_migration_stat("ep_fusion_migration_failures")

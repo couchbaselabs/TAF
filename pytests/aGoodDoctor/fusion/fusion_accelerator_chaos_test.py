@@ -70,7 +70,6 @@ Not implemented here, and why (see the matrix rows still marked gap/⬜):
 
 import time
 
-from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from .fusion_accelerator_lifecycle_test import FusionAcceleratorLifecycleTest
@@ -168,17 +167,6 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
                 self.fusion_aws_util._cluster_filter(self.cluster.id),
                 log="ClusterNodes", suppress_log=True)}
 
-    def _run_on_cluster_node(self, instance_id, command, timeout=60):
-        """Run a shell command on a KV node over SSM; return the result dict."""
-        self.log.info(f"[ssm] {instance_id}: {command}")
-        result = self.fusion_aws_util.ec2.run_shell_command(
-            instance_id, command, timeout=timeout)
-        self.log.info(
-            f"[ssm] {instance_id} -> success={result.get('success')} "
-            f"rc={result.get('return_code')} stdout={result.get('stdout', '')!r} "
-            f"stderr={result.get('stderr', '')!r}")
-        return result
-
     def _wait_for_no_fusion_infra(self, timeout=None, poll_interval=15):
         """Wait until no accelerators, ASGs or guest volumes remain. Returns a bool.
 
@@ -211,83 +199,6 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
             f"accelerators={last[0]} asgs={last[1]} guest_volumes={last[2]}")
         return False
 
-    # ------------------------------------------------------------------
-    # CBS-side rebalance state (phase 7 onward)
-    # ------------------------------------------------------------------
-
-    def _start_background_load(self, label):
-        """Launch a non-blocking mutation workload; return the loader tasks (or []).
-
-        The third lever for widening the abort window, and the one that acts on the vBucket
-        movement itself rather than around it. A fusion rebalance is quick precisely because
-        the data is already on the guest volumes when CBS starts moving vBuckets — but
-        mutations landing DURING that movement are not on any guest volume, so each vBucket
-        move has to chase a moving target through DCP. More to move means longer to move it.
-
-        Deliberately update-only: creates would push the item count past what the rest of the
-        test (and tearDown's validation) expects, and deletes would fight the read workload at
-        A7. Rate comes from `rebl_ops_rate`, the same param the volume suite uses for
-        during-rebalance mutations.
-
-        Each bucket's loadDefn["ops"] is saved to bucket.original_ops and restored by
-        _stop_background_load, so a leftover rate cannot change later loads in the same run.
-        """
-        rate = int(self.input.param("rebl_ops_rate", 5000))
-        buckets = list(self.cluster.buckets)
-        if not buckets:
-            self.log.warning(f"[bg-load] {label}: no buckets to mutate")
-            return []
-        update_end = int(self.input.param(
-            "bg_load_update_end", self.input.param("create_end", 20_000_000)))
-        for bucket in buckets:
-            JavaDocLoaderUtils.generate_docs(
-                bucket=bucket, doc_ops=["update"],
-                update_start=0, update_end=update_end)
-            bucket.original_ops = bucket.loadDefn.get("ops")
-            bucket.loadDefn["ops"] = rate
-        try:
-            tasks = JavaDocLoaderUtils.perform_load(
-                cluster=self.cluster, buckets=buckets,
-                overRidePattern={"create": 0, "read": 0, "update": 100,
-                                 "delete": 0, "expiry": 0},
-                wait_for_load=False, validate_data=False, wait_for_stats=False,
-                suppress_error_table=True, track_failures=False)
-        except Exception as e:
-            self.log.warning(
-                f"[bg-load] {label}: could not start the background load ({e}) — the "
-                f"rebalance window will be shorter than intended")
-            return []
-        # perform_load returns False on a task-creation failure, [] when nothing ran.
-        if not tasks:
-            self.log.warning(
-                f"[bg-load] {label}: no loader tasks were created — continuing without "
-                f"background mutations")
-            return []
-        self.log.info(
-            f"[bg-load] {label}: {len(tasks)} update task(s) running at "
-            f"{rate} ops/s over items [0, {update_end}) across {len(buckets)} bucket(s)")
-        return tasks
-
-    def _stop_background_load(self, tasks, label):
-        """Stop the background mutation tasks and restore each bucket's ops rate.
-
-        Never raises: this runs on the cleanup path, where a task that has already finished
-        or a loader that has gone away must not mask the finding the test was after.
-        """
-        for task in (tasks or []):
-            try:
-                self.task_manager.stop_task(task)
-            except Exception as e:
-                self.log.warning(
-                    f"[bg-load] {label}: could not stop {getattr(task, 'thread_name', task)}"
-                    f" ({e}) — it may already have finished")
-        for bucket in list(self.cluster.buckets):
-            original = getattr(bucket, "original_ops", None)
-            if original is not None:
-                bucket.loadDefn["ops"] = original
-        if tasks:
-            self.log.info(f"[bg-load] {label}: background load stopped")
-
     def _wait_for_instances_terminated(self, instance_ids, timeout, poll_interval=15):
         """Wait until none of `instance_ids` is a running accelerator. Returns a bool.
 
@@ -313,116 +224,6 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
         self.log.error(
             f"Original accelerator(s) still running after {timeout}s: {sorted(remaining)}")
         return False
-
-    def _cbs_rebalance_state(self, rest=None):
-        """What CBS itself says about a rebalance: (running, progress_pct, detail).
-
-        A fusion rebalance spends most of its life in CP-owned phases where ns_server has
-        no rebalance at all — accelerators launch (4), download shards (5), volumes are
-        transferred to the KV nodes (6) — and only at phase 7 does the CP call
-        `POST /controller/rebalance` and hand the actual vBucket movement to CBS. So
-        "the rebalance task is running" from the Capella task's point of view says nothing
-        about whether ns_server has anything to stop.
-
-        Two endpoints are read because they fail differently: rebalanceProgress reports
-        `status: none` between rebalances and per-node fractions while one runs, whereas
-        /pools/default/tasks carries the rebalance task's own status and progress and
-        survives the moment where progress is still empty. Either reporting 'running' is
-        taken as running.
-
-        progress_pct is None when nothing reports a number yet — that is normal in the
-        first seconds and must not be read as 0% progress.
-        """
-        rest = rest or ClusterRestAPI(self.cluster.master)
-        running = False
-        progress = None
-        detail = dict()
-
-        status, content = rest.rebalance_progress()
-        if status and isinstance(content, dict):
-            detail["rebalanceProgress"] = content
-            if str(content.get("status", "")).lower() == "running":
-                running = True
-                fractions = [v for k, v in content.items()
-                             if k != "status" and isinstance(v, (int, float))]
-                if fractions:
-                    progress = 100.0 * sum(fractions) / len(fractions)
-
-        status, tasks = rest.cluster_tasks()
-        if status and isinstance(tasks, list):
-            for task in tasks:
-                if task.get("type") != "rebalance":
-                    continue
-                detail["task"] = task
-                if str(task.get("status", "")).lower() == "running":
-                    running = True
-                    if task.get("progress") is not None:
-                        try:
-                            progress = float(task["progress"])
-                        except (TypeError, ValueError):
-                            pass
-                break
-        return running, progress, detail
-
-    def _wait_for_cbs_rebalance_running(self, rebalance_task, timeout,
-                                        min_progress=0.0, poll_interval=None):
-        """Block until CBS reports a rebalance running; return (running, progress, detail).
-
-        This is the gate for any fault that has to land on the ns_server rebalance rather
-        than on the CP's earlier phases. Returns running=False if the window never opened —
-        either the rebalance finished first (a fusion rebalance moves vBuckets quickly,
-        since the data is already on the guest volumes) or it failed before phase 7.
-
-        min_progress > 0 waits for the movement to be demonstrably under way rather than
-        merely accepted, at the cost of a smaller window before it completes.
-
-        find_master() is deliberately NOT called up front. It took 160s on a cluster that was
-        mid-scale-out, and every one of those seconds is spent blind: one run's first sample
-        landed 11s after CBS had started rebalancing, on a rebalance that lasted 17s in total.
-        The existing master answers these two read-only endpoints regardless of whether it is
-        still the orchestrator, so the refresh is deferred to the error path.
-
-        poll_interval defaults to `cbs_rebalance_poll_interval` (5s). It has to be short: on
-        Capella there is no way to stall the rebalance, so the window can be as narrow as the
-        ~17s a measured run took end to end, and a 15s cadence would routinely sample once
-        and miss it.
-        """
-        poll_interval = poll_interval if poll_interval is not None else int(
-            self.input.param("cbs_rebalance_poll_interval", 5))
-        self.fusion_monitor.set_admin_credentials(self.cluster)
-        rest = ClusterRestAPI(self.cluster.master)
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if rebalance_task.state in self._FAILED_STATES:
-                self.log.error(
-                    f"Capella reports the rebalance failed ({rebalance_task.state}) before "
-                    f"CBS ever started one — phase 7 was never reached")
-                return False, None, dict()
-            if rebalance_task.state == "healthy":
-                self.log.warning(
-                    "The rebalance completed before CBS was observed rebalancing — the "
-                    "vBucket movement window was missed entirely")
-                return False, None, dict()
-            try:
-                running, progress, detail = self._cbs_rebalance_state(rest)
-            except Exception as e:
-                self.log.warning(
-                    f"Could not read the CBS rebalance state ({e}); refreshing master")
-                self.find_master(self.tenant, self.cluster)
-                rest = ClusterRestAPI(self.cluster.master)
-                time.sleep(poll_interval)
-                continue
-            self.log.info(
-                f"[cbs-rebalance] running={running} progress="
-                f"{'?' if progress is None else f'{progress:.1f}%'} "
-                f"(need >= {min_progress}%) task_state={rebalance_task.state} "
-                f"{int(deadline - time.time())}s left")
-            if running and (progress or 0.0) >= min_progress:
-                return True, progress, detail
-            if self._budget_exhausted("waiting for the CBS rebalance to start"):
-                return False, None, dict()
-            time.sleep(poll_interval)
-        return False, None, dict()
 
     @staticmethod
     def _rebalance_task_note(detail):
