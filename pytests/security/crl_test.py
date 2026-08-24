@@ -2182,6 +2182,136 @@ class CRLTest(CRLBase):
             "narrower than every other CRL endpoint's [admin,security]"
         )
 
+    def test_crl_cbauth_push_config(self):
+        """The CRL 'push config' (cb_crl_manager:get_push_config/0) is what
+        actually reaches cbauth-registered GO services and memcached --
+        crlPolicyPerScope and a version number consumers use to know when
+        to re-pull. Covers: the version bumps for every input that can
+        change a revocation verdict (policy, checkIntermediateCerts, CRL
+        files, trusted CAs), stays put on a genuine no-op re-post and on
+        poll-interval-only changes (an 'operational' key, not 'hashed'),
+        and the pushed policy always matches the real configured one.
+        Also confirms the per-service cbauth CRL cache metrics exist with
+        the right shape -- actually driving their hit/miss counters needs
+        real downstream Go-service CRL-check activity, which is outside
+        ns_server's control and out of scope here."""
+
+        def version():
+            return self.crl_utils.get_push_config_version(self.rest)
+
+        v0 = version()
+
+        # -- policyPerScope is a 'hashed' key: any change bumps the version --
+        status, content = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Policy change failed: {content}")
+        v1 = version()
+        self.assertNotEqual(v0, v1, "policyPerScope is hashed -- version must change")
+
+        # -- Re-posting the exact same value is a genuine no-op --
+        status, content = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status)
+        self.assertEqual(
+            version(), v1, "Re-posting an unchanged value must not bump the version"
+        )
+
+        # -- checkIntermediateCerts is also a 'hashed' key --
+        status, content = self.crl_utils.set_settings(
+            self.rest, checkIntermediateCerts=True
+        )
+        self.assertTrue(status, f"Settings change failed: {content}")
+        v2 = version()
+        self.assertNotEqual(
+            v1, v2, "checkIntermediateCerts is hashed -- version must change"
+        )
+
+        # -- dirPollIntervalMs is 'operational' -- version must NOT change --
+        status, content = self.crl_utils.set_settings(
+            self.rest, dirPollIntervalMs=45000
+        )
+        self.assertTrue(status, f"Settings change failed: {content}")
+        self.assertEqual(
+            version(), v2, "A poll-interval-only change must not affect the version"
+        )
+        self.crl_utils.set_settings(self.rest, dirPollIntervalMs=60000)
+        self.log.info(
+            "crlVersion bumps for hashed config keys, ignores a genuine "
+            "no-op and an operational-only key change"
+        )
+
+        # -- Uploading/deleting a CRL file bumps it too, via file checksums --
+        filename = "push_config_test.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1),
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        v3 = version()
+        self.assertNotEqual(v2, v3, "Uploading a CRL file must bump the version")
+
+        status, content = self.crl_utils.delete_file(self.rest, filename)
+        self.assertTrue(status, f"CRL delete failed: {content}")
+        v4 = version()
+        self.assertNotEqual(v3, v4, "Deleting a CRL file must bump the version again")
+        self.log.info("crlVersion reflects the loaded-CRL-file set too")
+
+        # -- Trusting/untrusting a CA bumps it too, via the trusted-CA set.
+        # self.ca_cert is already trusted from setUp -- re-trusting it would
+        # be a genuine no-op, so a second, genuinely new CA is used here. --
+        extra_ca_cert, _ = self.crl_utils.generate_ca("PushConfigExtraCA")
+        self._trust_ca_on_cluster(extra_ca_cert)
+        v5 = version()
+        self.assertNotEqual(v4, v5, "Trusting a new CA must bump the version")
+        self._cleanup_trusted_cas()
+        v6 = version()
+        self.assertNotEqual(v5, v6, "Untrusting a CA must bump the version again")
+        self.log.info("crlVersion reflects the trusted-CA set too")
+
+        # -- The pushed policy always matches the real configured policy --
+        status, content = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Permissive", "nodeToNode": "Require"},
+        )
+        self.assertTrue(status, f"Policy change failed: {content}")
+        pushed_policy = self.crl_utils.get_push_config_policy_per_scope(self.rest)
+        self.assertEqual(
+            pushed_policy, {"clientAuth": "Permissive", "nodeToNode": "Require"},
+            "Push payload's policy must match the real configured policy",
+        )
+        self.log.info("Push payload's policy always matches the real configured policy")
+
+        # -- notify_crl_change is callable and doesn't error even with no
+        # real connected consumers in this test environment --
+        status, content = self.rest.diag_eval(
+            "atom_to_list(menelaus_cbauth:notify_crl_change())."
+        )
+        self.assertTrue(status, f"notify_crl_change failed: {content}")
+        text = content.decode() if isinstance(content, bytes) else content
+        self.assertIn("ok", text)
+
+        # -- Per-service cbauth CRL cache metrics exist with the right
+        # shape. Actually driving their hit/miss counters needs real
+        # downstream Go-service CRL-check activity (e.g. XDCR or projector
+        # validating a cert), which ns_server-side test code cannot
+        # trigger -- structural presence is as far as this can go. --
+        all_metrics = self.crl_utils.get_all_metrics_text(self.cluster.master)
+        for metric in (
+            "cm_cbauth_crl_cache_current_items", "cm_cbauth_crl_cache_max_items",
+            "cm_cbauth_crl_cache_hit_total", "cm_cbauth_crl_cache_miss_total",
+        ):
+            self.assertIn(metric, all_metrics, f"Expected {metric} to be exposed")
+        self.log.info(
+            "Per-service cbauth CRL cache metrics exist with the right "
+            "shape (hit/miss counters need real downstream service "
+            "activity to actually increment, outside ns_server's control)"
+        )
+
     def test_crl_cert_chain_usage_encoding(self):
         """CRL checks across chain depth (root-direct, intermediate-issued),
         a fully untrusted chain rejected at chain validation before

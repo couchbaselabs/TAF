@@ -504,6 +504,48 @@ class CRLUtils:
         return rest.diag_eval(code)
 
     @staticmethod
+    def get_push_config_version(rest):
+        """
+        The CRL 'version' pushed to cbauth-registered GO services and
+        memcached (cb_crl_manager:get_push_config/0's `version` field) --
+        an order-independent hash of policy/checkIntermediateCerts, loaded
+        CRL files, and trusted CAs. Bumps only when one of those actually
+        changes; a no-op re-post or a poll-interval-only change leaves it
+        untouched. No REST endpoint exposes this -- diag/eval only.
+
+        Returns int.
+        """
+        status, content = rest.diag_eval(
+            "integer_to_list(maps:get(version, cb_crl_manager:get_push_config()))."
+        )
+        if not status:
+            raise AssertionError(f"get_push_config version diag/eval failed: {content}")
+        text = content.decode() if isinstance(content, bytes) else content
+        return int(text.strip().strip('"'))
+
+    @staticmethod
+    def get_push_config_policy_per_scope(rest):
+        """
+        The `policy_per_scope` field of cb_crl_manager:get_push_config/0,
+        translated into the same {"clientAuth": ..., "nodeToNode": ...}
+        shape /settings/crl uses, so a test can compare the push payload
+        directly against the REST-visible policy.
+        """
+        code = (
+            "PolicyList = maps:get(policy_per_scope, cb_crl_manager:get_push_config()), "
+            "ToStr = fun(client_auth) -> \"clientAuth\"; (node_to_node) -> \"nodeToNode\"; "
+            "(disabled) -> \"Disabled\"; (permissive) -> \"Permissive\"; "
+            "(require) -> \"Require\" end, "
+            "string:join([ToStr(S) ++ \"=\" ++ ToStr(M) || {S, M} <- PolicyList], \",\")."
+        )
+        status, content = rest.diag_eval(code)
+        if not status:
+            raise AssertionError(f"get_push_config policy diag/eval failed: {content}")
+        text = content.decode() if isinstance(content, bytes) else content
+        text = text.strip().strip('"')
+        return dict(pair.split("=") for pair in text.split(","))
+
+    @staticmethod
     def get_all_metrics_text(server):
         """Returns the full /metrics (Prometheus text) response from
         `server` as one string, for simple substring/presence checks."""
