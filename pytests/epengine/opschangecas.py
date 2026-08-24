@@ -1,9 +1,15 @@
 import copy
 import json
+import time
 
+import memcacheConstants
 from castest.cas_base import CasBaseTest
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
+from membase.api.rest_client import RestConnection
+from memcached.helper.data_helper import VBucketAwareMemcached
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -982,3 +988,266 @@ class OpsChangeCasTests(CasBaseTest):
             else:
                 self.log_failure("Invalid exception for %s: %s"
                                  % (key, replace_result))
+
+    # ---------------------------------------------------------------- #
+    # MB-73217: replica vbucket max_cas must never regress             #
+    # ---------------------------------------------------------------- #
+
+    # HLC CAS is nanoseconds-since-epoch in its upper bits (the low 16 bits
+    # are the logical counter), so adding N*10^9 moves the CAS N seconds ahead
+    FUTURE_CAS_DELTA_NS = 3600 * (10 ** 9)
+    # A CAS far below any real HLC value - stands in for an XDCR source that
+    # explicitly set a low CAS on the item
+    LOW_CAS = 1000
+
+    def __vb_stat(self, node_ip, vb_num, stat_name):
+        """Read a single vbucket-details stat for vb_num off the given node"""
+        vb_stats = self.node_data[node_ip]["cb_stat"].vbucket_details(
+            self.bucket.name)
+        return int(vb_stats[str(vb_num)][stat_name])
+
+    def __wait_for_replication(self, vb_num, active_ip, replica_ip,
+                               timeout=120):
+        """
+        Block until the replica vbucket has consumed everything the active
+        has. Without this the max_cas assertions can pass vacuously - the
+        replica simply may not have seen the low-CAS mutation yet.
+        """
+        target_seqno = self.__vb_stat(active_ip, vb_num, "high_seqno")
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            if self.__vb_stat(replica_ip, vb_num, "high_seqno") \
+                    >= target_seqno:
+                return True
+            self.sleep(1, "Waiting for replica vb-%s to reach seqno %s"
+                          % (vb_num, target_seqno))
+        return False
+
+    def __pick_vb_with_remote_replica(self, client, avoid_active_on=None):
+        """
+        Returns (vb_num, active_ip, replica_ip) for a vbucket whose active and
+        first replica live on different nodes.
+
+        avoid_active_on skips vbuckets whose active sits on that node. The
+        failover test uses it to keep cluster.master out of the blast radius -
+        RebalanceUtil polls cluster.master for failover progress, so failing
+        that node over costs it its REST endpoint.
+        """
+        for vb_num in sorted(client.vBucketMap.keys()):
+            active_ip = client.vBucketMap[vb_num].rsplit(":", 1)[0]
+            if avoid_active_on and active_ip == avoid_active_on:
+                continue
+            replicas = client.vBucketMapReplica.get(vb_num) or []
+            if not replicas:
+                continue
+            replica_ip = replicas[0].rsplit(":", 1)[0]
+            if replica_ip and replica_ip != active_ip \
+                    and active_ip in self.node_data \
+                    and replica_ip in self.node_data:
+                return vb_num, active_ip, replica_ip
+        return None, None, None
+
+    def __keys_for_vb(self, client, vb_num, num_keys):
+        """Deterministically pick num_keys doc keys that hash to vb_num"""
+        keys = []
+        index = 0
+        while len(keys) < num_keys:
+            key = "mb_73217_%d" % index
+            index += 1
+            if client._get_vBucket_id(key) == vb_num:
+                keys.append(key)
+        return keys
+
+    def __plant_future_then_low_cas(self, client, vb_num, active_ip,
+                                    replica_ip, keys):
+        """
+        Drives the vbucket into the MB-73217 shape and returns the future CAS
+        that max_cas must never fall below.
+
+        1. Regular set to seed the vbucket's HLC
+        2. setWithMeta with a CAS an hour in the future - this is exactly what
+           an XDCR stream from a cluster whose clock runs ahead does
+        3. setWithMeta with a tiny CAS at a *higher* seqno - a higher seqno
+           does not imply a higher CAS once CAS is set explicitly
+        """
+        seed_key, future_key, low_cas_key = keys[0], keys[1], keys[2]
+        mc_active = client.memcached(seed_key)
+
+        self.log.info("Seeding vb-%s HLC on %s" % (vb_num, active_ip))
+        mc_active.set(seed_key, 0, 0, json.dumps({"val": "seed"}))
+        hlc_cas = mc_active.getMeta(seed_key)[4]
+
+        future_cas = hlc_cas + self.FUTURE_CAS_DELTA_NS
+        self.log.info("Planting future CAS %s on vb-%s (current HLC %s)"
+                      % (future_cas, vb_num, hlc_cas))
+        # setWithMeta does not derive the vbucket from the key - do it here
+        mc_active._set_vbucket(future_key)
+        mc_active.setWithMeta(
+            future_key, json.dumps({"val": "future"}), 0, 0, 1, future_cas,
+            options=memcacheConstants.SKIP_CONFLICT_RESOLUTION_FLAG)
+
+        active_max_cas = self.__vb_stat(active_ip, vb_num, "max_cas")
+        if active_max_cas != future_cas:
+            self.fail("Active vb-%s max_cas %s != planted CAS %s"
+                      % (vb_num, active_max_cas, future_cas))
+
+        if not self.__wait_for_replication(vb_num, active_ip, replica_ip):
+            self.fail("Replica vb-%s did not catch up after planting the "
+                      "future CAS" % vb_num)
+        replica_max_cas = self.__vb_stat(replica_ip, vb_num, "max_cas")
+        if replica_max_cas < future_cas:
+            self.fail("Replica vb-%s max_cas %s did not pick up the planted "
+                      "CAS %s - test pre-condition not met"
+                      % (vb_num, replica_max_cas, future_cas))
+
+        self.log.info("Replicating CAS %s (far below max_cas) into vb-%s"
+                      % (self.LOW_CAS, vb_num))
+        mc_active._set_vbucket(low_cas_key)
+        mc_active.setWithMeta(
+            low_cas_key, json.dumps({"val": "low"}), 0, 0, 1, self.LOW_CAS,
+            options=memcacheConstants.SKIP_CONFLICT_RESOLUTION_FLAG)
+        item_cas = mc_active.getMeta(low_cas_key)[4]
+        if item_cas != self.LOW_CAS:
+            self.fail("setWithMeta did not honour the low CAS. Expected %s, "
+                      "item holds %s" % (self.LOW_CAS, item_cas))
+
+        return future_cas
+
+    def test_replica_max_cas_no_regression(self):
+        """
+        MB-73217: A replica vbucket must not copy the incoming CAS into its
+        max_cas. Items arriving at a higher seqno can carry a lower CAS when
+        that CAS was set explicitly (XDCR does this), so blindly copying makes
+        max_cas go backwards.
+
+        Reproduced without XDCR - setWithMeta lets the test plant an explicit
+        CAS on the active exactly the way an XDCR stream would.
+        """
+        if self.num_replicas < 1:
+            self.fail("Test needs at least one replica")
+
+        # Pass the Bucket object (BucketHelper.get_vbuckets needs it, not a
+        # name) and info= explicitly - without info the helper builds a dict
+        # that BucketHelper cannot consume on every branch
+        client = VBucketAwareMemcached(RestConnection(self.cluster.master),
+                                       self.bucket,
+                                       info=self.cluster.master)
+        vb_num, active_ip, replica_ip = \
+            self.__pick_vb_with_remote_replica(client)
+        if vb_num is None:
+            self.fail("No vbucket found with active and replica on "
+                      "different KV nodes")
+        self.log.info("Target vb-%s: active=%s, replica=%s"
+                      % (vb_num, active_ip, replica_ip))
+
+        keys = self.__keys_for_vb(client, vb_num, 3)
+        future_cas = self.__plant_future_then_low_cas(
+            client, vb_num, active_ip, replica_ip, keys)
+
+        if not self.__wait_for_replication(vb_num, active_ip, replica_ip):
+            self.fail("Replica vb-%s did not consume the low-CAS mutation"
+                      % vb_num)
+
+        # The active has always used max() - it is the control for the check
+        active_max_cas = self.__vb_stat(active_ip, vb_num, "max_cas")
+        if active_max_cas < future_cas:
+            self.log_failure("Active vb-%s max_cas regressed from %s to %s"
+                             % (vb_num, future_cas, active_max_cas))
+
+        replica_max_cas = self.__vb_stat(replica_ip, vb_num, "max_cas")
+        self.log.info("vb-%s max_cas after low-CAS mutation: active=%s, "
+                      "replica=%s" % (vb_num, active_max_cas, replica_max_cas))
+        if replica_max_cas < future_cas:
+            self.log_failure(
+                "MB-73217: replica vb-%s max_cas regressed from %s to %s "
+                "after replicating an item with CAS %s"
+                % (vb_num, future_cas, replica_max_cas, self.LOW_CAS))
+        if replica_max_cas != active_max_cas:
+            self.log_failure("vb-%s max_cas mismatch. active=%s, replica=%s"
+                             % (vb_num, active_max_cas, replica_max_cas))
+
+        client.done()
+        self.validate_test_failure()
+
+    def test_max_cas_no_regression_after_failover(self):
+        """
+        MB-73217, black-box variant: the harm of a regressed replica max_cas
+        only surfaces once that replica is promoted. After promotion the
+        vbucket must keep handing out CAS values above the highest CAS it ever
+        held, otherwise CAS goes backwards for clients and LWW conflict
+        resolution silently loses writes.
+
+        Runs on 2 nodes: the target vbucket's active is chosen off
+        cluster.master, so master survives the failover, promotes the
+        replica, and stays reachable for failover progress monitoring.
+        """
+        if self.num_replicas < 1:
+            self.fail("Test needs at least one replica")
+
+        # Pass the Bucket object (BucketHelper.get_vbuckets needs it, not a
+        # name) and info= explicitly - without info the helper builds a dict
+        # that BucketHelper cannot consume on every branch
+        client = VBucketAwareMemcached(RestConnection(self.cluster.master),
+                                       self.bucket,
+                                       info=self.cluster.master)
+        vb_num, active_ip, replica_ip = self.__pick_vb_with_remote_replica(
+            client, avoid_active_on=self.cluster.master.ip)
+        if vb_num is None:
+            self.fail("No vbucket found with its active on a non-master KV "
+                      "node and its replica on a different node")
+        self.log.info("Target vb-%s: active=%s, replica=%s"
+                      % (vb_num, active_ip, replica_ip))
+
+        keys = self.__keys_for_vb(client, vb_num, 4)
+        future_cas = self.__plant_future_then_low_cas(
+            client, vb_num, active_ip, replica_ip, keys)
+        if not self.__wait_for_replication(vb_num, active_ip, replica_ip):
+            self.fail("Replica vb-%s did not consume the low-CAS mutation"
+                      % vb_num)
+        client.done()
+
+        # Drive the failover from cluster.master. The picker guaranteed it is
+        # not the node going away, and RebalanceUtil polls it for progress -
+        # using anything else risks monitoring a node that just left.
+        orchestrator = self.cluster.master
+
+        otp_node = None
+        for node in self.cluster_util.get_otp_nodes(orchestrator):
+            if node.ip == active_ip:
+                otp_node = node.id
+                break
+        if otp_node is None:
+            self.fail("Could not resolve otpNode for %s" % active_ip)
+
+        self.log.info("Hard failing over %s to promote vb-%s on %s"
+                      % (otp_node, vb_num, replica_ip))
+        status, content = ClusterRestAPI(orchestrator).perform_hard_failover(
+            otp_node)
+        if not status:
+            self.fail("Hard failover of %s failed: %s" % (otp_node, content))
+        if not RebalanceUtil(self.cluster).monitor_rebalance():
+            self.fail("Failover rebalance failed")
+
+        # vbucket map has changed - rebuild the client against a live node
+        client = VBucketAwareMemcached(RestConnection(orchestrator),
+                                       self.bucket, info=orchestrator)
+        post_fo_key = keys[3]
+        mc_promoted = client.memcached(post_fo_key)
+        mc_promoted.set(post_fo_key, 0, 0, json.dumps({"val": "post_fo"}))
+        new_cas = mc_promoted.getMeta(post_fo_key)[4]
+        self.log.info("CAS issued by promoted vb-%s: %s (must exceed %s)"
+                      % (vb_num, new_cas, future_cas))
+        if new_cas <= future_cas:
+            self.log_failure(
+                "MB-73217: CAS went backwards after replica promotion. "
+                "vb-%s previously held max_cas %s but now issued %s"
+                % (vb_num, future_cas, new_cas))
+
+        promoted_max_cas = self.__vb_stat(replica_ip, vb_num, "max_cas")
+        if promoted_max_cas < future_cas:
+            self.log_failure(
+                "MB-73217: promoted vb-%s max_cas %s is below the %s it held "
+                "as a replica" % (vb_num, promoted_max_cas, future_cas))
+
+        client.done()
+        self.validate_test_failure()
