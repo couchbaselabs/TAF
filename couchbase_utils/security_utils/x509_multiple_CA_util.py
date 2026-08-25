@@ -5,6 +5,7 @@ import random
 import os
 import copy
 import string
+import time
 from ast import literal_eval
 
 import requests
@@ -941,8 +942,33 @@ class x509main:
                 self.log.info('Output message is {0} and error message is {1}'.format(output, error))
             shell.disconnect()
 
-    @staticmethod
-    def regenerate_certs(server):
+    def _wait_for_all_nodes_healthy(self, server, timeout=120):
+        """regenerateCertificate refuses to run while any cluster node is
+        unreachable (MB-61591), which routinely happens right after a test
+        stops/fails-over/rebalances a node. Poll until the cluster reports
+        every node healthy, or raise if it never recovers in time."""
+        rest = RestConnection(server)
+        deadline = time.time() + timeout
+        unhealthy = []
+        while time.time() < deadline:
+            content = rest.get_pools_default()
+            if not isinstance(content, dict):
+                # server isn't part of a multi-node pool (e.g. already
+                # ejected from the cluster by a swap rebalance) -- no other
+                # members to be unreachable, nothing to wait for.
+                return
+            unhealthy = [node.get("hostname") for node in content.get("nodes", [])
+                        if node.get("status") != "healthy"]
+            if not unhealthy:
+                return
+            time.sleep(5)
+        raise Exception(
+            "Timed out after {0}s waiting for all nodes to become healthy "
+            "before cert regeneration; still unhealthy: {1}".format(
+                timeout, unhealthy))
+
+    def regenerate_certs(self, server, wait_timeout=120):
+        self._wait_for_all_nodes_healthy(server, timeout=wait_timeout)
         rest = RestConnection(server)
         rest.regenerate_cluster_certificate()
 
