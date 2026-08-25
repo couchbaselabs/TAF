@@ -134,12 +134,16 @@ class Windows(ShellConnection, WindowsConstants):
         self.log_command_output(o, [])
 
     def pause_beam(self):
-        """Override method"""
-        raise NotImplementedError
+        self.log.info("*** pause beam.smp (erlang) process ***")
+        cmd = "pssuspend $(tasklist | grep erl.exe | gawk '{printf $2}')"
+        o, r = self.execute_command(cmd)
+        self.log_command_output(o, [])
 
     def unpause_beam(self):
-        """Override method"""
-        raise NotImplementedError
+        self.log.info("*** unpause beam.smp (erlang) process ***")
+        cmd = "pssuspend -r $(tasklist | grep erl.exe | gawk '{printf $2}')"
+        o, r = self.execute_command(cmd)
+        self.log_command_output(o, [])
 
     def get_memcache_pid(self):
          output, error = self.execute_command('tasklist| grep memcache', debug=False)
