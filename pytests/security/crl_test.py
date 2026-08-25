@@ -1252,17 +1252,10 @@ class CRLTest(CRLBase):
         self.crl_utils.reload_crl(self.rest)
         node_key = f"{self.cluster.master.ip}:8091"
 
-        def _file_entry(diag_content):
-            return next(
-                (f for f in diag_content[node_key]["crlFiles"]
-                 if f["filename"] == filename),
-                None,
-            )
-
         # -- diagnostics/status: full response-shape assertion --
         status, content = self.crl_utils.diagnostics_status(self.rest)
         self.assertTrue(status, f"diagnostics/status failed: {content}")
-        entry = _file_entry(content)
+        entry = self.crl_utils.find_diagnostics_file_entry(content, node_key, filename)
         self.assertIsNotNone(entry, f"Uploaded file missing from status: {content}")
         for key in ("filename", "source", "cacheStatus", "entries", "lastReload"):
             self.assertIn(key, entry, f"Missing key {key!r} in file status: {entry}")
@@ -1365,7 +1358,7 @@ class CRLTest(CRLBase):
         try:
             status, content = self.crl_utils.diagnostics_status(self.rest)
             self.assertTrue(status)
-            entry = _file_entry(content)
+            entry = self.crl_utils.find_diagnostics_file_entry(content, node_key, filename)
             self.assertIsNotNone(entry)
             self.assertEqual(
                 entry["cacheStatus"], "untrusted",
@@ -3435,16 +3428,9 @@ class CRLTest(CRLBase):
         self._track_uploaded_file(untrusted_filename)
         self.crl_utils.reload_crl(self.rest)
 
-        def _file_entry(diag_content, filename):
-            return next(
-                (f for f in diag_content[node_key]["crlFiles"]
-                 if f["filename"] == filename),
-                None,
-            )
-
         status, content = self.crl_utils.diagnostics_status(self.rest)
         self.assertTrue(status, f"diagnostics/status failed: {content}")
-        entry = _file_entry(content, untrusted_filename)
+        entry = self.crl_utils.find_diagnostics_file_entry(content, node_key, untrusted_filename)
         self.assertIsNotNone(entry)
         self.assertEqual(entry["cacheStatus"], "active")
 
@@ -3459,7 +3445,9 @@ class CRLTest(CRLBase):
         try:
             status, content = self.crl_utils.diagnostics_status(self.rest)
             self.assertTrue(status)
-            entry = _file_entry(content, untrusted_filename)
+            entry = self.crl_utils.find_diagnostics_file_entry(
+                content, node_key, untrusted_filename
+            )
             self.assertIsNotNone(entry)
             self.assertEqual(
                 entry["cacheStatus"], "untrusted",

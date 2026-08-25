@@ -431,6 +431,31 @@ class CRLUtils:
         status, content, _ = api.get_crl_files()
         return status, self.parse_content(content)
 
+    @staticmethod
+    def find_file_entry(files, filename):
+        """
+        Finds `filename`'s entry in a GET /settings/crl/files response
+        (a plain list). Returns None if not present -- the caller decides
+        whether that's a failure.
+        """
+        for entry in files:
+            if entry.get("filename") == filename:
+                return entry
+        return None
+
+    @staticmethod
+    def find_diagnostics_file_entry(diagnostics_content, node_key, filename):
+        """
+        Finds `filename`'s entry in a GET/POST /settings/crl/diagnostics/status
+        response (the {node_key: {crlFiles: [...]}} shape) for one node.
+        Returns None if not present -- the caller decides whether that's
+        a failure.
+        """
+        for entry in diagnostics_content.get(node_key, {}).get("crlFiles", []):
+            if entry.get("filename") == filename:
+                return entry
+        return None
+
     def upload_file(self, rest, filename, pem_bytes, timeout=300):
         """
         POST /settings/crl/files. Returns (status_bool, content).

@@ -6,49 +6,55 @@ from pytests.security.crl_base import CRLBase
 class CRLFileLifecycle(CRLBase):
     """
     CRL_Core.File_Lifecycle — steady-state REST coverage for the CRL file
-    upload/list/delete API (TestCases_CRL.csv rows 3-4, 7-10; row 2 is already
-    covered by security.crl_test.CRLTest::test_settings_and_file_lifecycle).
+    upload/list/delete API. The basic upload/list/delete round-trip is
+    already covered by security.crl_test.CRLTest::test_settings_and_file_lifecycle.
 
-    Rows 5 (delete_removes_enforcement) and 6 (reupload_overwrite) are
-    excluded from this suite — both require an actual mTLS handshake against
-    a revoked/valid client cert to observe enforcement, not just file-list
+    Enforcement-observing scenarios (e.g. deleting a file restores access,
+    or a re-upload overwrites and changes enforcement) are excluded from
+    this suite — both require an actual mTLS handshake against a
+    revoked/valid client cert to observe enforcement, not just file-list
     state, so they belong with the enforcement-focused tests (e.g.
     crl_test.py or a future dedicated enforcement module) rather than here.
 
-    Two tests below (list_metadata_accuracy, file_status_field_accuracy)
-    assert against a per-file metadata/status JSON schema that is not yet
-    confirmed against a real server response (see TestPlan_CRL.md §1.1) — they
-    accept a small set of plausible field-name/value spellings and fail with
-    the raw entry dumped if none match, so a first real run pinpoints the
-    actual schema instead of silently asserting the wrong key.
+    list_metadata_accuracy and file_status_field_accuracy originally
+    guessed at a per-file metadata/status schema with several candidate
+    field-name spellings, since it hadn't been confirmed against a real
+    server response yet. Confirmed live since (GET /settings/crl/files
+    returns {filename, checksum, uploadTimestamp, entries: [{issuer,
+    thisUpdate, nextUpdate, crlNumber}]} -- no revoked-count field exists
+    at all; per-file status only exists as `cacheStatus` on the separate
+    diagnostics/status endpoint, not here) -- both tests now assert
+    against the confirmed schema directly.
     """
 
-    ISSUER_KEYS = ("issuer", "issuerDN", "issuerName")
-    THIS_UPDATE_KEYS = ("thisUpdate", "lastUpdate", "effectiveDate")
-    NEXT_UPDATE_KEYS = ("nextUpdate", "expiryDate", "expiresAt")
-    REVOKED_COUNT_KEYS = ("revokedCount", "revokedSerialsCount", "numRevoked")
-    STATUS_KEYS = ("status", "state", "cacheStatus")
-
-    VALID_STATUS_VALUES = {"valid", "active"}
+    # cacheStatus values from GET/POST /settings/crl/diagnostics/status
+    # (menelaus_web_crl.erl's status vocabulary) -- there is no such field
+    # on the plain GET /settings/crl/files response used elsewhere below.
+    VALID_STATUS_VALUES = {"active"}
     EXPIRED_STATUS_VALUES = {"expired"}
-    INVALID_STATUS_VALUES = {"invalid", "untrusted"}
+    INVALID_STATUS_VALUES = {"untrusted", "invalid"}
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def _find_file_entry(self, filename):
         status, files = self.crl_utils.list_files(self.rest)
         self.assertTrue(status, f"GET /settings/crl/files failed: {files}")
-        for entry in files:
-            if entry.get("filename") == filename:
-                return entry
-        self.fail(f"Uploaded file {filename!r} not present in file list: {files}")
+        entry = self.crl_utils.find_file_entry(files, filename)
+        self.assertIsNotNone(
+            entry, f"Uploaded file {filename!r} not present in file list: {files}"
+        )
+        return entry
 
-    @staticmethod
-    def _first_present(entry, candidate_keys):
-        for key in candidate_keys:
-            if key in entry:
-                return entry[key]
-        return None
+    def _find_diagnostics_file_entry(self, filename):
+        status, content = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status, f"diagnostics/status failed: {content}")
+        node_key = f"{self.cluster.master.ip}:8091"
+        entry = self.crl_utils.find_diagnostics_file_entry(content, node_key, filename)
+        self.assertIsNotNone(
+            entry,
+            f"Uploaded file {filename!r} not present in diagnostics/status: {content}",
+        )
+        return entry
 
     def _upload_and_track(self, filename, pem_bytes, timeout=300):
         status, content = self.crl_utils.upload_file(
@@ -75,7 +81,7 @@ class CRLFileLifecycle(CRLBase):
     # ── Tests ────────────────────────────────────────────────────────────────
 
     def test_crl_upload_valid_der(self):
-        """CSV row 3 — DER-encoded CRL is accepted identically to PEM."""
+        """DER-encoded CRL is accepted identically to PEM."""
         crl_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1)
         crl_der = self.crl_utils.pem_crl_to_der(crl_pem)
 
@@ -88,8 +94,11 @@ class CRLFileLifecycle(CRLBase):
         self.log.info(f"DER upload listed as expected: {entry}")
 
     def test_crl_list_metadata_accuracy(self):
-        """CSV row 4 — issuer/thisUpdate/nextUpdate/revoked-count metadata
-        for a listed CRL matches what was signed into it."""
+        """issuer/thisUpdate/nextUpdate/crlNumber metadata for a listed
+        CRL matches what was signed into it. No revoked-serial
+        count is asserted here -- GET /settings/crl/files never exposes
+        one (confirmed live); crlNumber is the closest available signal
+        that the listed metadata reflects the signed content."""
         this_update = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
         next_update = this_update + datetime.timedelta(days=10)
         revoked_serials = [111111, 222222, 333333]
@@ -104,46 +113,35 @@ class CRLFileLifecycle(CRLBase):
         self._upload_and_track(filename, crl_pem)
 
         entry = self._find_file_entry(filename)
-        self.log.info(f"Metadata entry under test: {entry}")
-
-        issuer = self._first_present(entry, self.ISSUER_KEYS)
-        self.assertIsNotNone(
-            issuer, f"No issuer-like field ({self.ISSUER_KEYS}) in entry: {entry}"
+        self.log.info(f"File entry under test: {entry}")
+        crl_entries = entry.get("entries")
+        self.assertTrue(
+            crl_entries, f"Expected a non-empty 'entries' list on the file entry: {entry}"
         )
-        ca_cn = self.ca_cert.subject.rfc4514_string()
+        metadata = crl_entries[0]
+
         self.assertIn(
-            "TestCA1", str(issuer),
-            f"Issuer field {issuer!r} does not reference signing CA {ca_cn!r}",
-        )
-
-        revoked_count = self._first_present(entry, self.REVOKED_COUNT_KEYS)
-        self.assertIsNotNone(
-            revoked_count,
-            f"No revoked-count field ({self.REVOKED_COUNT_KEYS}) in entry: {entry}",
+            "TestCA1", metadata.get("issuer", ""),
+            f"issuer {metadata.get('issuer')!r} does not reference signing CA TestCA1",
         )
         self.assertEqual(
-            int(revoked_count), len(revoked_serials),
-            f"Revoked count {revoked_count} != {len(revoked_serials)} signed serials",
+            metadata.get("crlNumber"), 42,
+            f"crlNumber {metadata.get('crlNumber')} != the 42 signed into this CRL",
         )
-
-        for label, keys in (
-            ("thisUpdate", self.THIS_UPDATE_KEYS),
-            ("nextUpdate", self.NEXT_UPDATE_KEYS),
-        ):
-            value = self._first_present(entry, keys)
-            self.assertIsNotNone(value, f"No {label}-like field ({keys}) in entry: {entry}")
-            self.log.info(f"{label} reported as: {value}")
+        for label in ("thisUpdate", "nextUpdate"):
+            self.assertIn(label, metadata, f"Missing {label!r} in entry: {metadata}")
+            self.log.info(f"{label} reported as: {metadata[label]}")
 
     def test_crl_upload_malformed_rejected(self):
-        """CSV row 7 — truncated/random bytes are rejected, not listed."""
+        """Truncated/random bytes are rejected, not listed."""
         garbage = b"this-is-not-a-valid-crl-just-random-bytes-1234567890"
         self._assert_upload_rejected(
             "crl_malformed.pem", garbage, reason="malformed CRL bytes"
         )
 
     def test_crl_upload_invalid_filename_rejected(self):
-        """CSV row 8 — path traversal, disallowed characters, and >255-char
-        filenames are all rejected at upload time."""
+        """Path traversal, disallowed characters, and >255-char filenames
+        are all rejected at upload time."""
         crl_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1)
 
         cases = [
@@ -155,10 +153,10 @@ class CRLFileLifecycle(CRLBase):
             self._assert_upload_rejected(filename, crl_pem, reason=reason)
 
     def test_crl_upload_oversized_file(self):
-        """CSV row 9 — an oversized CRL either hits a documented size-limit
-        rejection, or uploads within the configured extended timeout with no
-        hang. Server-side size limit is undocumented (CSV: Blocked) — this
-        test tolerates either outcome and only fails on a hang/exception."""
+        """An oversized CRL either hits a documented size-limit rejection,
+        or uploads within the configured extended timeout with no hang.
+        Server-side size limit is undocumented — this test tolerates
+        either outcome and only fails on a hang/exception."""
         large_serial_count = 50000
         revoked_serials = list(range(1, large_serial_count + 1))
         crl_pem = self.crl_utils.build_crl(
@@ -180,27 +178,27 @@ class CRLFileLifecycle(CRLBase):
             self.log.info(f"Oversized CRL rejected (acceptable per size limit): {content}")
 
     def test_crl_file_status_field_accuracy(self):
-        """CSV row 10 — per-file status field reflects valid/expired/invalid
-        state. Expired- and untrusted-CRL uploads may themselves be rejected
-        at upload time (see CRLUtils.build_crl's `expired` docstring) — both
-        the accepted-with-status-field and rejected-at-upload branches are
-        treated as valid outcomes and logged distinctly."""
-        # Valid CRL — expect an accepted upload with a "valid"-ish status.
+        """Per-file status reflects valid/expired/invalid state. The
+        plain GET /settings/crl/files response has no status
+        field at all (confirmed live) -- `cacheStatus` only exists on
+        GET/POST /settings/crl/diagnostics/status, so that's the endpoint
+        checked here. Expired- and untrusted-CRL uploads may themselves be
+        rejected at upload time (see CRLUtils.build_crl's `expired`
+        docstring) — both the accepted-with-status and rejected-at-upload
+        branches are treated as valid outcomes and logged distinctly."""
+        # Valid CRL — expect an accepted upload with cacheStatus "active".
         valid_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1)
         valid_filename = "crl_status_valid.pem"
         self._upload_and_track(valid_filename, valid_pem)
-        valid_entry = self._find_file_entry(valid_filename)
-        valid_status = self._first_present(valid_entry, self.STATUS_KEYS)
-        self.assertIsNotNone(
-            valid_status, f"No status-like field ({self.STATUS_KEYS}) in entry: {valid_entry}"
-        )
+        self.crl_utils.reload_crl(self.rest)
+        valid_entry = self._find_diagnostics_file_entry(valid_filename)
         self.assertIn(
-            str(valid_status).lower(), self.VALID_STATUS_VALUES,
-            f"Valid CRL reported unexpected status {valid_status!r}: {valid_entry}",
+            valid_entry.get("cacheStatus"), self.VALID_STATUS_VALUES,
+            f"Valid CRL reported unexpected cacheStatus: {valid_entry}",
         )
 
-        # Expired CRL — upload may be accepted (status "expired") or rejected
-        # outright; both are acceptable, log which branch actually happened.
+        # Expired CRL — upload may be accepted (cacheStatus "expired") or
+        # rejected outright; both are acceptable, log which branch fired.
         expired_pem = self.crl_utils.build_crl(
             self.ca_cert, self.ca_key, crl_number=2, expired=True
         )
@@ -208,17 +206,13 @@ class CRLFileLifecycle(CRLBase):
         status, content = self.crl_utils.upload_file(self.rest, expired_filename, expired_pem)
         if status:
             self._track_uploaded_file(expired_filename)
-            expired_entry = self._find_file_entry(expired_filename)
-            expired_status = self._first_present(expired_entry, self.STATUS_KEYS)
-            self.assertIsNotNone(
-                expired_status,
-                f"No status-like field ({self.STATUS_KEYS}) in entry: {expired_entry}",
-            )
+            self.crl_utils.reload_crl(self.rest)
+            expired_entry = self._find_diagnostics_file_entry(expired_filename)
             self.assertIn(
-                str(expired_status).lower(), self.EXPIRED_STATUS_VALUES,
-                f"Expired CRL reported unexpected status {expired_status!r}: {expired_entry}",
+                expired_entry.get("cacheStatus"), self.EXPIRED_STATUS_VALUES,
+                f"Expired CRL reported unexpected cacheStatus: {expired_entry}",
             )
-            self.log.info(f"Expired CRL accepted with status: {expired_status}")
+            self.log.info(f"Expired CRL accepted with cacheStatus: {expired_entry['cacheStatus']}")
         else:
             self.log.info(f"Expired CRL rejected at upload time (acceptable): {content}")
 
@@ -231,17 +225,14 @@ class CRLFileLifecycle(CRLBase):
         status, content = self.crl_utils.upload_file(self.rest, untrusted_filename, untrusted_pem)
         if status:
             self._track_uploaded_file(untrusted_filename)
-            untrusted_entry = self._find_file_entry(untrusted_filename)
-            untrusted_status = self._first_present(untrusted_entry, self.STATUS_KEYS)
-            self.assertIsNotNone(
-                untrusted_status,
-                f"No status-like field ({self.STATUS_KEYS}) in entry: {untrusted_entry}",
-            )
+            self.crl_utils.reload_crl(self.rest)
+            untrusted_entry = self._find_diagnostics_file_entry(untrusted_filename)
             self.assertIn(
-                str(untrusted_status).lower(), self.INVALID_STATUS_VALUES,
-                f"Untrusted-CA CRL reported unexpected status {untrusted_status!r}: "
-                f"{untrusted_entry}",
+                untrusted_entry.get("cacheStatus"), self.INVALID_STATUS_VALUES,
+                f"Untrusted-CA CRL reported unexpected cacheStatus: {untrusted_entry}",
             )
-            self.log.info(f"Untrusted-CA CRL accepted with status: {untrusted_status}")
+            self.log.info(
+                f"Untrusted-CA CRL accepted with cacheStatus: {untrusted_entry['cacheStatus']}"
+            )
         else:
             self.log.info(f"Untrusted-CA CRL rejected at upload time (acceptable): {content}")
