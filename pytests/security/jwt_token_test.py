@@ -561,7 +561,8 @@ class JWTTokenTest(OnPremBaseTest):
         )
 
         if content:
-            content_lower = content.lower()
+            content_str = content if isinstance(content, str) else json.dumps(content)
+            content_lower = content_str.lower()
             expiry_keywords = ["expir", "expire", "valid", "token", "jwt"]
             has_expiry_indicator = any(k in content_lower for k in expiry_keywords)
             self.assertTrue(
@@ -1343,8 +1344,9 @@ class JWTTokenTest(OnPremBaseTest):
         )
 
         if content and self.pub_key:
+            content_str = content if isinstance(content, str) else json.dumps(content)
             self.assertFalse(
-                self.pub_key in content,
+                self.pub_key in content_str,
                 "Public key should not appear in authz responses",
             )
 

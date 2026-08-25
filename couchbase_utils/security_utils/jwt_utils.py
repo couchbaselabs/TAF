@@ -1141,7 +1141,8 @@ class JWTUtils:
             )
 
         if content:
-            content_lower = content.lower()
+            content_str = content if isinstance(content, str) else json.dumps(content)
+            content_lower = content_str.lower()
             assert any(k in content_lower for k in ["jwt", "token", "invalid", "malformed"]), (
                 f"Unexpected error content: {content}"
             )
