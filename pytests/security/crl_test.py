@@ -1563,8 +1563,9 @@ class CRLTest(CRLBase):
         """Audit events for CRL admin actions, RBAC-denied attempts, and a
         revoked-cert connection rejection (the last two via a generic
         event, not a CRL-specific one); no serial/PEM leakage into logs;
-        revoked vs missing vs expired CRL producing distinguishable log
-        text; and the cm_crl_status_checks_total revocation-check metric.
+        revoked vs missing vs expired vs already-loaded-then-untrusted-CA
+        CRL all producing distinguishable runtime log text; and the
+        cm_crl_status_checks_total revocation-check metric.
 
         Note: untrusted-issuer/forged-signature CRL rejection producing a
         distinct upload-time error message is already covered by
@@ -1884,6 +1885,67 @@ class CRLTest(CRLBase):
             self.log.info(
                 "Revoked/missing/expired CRL rejections all produce "
                 "distinguishable log text"
+            )
+
+            # An already-loaded CRL whose issuing CA becomes untrusted
+            # afterward also gets a distinguishable runtime log line --
+            # but confirmed live that a real handshake won't show it: once
+            # untrusted, the connection is rejected at the generic TLS
+            # chain-validation layer, before cb_crl:apply_policy ever
+            # runs, so no "(CRL)" line appears for it. diagnostics/validate
+            # exercises that exact same runtime code path directly (its
+            # own response text already matches this log line format), so
+            # it's used here instead of wait_for_crl_log_text's
+            # live-handshake polling.
+            untrusted_ca_cert, untrusted_ca_key = self.crl_utils.generate_ca(
+                "AuditUntrustedCA"
+            )
+            self._trust_ca_on_cluster(untrusted_ca_cert)
+            untrusted_leaf_cert, _, _ = self.crl_utils.generate_leaf_cert(
+                untrusted_ca_cert, untrusted_ca_key, "auditUntrustedLeaf"
+            )
+            untrusted_ca_filename = "audit_untrusted_ca.pem"
+            status, content = self.crl_utils.upload_file(
+                self.rest, untrusted_ca_filename,
+                self.crl_utils.build_crl(untrusted_ca_cert, untrusted_ca_key, crl_number=1),
+            )
+            self.assertTrue(status, f"CRL upload failed: {content}")
+            self._track_uploaded_file(untrusted_ca_filename)
+            self.crl_utils.reload_crl(self.rest)
+            status, content = self.crl_utils.untrust_ca_by_cn(self.rest, "AuditUntrustedCA")
+            self.assertTrue(status, f"Untrust-by-CN diag/eval failed: {content}")
+            # Wait for the untrust to actually reach cb_crl_manager's cache
+            # before validating -- diagnostics/status flipping to
+            # "untrusted" is the confirmed signal that it has (same pattern
+            # already proven in test_crl_diagnostics_endpoints).
+            node_key = f"{self.cluster.master.ip}:8091"
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                status, diag = self.crl_utils.diagnostics_status(self.rest)
+                entry = self.crl_utils.find_diagnostics_file_entry(
+                    diag, node_key, untrusted_ca_filename
+                )
+                if entry and entry.get("cacheStatus") == "untrusted":
+                    break
+                time.sleep(2)
+            else:
+                self.fail(f"{untrusted_ca_filename} never reported cacheStatus=untrusted")
+            status, content = self.crl_utils.diagnostics_validate(
+                self.rest, policy="Require",
+                certs=[self.crl_utils.cert_to_pem(untrusted_leaf_cert).decode()],
+            )
+            self.assertTrue(status, f"diagnostics/validate failed: {content}")
+            log_text = grep_remote_log(shell, self.DEBUG_LOG_PATH, "(CRL)", lines=3).lower()
+            self.assertTrue(
+                all(s in log_text for s in ("undetermined", "rejected")),
+                f"Expected the runtime enforcement log to say "
+                f"'undetermined'+'rejected' for an already-loaded CRL "
+                f"whose issuing CA later became untrusted, got: {log_text}",
+            )
+            self.log.info(
+                "Runtime log line for an already-loaded CRL whose issuing "
+                "CA became untrusted also says 'undetermined'+'rejected', "
+                "distinguishable from missing/expired"
             )
 
             # No CRL load-success/failure metric should exist.
