@@ -117,30 +117,54 @@ class CRLBase(ClusterSetup):
             pass
 
     def _self_heal_stuck_trusted_cas(self):
-        """Untrusts every CA except the node's auto-generated one, clearing
-        both the chronicle `ca_certificates` key and the inbox/CA directory
-        on disk, before this test trusts its own fresh CA. Must run after
-        super().setUp() since it needs diag/eval. Best-effort: logs, doesn't
-        raise."""
-        code = (
-            "{ok, {Certs, _Rev}} = chronicle_kv:get(kv, ca_certificates), "
-            "NewCerts = lists:filter(fun(PL) -> "
-            "proplists:get_value(id, PL) =:= 0 end, Certs), "
-            "OldCount = length(Certs), "
-            "chronicle_kv:set(kv, ca_certificates, NewCerts), "
-            "OldCount."
-        )
+        """Untrusts every leftover CA from a previous run, clearing both the
+        `ca_certificates` chronicle key (via the real per-id REST endpoint,
+        not a raw chronicle_kv overwrite) and the inbox/CA directory on
+        disk, before this test trusts its own fresh CA. Must run after
+        super().setUp() since it needs the REST API up.
+
+        Deliberately does NOT try to guess which CA id is "the node's own
+        auto-generated one" (CA ids are just a monotonically increasing
+        counter -- id 0 is only special the very first time a node boots,
+        and stops being current the moment node-init's rename-triggered
+        cert regen creates a new CA+leaf pair, which happens on every
+        freshly-provisioned node). Instead this tries to delete every CA
+        present and relies on the server's own protection: DELETE
+        /pools/default/trustedCAs/{id} refuses (error, not 204) to remove a
+        CA that's actually in use by a node's current certificate. That
+        naturally leaves the real current CA alone and only removes
+        genuinely orphaned ones, however many there are or whatever id they
+        landed on. Best-effort: logs, doesn't raise.
+        """
         try:
-            status, old_count = self.rest.diag_eval(code)
+            status, content = self.rest.get_trusted_CAs()
             if not status:
-                raise RuntimeError(f"diag/eval failed: {old_count}")
-            removed = int(old_count) - 1
+                raise RuntimeError(f"GET trustedCAs failed: {content}")
+            cas = json.loads(content)
+            removed = 0
+            for entry in cas:
+                ca_id = entry.get("id")
+                try:
+                    del_status, _, _ = self.rest.delete_trusted_CA(ca_id)
+                    if del_status:
+                        removed += 1
+                except Exception as exc:
+                    # One CA's delete failing (e.g. a transient network
+                    # hiccup) must not stop the rest of this cleanup pass --
+                    # otherwise a single bad iteration leaves every
+                    # later-listed CA (including genuinely stale ones)
+                    # untouched, needlessly carrying the problem into the
+                    # next test too.
+                    self.log.warning(
+                        f"Trusted CA self-heal: delete of id={ca_id} "
+                        f"failed, continuing with the rest: {exc}"
+                    )
             if removed > 0:
                 self.log.warning(
                     f"{self.cluster.master.ip} had {removed} stale trusted "
-                    f"CA(s) left over from a previous run -- untrusted all "
-                    f"of them (kept only the node's own auto-generated CA) "
-                    f"before this test starts."
+                    f"CA(s) left over from a previous run -- untrusted "
+                    f"them before this test starts (any CA still actually "
+                    f"in use was left alone by the server)."
                 )
         except Exception as exc:
             self.log.warning(f"Trusted CA self-heal error: {exc}")
@@ -351,22 +375,17 @@ class CRLBase(ClusterSetup):
         self._temp_pem_files = []
 
     def _cleanup_trusted_cas(self):
-        """Untrusts every CA this test trusted via _trust_ca_on_cluster,
-        via a chronicle_kv edit (no REST endpoint exists for this).
-        Best-effort: logs, doesn't raise."""
-        if not self._trusted_ca_ids:
-            return
-        ids_literal = "[" + ",".join(str(i) for i in self._trusted_ca_ids) + "]"
-        code = (
-            "{ok, {Certs, _Rev}} = chronicle_kv:get(kv, ca_certificates), "
-            f"Ids = {ids_literal}, "
-            "NewCerts = lists:filter(fun(PL) -> "
-            "not lists:member(proplists:get_value(id, PL), Ids) end, Certs), "
-            "chronicle_kv:set(kv, ca_certificates, NewCerts)."
-        )
-        status, content = self.rest.diag_eval(code)
-        if not status:
-            self.log.warning(f"Trusted CA cleanup diag/eval failed: {content}")
+        """Untrusts every CA this test trusted via _trust_ca_on_cluster, via
+        the real per-id REST endpoint (DELETE /pools/default/trustedCAs/{id})
+        rather than a raw chronicle_kv overwrite -- the latter bypasses the
+        server's own "CA still in use" protection. Best-effort: logs,
+        doesn't raise."""
+        for ca_id in self._trusted_ca_ids:
+            status, content, _ = self.rest.delete_trusted_CA(ca_id)
+            if not status:
+                self.log.warning(
+                    f"Failed to untrust CA id={ca_id} in teardown: {content}"
+                )
         self._trusted_ca_ids = []
 
     def _create_rbac_test_user(self, username, role, password="Couchbase@1234"):

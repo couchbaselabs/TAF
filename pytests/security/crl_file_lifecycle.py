@@ -57,14 +57,17 @@ class CRLFileLifecycle(CRLBase):
         return entry
 
     def _upload_and_track(self, filename, pem_bytes, timeout=300):
+        self.log.info(f"Uploading {filename!r} ({len(pem_bytes)} bytes)")
         status, content = self.crl_utils.upload_file(
             self.rest, filename, pem_bytes, timeout=timeout
         )
         self.assertTrue(status, f"CRL upload failed for {filename}: {content}")
         self._track_uploaded_file(filename)
+        self.log.info(f"Uploaded {filename!r}: {content}")
         return content
 
     def _assert_upload_rejected(self, filename, payload, reason):
+        self.log.info(f"Uploading {filename!r} expecting rejection ({reason})")
         status, content = self.crl_utils.upload_file(self.rest, filename, payload)
         self.assertFalse(
             status,
@@ -77,6 +80,7 @@ class CRLFileLifecycle(CRLBase):
             filename, names,
             f"Rejected upload ({reason}) still appears in file list: {files}",
         )
+        self.log.info(f"Upload of {filename!r} correctly rejected ({reason}): {content}")
 
     # ── Tests ────────────────────────────────────────────────────────────────
 
@@ -86,9 +90,7 @@ class CRLFileLifecycle(CRLBase):
         crl_der = self.crl_utils.pem_crl_to_der(crl_pem)
 
         filename = "crl_der_upload.der"
-        self.log.info(f"Uploading DER-encoded CRL as {filename}")
-        content = self._upload_and_track(filename, crl_der)
-        self.log.info(f"DER CRL uploaded: {content}")
+        self._upload_and_track(filename, crl_der)
 
         entry = self._find_file_entry(filename)
         self.log.info(f"DER upload listed as expected: {entry}")
@@ -103,6 +105,10 @@ class CRLFileLifecycle(CRLBase):
         next_update = this_update + datetime.timedelta(days=10)
         revoked_serials = [111111, 222222, 333333]
 
+        self.log.info(
+            f"Signing a CRL with crl_number=42, revoked_serials={revoked_serials}, "
+            f"thisUpdate={this_update}, nextUpdate={next_update}"
+        )
         crl_pem = self.crl_utils.build_crl(
             self.ca_cert, self.ca_key,
             revoked_serials=revoked_serials,
@@ -124,10 +130,12 @@ class CRLFileLifecycle(CRLBase):
             "TestCA1", metadata.get("issuer", ""),
             f"issuer {metadata.get('issuer')!r} does not reference signing CA TestCA1",
         )
+        self.log.info(f"issuer correctly references TestCA1: {metadata.get('issuer')!r}")
         self.assertEqual(
             metadata.get("crlNumber"), 42,
             f"crlNumber {metadata.get('crlNumber')} != the 42 signed into this CRL",
         )
+        self.log.info("crlNumber matches the 42 signed into this CRL")
         for label in ("thisUpdate", "nextUpdate"):
             self.assertIn(label, metadata, f"Missing {label!r} in entry: {metadata}")
             self.log.info(f"{label} reported as: {metadata[label]}")
@@ -196,6 +204,7 @@ class CRLFileLifecycle(CRLBase):
             valid_entry.get("cacheStatus"), self.VALID_STATUS_VALUES,
             f"Valid CRL reported unexpected cacheStatus: {valid_entry}",
         )
+        self.log.info(f"Valid CRL reported cacheStatus: {valid_entry['cacheStatus']}")
 
         # Expired CRL — upload may be accepted (cacheStatus "expired") or
         # rejected outright; both are acceptable, log which branch fired.

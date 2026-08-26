@@ -3621,20 +3621,28 @@ class CRLTest(CRLBase):
         worsen mTLS handshake latency under Require vs Disabled. (KV-side
         CRUD latency under CRL enforcement is explicitly out of scope
         here -- that's KV-owned, not ns_server's.)"""
-        # -- Upload timeout/retry: a 10k-entry CRL takes roughly 13-15s
-        # to validate server-side (measured live against this cluster,
-        # consistent with the existing manual QA pass's ~40s for a
-        # 30k-entry upload) -- a 3s timeout is nowhere near enough time,
-        # a 60s one comfortably is. --
+        # -- Upload timeout/retry: CRLUtils.upload_file's `timeout` is both
+        # the requests.post() socket timeout AND the retry deadline
+        # (couchbase_utils/cb_server_rest_util/security/crl.py) -- if the
+        # HTTP round-trip completes at all within that window, the call
+        # returns normally, no exception, regardless of how long server-
+        # side validation took. So this can't rely on an assumed CRL
+        # validation duration (that varies with node speed/load and was
+        # flaky here) -- instead pick a timeout far too short for any real
+        # network round-trip of a multipart upload this size to complete
+        # in, independent of server-side processing time entirely.
         large_serials = list(range(1, 10001))
         large_pem = self.crl_utils.build_crl(
             self.ca_cert, self.ca_key, revoked_serials=large_serials, crl_number=1,
         )
         filename = "perf_large_upload.pem"
+        too_short_timeout = 0.01
 
         start = time.monotonic()
         with self.assertRaises(Exception):
-            self.crl_utils.upload_file(self.rest, filename, large_pem, timeout=3)
+            self.crl_utils.upload_file(
+                self.rest, filename, large_pem, timeout=too_short_timeout,
+            )
         elapsed = time.monotonic() - start
         self.assertLess(
             elapsed, 30,
@@ -3642,8 +3650,8 @@ class CRLTest(CRLBase):
             f"indefinitely -- took {elapsed:.1f}s",
         )
         self.log.info(
-            f"Too-short (3s) timeout for a 10k-entry CRL failed cleanly "
-            f"after {elapsed:.1f}s"
+            f"Too-short ({too_short_timeout}s) timeout for a 10k-entry CRL "
+            f"failed cleanly after {elapsed:.1f}s"
         )
 
         status, content = self.crl_utils.list_files(self.rest)
