@@ -512,8 +512,9 @@ class DocHistoryRetention(ClusterSetup):
             # Validate if hist_start_seqno == 0
             stats["before_ops"] = \
                 self.bucket_util.get_vb_details_for_bucket(bucket, kv_nodes)
-            self.bucket_util.validate_history_start_seqno_stat(
+            result = self.bucket_util.validate_history_start_seqno_stat(
                 {},  stats["before_ops"], no_history_preserved=True)
+            self.assertTrue(result, "Validation failed")
 
         coll_cdc_incr = 0
         self.log.critical("Using node '%s' for testing" % target_node.ip)
@@ -663,8 +664,9 @@ class DocHistoryRetention(ClusterSetup):
                         .format(vb_num, r_stat["high_seqno"],
                                 r_stat["history_start_seqno"] + coll_cdc_incr))
 
-        self.bucket_util.validate_history_start_seqno_stat(
+        result = self.bucket_util.validate_history_start_seqno_stat(
             stats["before_ops"], stats["after_ops"], comparison=">")
+        self.assertTrue(result, "Validation failed")
         self.log.info("Disabling history retention")
         self.bucket_util.update_bucket_property(
             self.cluster.master, bucket,
