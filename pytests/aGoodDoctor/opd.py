@@ -1620,7 +1620,13 @@ class OPD:
         rest = BucketHelper(self.cluster.master)
         self.log.info("%s continuous backup for bucket: %s"
                       % ("Enabling" if enable else "Disabling", bucket.name))
-        status = rest.change_bucket_props(bucket, continuous_backup_enabled=enable)
+        if enable:
+            status = rest.change_bucket_props(
+                bucket, continuous_backup_enabled=enable,
+                continuous_backup_retention_period=self.input.param(
+                    "continuous_backup_retention_period", 1440))
+        else:
+            status = rest.change_bucket_props(bucket, continuous_backup_enabled=enable)
 
         if status:
             bucket.continuousBackupEnabled = enable

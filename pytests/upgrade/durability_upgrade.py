@@ -1440,7 +1440,8 @@ class UpgradeTests(UpgradeBase):
                     history_retention_bytes=0,
                     continuous_backup_interval=self.continuous_backup_interval,
                     continuous_backup_location=self.continuous_backup_location,
-                    continuous_backup_enabled=True)
+                    continuous_backup_enabled=True,
+                    continuous_backup_retention_period=self.continuous_backup_retention_period)
                 self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
 
         self.sleep(self.continuous_backup_interval * 60,

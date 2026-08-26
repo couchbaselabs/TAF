@@ -171,7 +171,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info("Re-enabling continuous backup after restore: %s" % self.bucket.name)
         self.bucket_util.update_bucket_property(
             self.cluster.master, self.bucket,
-            continuous_backup_enabled=True)
+            continuous_backup_enabled=True,
+            continuous_backup_retention_period=self.continuous_backup_retention_period)
 
     def _create_and_restore_to_new_bucket(self, expected_item_count):
         self.restore_bucket_name = f"restore_bucket_{int(time.time())}"
@@ -966,7 +967,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util.update_bucket_property(
             self.cluster.master, self.bucket,
             continuous_backup_enabled=True,
-            continuous_backup_location=self.continuous_backup_location)
+            continuous_backup_location=self.continuous_backup_location,
+            continuous_backup_retention_period=self.continuous_backup_retention_period)
         self.sleep(10, "Waiting for settings to apply")
 
         # Wait for continuous backup to capture the (now empty) post-flush state
@@ -1166,7 +1168,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
             self.log.info("Re-enabling continuous backup")
             self.bucket_util.update_bucket_property(self.cluster.master, self.bucket, continuous_backup_enabled=True,
-                                                    continuous_backup_location=self.continuous_backup_location)
+                                                    continuous_backup_location=self.continuous_backup_location,
+                                                    continuous_backup_retention_period=self.continuous_backup_retention_period)
             self.sleep(10, "Waiting for settings to apply")
 
         # --- Test continuousBackupInterval change ---
