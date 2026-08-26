@@ -236,6 +236,20 @@ class CommunityEditionRestrictions(ClusterSetup):
     def _combined(output, error):
         return "\n".join((output or []) + (error or []))
 
+    # couchbase-cli --services expects CLI service names, not the REST names
+    # used by /clusterInit and /controller/addNode
+    _REST_TO_CLI_SERVICE = {
+        "kv": "data",
+        "n1ql": "query",
+        "cbas": "analytics",
+    }
+
+    @classmethod
+    def _cli_services(cls, services):
+        """Translate REST service names (kv/n1ql/cbas) to couchbase-cli names."""
+        return ",".join(cls._REST_TO_CLI_SERVICE.get(svc.strip(), svc.strip())
+                        for svc in services.split(","))
+
     # ------------------------------------------------------------------
     # CLI enforcement tests (CBQE-8973)
     # ------------------------------------------------------------------
@@ -288,7 +302,7 @@ class CommunityEditionRestrictions(ClusterSetup):
             data_ramsize=256,
             index_ramsize=None,
             fts_ramsize=None,
-            services="kv",
+            services=self._cli_services("kv"),
             index_storage_mode=None,
             cluster_name="CE_PhoneHome_Test",
             cluster_username=master.rest_username,
@@ -361,7 +375,7 @@ class CommunityEditionRestrictions(ClusterSetup):
         shell, cb_cli = self._cli_on(self.cluster.master)
 
         try:
-            output = cb_cli.add_node(spare, "kv")
+            output = cb_cli.add_node(spare, self._cli_services("kv"))
             output_str = "\n".join(output) if isinstance(output, list) \
                 else str(output)
             add_failed = False
@@ -375,7 +389,7 @@ class CommunityEditionRestrictions(ClusterSetup):
             lower = output_str.lower()
             self.assertTrue(
                 "community" in lower or "enterprise" in lower
-                or "5" in lower or "limit" in lower,
+                or "limit" in lower,
                 "Expected CE-specific error. Got: %s" % output_str)
             self.log.info("CE rejected server-add of 6th node: %s",
                           output_str[:300])
@@ -404,7 +418,7 @@ class CommunityEditionRestrictions(ClusterSetup):
         shell, cb_cli = self._cli_on(self.cluster.master)
 
         try:
-            output = cb_cli.add_node(spare, "query")
+            output = cb_cli.add_node(spare, self._cli_services("n1ql"))
             output_str = "\n".join(output) if isinstance(output, list) \
                 else str(output)
             add_failed = False
@@ -435,33 +449,52 @@ class CommunityEditionRestrictions(ClusterSetup):
             "CE must reject rebalance with MDS topology. Got: %s" % combined)
         self.log.info("CE blocked MDS rebalance: %s", combined[:300])
 
-    def test_ce_cli_node_init_ee_services_rejected(self):
+    def test_ce_cli_cluster_init_ee_services_rejected(self):
         """
-        couchbase-cli node-init --services <ee-service> must fail on CE.
+        couchbase-cli cluster-init --services <ee-service> must fail on CE.
 
         Tests cbas, eventing, backup — all EE-only services.
-        Requires one spare node in node.ini.
-        Note: --services on node-init requires Couchbase Server 8.5+.
+        Requires one spare *uninitialized* node in node.ini.
+
+        Uses cluster-init, not node-init: node-init has no --services option
+        (verified against couchbase-cli 8.5.0-1028, cbmgr.py process_services
+        is called only from ClusterInit and ServerAdd), so a node-init
+        --services run fails with "unrecognized arguments" and would pass
+        this test without ever reaching CE enforcement.
+
+        cbmgr.ClusterInit.execute rejects EE-only services client-side, before
+        any REST call, so the spare stays uninitialized on the expected path.
         """
         spare = self._get_available_node()
         ee_services = ["cbas", "eventing", "backup"]
 
         for svc in ee_services:
+            cli_svc = self._cli_services(svc)
             shell, cb_cli = self._cli_on(spare)
-            output, error = cb_cli.node_init(
-                cluster_url="localhost:8091",
-                username=spare.rest_username,
-                password=spare.rest_password,
-                services=svc)
+            output, error = cb_cli.cluster_init(
+                data_ramsize=256,
+                index_ramsize=None,
+                fts_ramsize=None,
+                services=cli_svc,
+                index_storage_mode=None,
+                cluster_name="CE_EE_Service_Test",
+                cluster_username=spare.rest_username,
+                cluster_password=spare.rest_password,
+                cluster_port=None)
             shell.disconnect()
 
             combined = self._combined(output, error)
-            self.assertTrue(
-                error or "error" in combined.lower(),
-                "CE must reject node-init --services %s. Got: %s"
-                % (svc, combined))
-            self.log.info("CE rejected node-init --services %s: %s",
-                          svc, combined[:200])
+            # cluster-init checks is_cluster_initialized() before validating
+            # --services, so an already-initialized spare masks the real check.
+            if "already initialized" in combined.lower():
+                self.fail("Requires an uninitialized spare node. %s is "
+                          "already initialized: %s" % (spare.ip, combined))
+            self.assertIn(
+                "only available on Enterprise Edition", combined,
+                "CE must reject cluster-init --services %s as EE-only. "
+                "Got: %s" % (cli_svc, combined))
+            self.log.info("CE rejected cluster-init --services %s: %s",
+                          cli_svc, combined[:200])
 
     # ------------------------------------------------------------------
     # Service-combination enforcement at init and add-node (CBQE-8979)
@@ -674,9 +707,10 @@ class CommunityEditionRestrictions(ClusterSetup):
 
     # ------------------------------------------------------------------
     # N1QL EE-only feature rejection via query service (CBQE-8979)
-    # testrunner: check_infer, check_flex_index, check_index_partitioning,
+    # testrunner: check_flex_index, check_index_partitioning,
     #             check_query_window_functions, check_query_cost_based_optimizer,
     #             check_query_monitoring
+    #             (check_infer intentionally not ported -- no longer EE-only)
     # ------------------------------------------------------------------
 
     def test_n1ql_ee_features_blocked(self):
@@ -684,7 +718,6 @@ class CommunityEditionRestrictions(ClusterSetup):
 
         Reinitializes master with fts,index,kv,n1ql services so the
         query service is running, then exercises each EE-only feature:
-        - INFER
         - Index partitioning (PARTITION BY HASH)
         - Window functions (CUME_DIST)
         - Cost-based optimizer (UPDATE STATISTICS)
@@ -700,9 +733,20 @@ class CommunityEditionRestrictions(ClusterSetup):
         via EXPLAIN -- the FTS hint must appear in hints_not_followed
         and the resulting plan must not use an FTS-backed scan.
 
-        Replaces: check_infer, check_flex_index, check_index_partitioning,
+        INFER is deliberately NOT tested here. It stopped being EE-only in
+        6.5.1: query commit 3f8959936 (MB-36520, "Move INFER from query-ee
+        to query", 2019-10-16) deleted the CE NopInferencer stub that used
+        to return "INFER. This is an Enterprise only feature." Current
+        master has no gate -- semantics.VisitInferExpression passes through
+        and there is no inferencer among the !enterprise stubs -- so INFER
+        returns a JSON schema with status=success on CE. testrunner's
+        check_infer still expected status=fatal; that expectation is stale
+        and was not ported.
+
+        Replaces: check_flex_index, check_index_partitioning,
                   check_query_window_functions,
                   check_query_cost_based_optimizer, check_query_monitoring.
+        Not ported: check_infer (stale -- see above).
         Requires nodes_init=1.
         """
         import urllib.parse
@@ -788,10 +832,9 @@ class CommunityEditionRestrictions(ClusterSetup):
         self.log.info("CE correctly rejected FTS flex-index hint and "
                       "fell back to a non-FTS scan: %s", hints_not_followed)
 
-        # Each statement must return status=fatal on CE
+        # Each statement must return status=fatal on CE.
+        # INFER is deliberately absent -- see the docstring.
         ee_stmts = [
-            ("INFER",
-             "infer `default` ;"),
             ("index partitioning PARTITION BY HASH",
              "CREATE INDEX idx_part ON `default`(id) "
              "PARTITION BY HASH(META().id)"),
