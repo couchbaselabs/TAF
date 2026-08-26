@@ -26,6 +26,9 @@ elasticsearch
 azure-storage-blob
 azure-identity
 azure-keyvault-keys
+azure-mgmt-compute
+azure-mgmt-authorization
+azure-mgmt-storage
 cryptography==46.0.3
 PyJWT==2.10.1
 httplib2

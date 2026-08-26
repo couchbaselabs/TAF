@@ -15,8 +15,18 @@ from couchbase_utils.security_utils.credential_store_utils import \
 
 
 class AzureProvider(CloudProviderInterface):
-    def __init__(self, log=None):
+    def __init__(self, log=None, use_managed_identity=False):
+        """
+        :param use_managed_identity: when True, cbbackupmgr authenticates via
+            the target VM's own Azure managed identity instead of a storage
+            account key -- AZURE_STORAGE_KEY is then optional (see
+            validate_credentials/get_cbbackupmgr_flags). Direct blob
+            operations this class performs itself (cleanup_for_bkrs, etc.)
+            still require a key regardless: they run on the TAF host, which
+            cannot act as the target VM's managed identity.
+        """
         self.log = log if log is not None else logging.getLogger("test")
+        self.use_managed_identity = use_managed_identity
         self.azure_storage_account = os.getenv("AZURE_STORAGE_ACCOUNT")
         self.azure_storage_key = os.getenv("AZURE_STORAGE_KEY")
         self.azure_region = os.getenv("AZURE_REGION", "westus")
@@ -25,7 +35,9 @@ class AzureProvider(CloudProviderInterface):
         self.validate_credentials()
 
     def validate_credentials(self):
-        if not self.azure_storage_account or not self.azure_storage_key:
+        if not self.azure_storage_account:
+            raise CloudOperationError("Incomplete Azure credentials")
+        if not self.use_managed_identity and not self.azure_storage_key:
             raise CloudOperationError("Incomplete Azure credentials")
 
         self.azure_kv_url = os.getenv("AZURE_KEY_VAULT_URL")
@@ -42,6 +54,19 @@ class AzureProvider(CloudProviderInterface):
             self._kms_client = None
 
     def get_cbbackupmgr_flags(self, shell=None):
+        if self.use_managed_identity:
+            # MB-72909 / MB-73516: --obj-access-key-id must NOT be passed at
+            # all for true system-assigned-identity mode -- even without a
+            # secret, cbbackupmgr treats it as a user-assigned-identity
+            # client-id override, and a storage account name there makes
+            # IMDS reject it with an unrelated-looking "identity not found"
+            # error. --obj-endpoint is the only flag needed; cbbackupmgr's
+            # --obj-auth-by-instance-metadata default (enabled for Azure)
+            # takes over from there. --obj-region is Azure-irrelevant.
+            endpoint = self.azure_endpoint or (
+                "https://{0}.blob.core.windows.net".format(
+                    self.azure_storage_account))
+            return "--obj-endpoint {0}".format(endpoint)
         return (
             "--obj-region {0} --obj-endpoint {1} --obj-access-key-id {2} "
             "--obj-secret-access-key {3}"
@@ -58,6 +83,13 @@ class AzureProvider(CloudProviderInterface):
 
         :param azure_path: e.g. az://container-name/some-dir
         """
+        if self.use_managed_identity and not self.azure_storage_key:
+            self.log.warning(
+                "AzureProvider.cleanup_for_bkrs: no AZURE_STORAGE_KEY set "
+                "in managed-identity mode -- skipping (this host cannot "
+                "act as the target VM's managed identity). Set "
+                "AZURE_STORAGE_KEY if archive cleanup is needed.")
+            return
         parsed = urlparse(azure_path)
         container_name = parsed.netloc
         prefix = "{0}/".format(parsed.path.strip("/"))
@@ -220,6 +252,12 @@ class AzureProvider(CloudProviderInterface):
 
     def _client(self):
         if self._blob_service_client is None:
+            if self.use_managed_identity and not self.azure_storage_key:
+                raise CloudOperationError(
+                    "AzureProvider direct blob operations (list/read/"
+                    "delete/etc.) require AZURE_STORAGE_KEY even in "
+                    "managed-identity mode -- this host cannot act as the "
+                    "target VM's managed identity.")
             account_url = self.azure_endpoint or (
                 "https://{0}.blob.core.windows.net".format(
                     self.azure_storage_account))
