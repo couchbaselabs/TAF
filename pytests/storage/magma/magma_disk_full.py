@@ -236,7 +236,8 @@ class MagmaDiskFull(MagmaBaseTest):
         #ep_data_write_failed = {self.cluster.nodes_in_cluster[-1]: 0}
 
         for bucket in self.cluster.buckets:
-            self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+            self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                            timeout=300)
             #self.bucket_util._wait_for_stat(
             #    bucket,
             #    ep_data_write_failed,
