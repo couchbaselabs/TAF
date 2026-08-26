@@ -84,6 +84,7 @@ from capella_utils.dedicated import CapellaUtils
 from .fusion_volume import VolumeTest
 from .fusion_cp_billing_monitor import FusionCPBillingMonitor, HourlyBillingWindowTracker
 from .fusion_aws_util import FUSION_ASSUME_ROLE_NAME
+from .fusion_cost_monitor import FusionCostMonitor, AcceleratorCostTracker
 from .kubectl_cp_db_util import KubectlCPDBUtil
 
 # The CP Couchbase database always lives in this region regardless of which
@@ -169,6 +170,16 @@ class FusionBillingVolumeTest(VolumeTest):
         # that older rebalances' billing.variable records are still intact
         # (not overwritten) after each new rebalance
         self._all_billing_checks = []
+
+        # AWS burn-vs-CP-bill cost estimate, logged (never asserted -- see
+        # fusion_cost_monitor.py module docstring) alongside every rebalance's
+        # billing verification. self.cost_monitor is stateless/reusable
+        # across rebalances (only caches on-demand pricing lookups);
+        # self._cost_trackers holds one AcceleratorCostTracker per
+        # in-flight plan_uuid, populated live during monitor_cluster_status()
+        # and consumed (then discarded) in _run_billing_checks_for_batch().
+        self.cost_monitor = FusionCostMonitor(self.fusion_aws_util, self.log)
+        self._cost_trackers = {}
 
         # HourlyBillingWindowTracker params -- see module docstring on
         # fusion_cp_billing_monitor.py for why this replaces triggering
@@ -329,7 +340,7 @@ class FusionBillingVolumeTest(VolumeTest):
     # Billing helpers
     # -------------------------------------------------------------------------
 
-    def _collect_billing_info_for_rebalance(self, rebalance_task, uuid_before: int):
+    def _collect_billing_info_for_rebalance(self, rebalance_task, uuid_before: int, cost_tracker=None):
         """
         Record the (tenant, cluster, plan_uuid) triple produced by a single
         rebalance task.
@@ -339,6 +350,10 @@ class FusionBillingVolumeTest(VolumeTest):
 
         :param rebalance_task: Completed rebalance task object
         :param uuid_before: len(self.fusion_rebalances) recorded BEFORE monitor_cluster_status()
+        :param cost_tracker: the AcceleratorCostTracker passed into that
+            monitor_cluster_status() call (if any) -- stashed under the
+            newly-discovered plan_uuid so _run_billing_checks_for_batch()
+            can hand it to FusionCostMonitor later.
         """
         uuid_after = len(self.fusion_rebalances)
         if uuid_after > uuid_before:
@@ -350,6 +365,8 @@ class FusionBillingVolumeTest(VolumeTest):
             self._all_billing_checks.append(
                 (rebalance_task.tenant, rebalance_task.cluster, plan_uuid)
             )
+            if cost_tracker is not None:
+                self._cost_trackers[plan_uuid] = cost_tracker
             self.log.info(
                 f"Scheduled billing check: cluster={rebalance_task.cluster.id}, "
                 f"planUUID={plan_uuid}"
@@ -521,6 +538,27 @@ class FusionBillingVolumeTest(VolumeTest):
                     f"planUUID={plan_uuid}"
                 )
 
+                # AWS burn vs. CP-billed cost -- informational only, never
+                # asserted (see fusion_cost_monitor.py module docstring).
+                # Re-query rather than reuse trigger_and_verify_variable_record's
+                # bool return so we have the actual creditQuantity to compare against.
+                credit_quantity = None
+                try:
+                    variable_records = self.billing_monitor.query_variable_records(cluster.id, plan_uuid)
+                    if variable_records:
+                        credit_quantity = variable_records[0].get("creditQuantity")
+                except Exception as e:
+                    self.log.warning(
+                        f"Could not re-query billing.variable creditQuantity for cost "
+                        f"comparison, cluster={cluster.id} planUUID={plan_uuid}: {e}"
+                    )
+                accel_tracker = self._cost_trackers.pop(plan_uuid, None)
+                self.cost_monitor.estimate_and_log_rebalance_cost(
+                    cluster.id, plan_uuid,
+                    accel_tracker.snapshot() if accel_tracker else {},
+                    expected_gib, credit_quantity,
+                )
+
         self._pending_billing_checks.clear()
 
         # Re-fetch (fresh, uncached) billing.variable data for every rebalance
@@ -575,15 +613,22 @@ class FusionBillingVolumeTest(VolumeTest):
                         f"hourly billing tracker: {e}"
                     )
 
+            # One AcceleratorCostTracker per rebalance task -- populated live
+            # by monitor_cluster_status()'s accelerator-instance polling, then
+            # stashed under this rebalance's plan_uuid (once known) below, for
+            # FusionCostMonitor to consume in _run_billing_checks_for_batch().
+            accel_cost_tracker = AcceleratorCostTracker()
+
             step_start = datetime.now(timezone.utc)
             self.monitor_cluster_status(
-                rebalance_task.tenant, rebalance_task.cluster, rebalance_task
+                rebalance_task.tenant, rebalance_task.cluster, rebalance_task,
+                cost_tracker=accel_cost_tracker,
             )
             step_end = datetime.now(timezone.utc)
             self.fusion_monitor.get_fusion_uploader_map(
                 rebalance_task.tenant, rebalance_task.cluster, self.find_master
             )
-            self._collect_billing_info_for_rebalance(rebalance_task, uuid_before)
+            self._collect_billing_info_for_rebalance(rebalance_task, uuid_before, accel_cost_tracker)
 
             if tracker:
                 node_count_after = None

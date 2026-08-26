@@ -503,7 +503,7 @@ class FusionCPResourceMonitor:
         )
         return False
 
-    def monitor_cluster_accelerator_instances(self, cluster, rebalance_task, fusion_rebalances, timeout=None):
+    def monitor_cluster_accelerator_instances(self, cluster, rebalance_task, fusion_rebalances, timeout=None, cost_tracker=None):
         """
         Monitor cluster accelerator instances during rebalance.
 
@@ -511,6 +511,11 @@ class FusionCPResourceMonitor:
         :param rebalance_task: Rebalance task object
         :param fusion_rebalances: List to store fusion rebalance IDs
         :param timeout: Timeout in seconds (default: DEFAULT_TIMEOUT)
+        :param cost_tracker: optional fusion_cost_monitor.AcceleratorCostTracker
+            -- if given, every poll's instance list is fed to it via
+            observe() as a free side effect of the polling this function
+            already does, so callers can later estimate AWS burn cost from
+            real observed instance lifetimes without any extra AWS calls.
         :return: True if monitoring successful, False otherwise
         """
         if timeout is None:
@@ -533,6 +538,8 @@ class FusionCPResourceMonitor:
                     self.fusion_aws_util._cluster_filter(cluster.id),
                     log="Fusion Accelerator"
                 )
+                if cost_tracker is not None:
+                    cost_tracker.observe(instances)
                 instances_count = len(instances)
                 if not transition_started:
                     if instances_count > 0:

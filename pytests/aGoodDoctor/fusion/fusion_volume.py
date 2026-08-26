@@ -494,8 +494,14 @@ class VolumeTest(BaseTestCase, hostedOPD):
             f"the fusion min_split_size/max_slots override, but observed max "
             f"was {observed_max}. Peaks by instance: {peak_counts}")
 
-    def monitor_cluster_status(self, tenant, cluster, rebalance_task):
-        """Monitor fusion cluster status during rebalance."""
+    def monitor_cluster_status(self, tenant, cluster, rebalance_task, cost_tracker=None):
+        """Monitor fusion cluster status during rebalance.
+
+        :param cost_tracker: optional fusion_cost_monitor.AcceleratorCostTracker,
+            passed through to monitor_cluster_accelerator_instances() to
+            capture accelerator instance lifetimes for later AWS cost
+            estimation. None (default) preserves prior behavior exactly.
+        """
         import threading
         self.log.info(f"Monitoring cluster status for cluster {cluster.id}")
         rebalance_start_time = datetime.now()
@@ -532,7 +538,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         # Monitor accelerator instances
         accelerator_thread = threading.Thread(
-            target=lambda res, clus: res.update({"monitor_cluster_accelerator_intances_complete": cp_monitor.monitor_cluster_accelerator_instances(clus, rebalance_task, self.fusion_rebalances, timeout=self.fusion_infra_timeout)}),
+            target=lambda res, clus: res.update({"monitor_cluster_accelerator_intances_complete": cp_monitor.monitor_cluster_accelerator_instances(clus, rebalance_task, self.fusion_rebalances, timeout=self.fusion_infra_timeout, cost_tracker=cost_tracker)}),
             args=(result, cluster), daemon=True)
         accelerator_thread.start()
         accelerator_thread.join()

@@ -3,6 +3,7 @@ AWS EC2 Library for TAF
 Provides functionality to poll EC2 instances, filter by tags, SSH into machines, and run shell commands.
 """
 
+import json
 import time
 import boto3
 from botocore.exceptions import ClientError
@@ -855,6 +856,76 @@ class EC2Lib(AWSBase):
             _filters.append({'Name': 'iops', 'Values': [str(filters['iops'])]})
         volumes = self.ec2_client.describe_volumes(Filters=_filters)
         return volumes.get('Volumes', [])
+
+    def describe_volumes_modifications(self, volume_ids: List[str]) -> List[Dict[str, Any]]:
+        """
+        Get EBS volume modification history (e.g. an IOPS/size/type change).
+
+        Used to find the real timestamp a gp3 volume's provisioned IOPS was
+        changed -- e.g. a Fusion guest volume's 16000->3000 IOPS step-down
+        once its active hydration window ends, which has no other
+        AWS-visible signal. Volumes never modified are simply absent from
+        the response (not an error).
+
+        :param volume_ids: EBS VolumeIds to check (empty list returns [])
+        :return: list of modification dicts (VolumeId, OriginalIops,
+            TargetIops, StartTime, EndTime, ModificationState, ...)
+        """
+        if not volume_ids:
+            return []
+        try:
+            response = self.ec2_client.describe_volumes_modifications(VolumeIds=volume_ids)
+            return response.get('VolumesModifications', [])
+        except Exception as e:
+            self.logger.error(f"Error describing volume modifications for {volume_ids}: {e}")
+            return []
+
+    def get_ec2_on_demand_hourly_price(self, instance_type: str,
+                                        location: str = "US East (N. Virginia)") -> Optional[float]:
+        """
+        Look up the current AWS on-demand Linux hourly price for an EC2 instance type.
+
+        The Pricing API is only ever queried via the us-east-1 endpoint
+        regardless of which region the instance itself runs in (that's an
+        AWS API constraint, not a bug) -- so this always creates its own
+        'pricing' client pinned to us-east-1, independent of self.region.
+
+        :param instance_type: e.g. "c8gb.4xlarge"
+        :param location: Pricing API region name, NOT an AWS region code
+            (e.g. "US East (N. Virginia)", not "us-east-1")
+        :return: USD/hour, or None if no matching SKU was found (e.g. a
+            brand-new instance family not yet in the Pricing API, or a
+            region and the caller passed the wrong location string)
+        """
+        if not hasattr(self, "_pricing_client"):
+            self._pricing_client = self.aws_session.client("pricing", region_name="us-east-1")
+        try:
+            response = self._pricing_client.get_products(
+                ServiceCode="AmazonEC2",
+                Filters=[
+                    {"Type": "TERM_MATCH", "Field": "instanceType", "Value": instance_type},
+                    {"Type": "TERM_MATCH", "Field": "location", "Value": location},
+                    {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
+                    {"Type": "TERM_MATCH", "Field": "tenancy", "Value": "Shared"},
+                    {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
+                    {"Type": "TERM_MATCH", "Field": "capacitystatus", "Value": "Used"},
+                ],
+                MaxResults=1,
+            )
+            for price_str in response.get("PriceList", []):
+                price_doc = json.loads(price_str)
+                on_demand = price_doc.get("terms", {}).get("OnDemand", {})
+                for term in on_demand.values():
+                    for dimension in term.get("priceDimensions", {}).values():
+                        usd = dimension.get("pricePerUnit", {}).get("USD")
+                        if usd is not None:
+                            return float(usd)
+            self.logger.warning(
+                f"No on-demand price found for instance type {instance_type} in {location}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error looking up on-demand price for {instance_type}: {e}")
+            return None
 
     def get_hostname_public_ip_mapping(self, dns_name:str="l3ocuqshernpf2ih.sandbox.nonprod-project-avengers.com") -> Optional[str]:
         """
