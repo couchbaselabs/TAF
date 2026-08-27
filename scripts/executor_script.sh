@@ -81,7 +81,7 @@ echo "####################################"
 
 # To kill Orphan Python / magmaloader.jar
 ps -ef | grep 'python testrunner.py' | awk '$3 == 1 {print $2}' | xargs kill -9
-ps -ef | grep 'java -jar' | grep 'magmadocloader' | awk '$3 == 1 {print $2}' | xargs kill -9
+ps -ef | grep 'java -' | grep 'magmadocloader' | awk '$3 == 1 {print $2}' | xargs kill -9
 
 # Reclaim disk space from gradle files
 for i in `ls /tmp/gradle*.bin`; do
@@ -329,9 +329,22 @@ if [ $status -eq 0 ]; then
   cd ..
 
   # Find free port on this machine to use for this run
-  starting_ports=(49152 49162 49172 49182 49192 49202 49212 49222 49232)
-  num_scripts_running=$(ps -ef | grep '/tmp/jenkins' | grep -v 'grep ' | wc -l)
-  sirius_port=${starting_ports[$num_scripts_running]} ; while [ "$(ss -tulpn | grep LISTEN | grep $sirius_port | wc -l)" -ne 0 ]; do sirius_port=$((sirius_port+1)) ; done
+  # Use a random starting point in the ephemeral range (49152-65535) to reduce
+  # collisions with concurrent Jenkins jobs on the same executor.
+  sirius_port=$(( 49152 + RANDOM % (65535 - 49152) ))
+  port_iterations=0
+  while [ "$(ss -tulpn | grep LISTEN | grep ":${sirius_port} " | wc -l)" -ne 0 ]; do
+    sirius_port=$((sirius_port+1))
+    if [ "$sirius_port" -gt 65535 ]; then
+      sirius_port=49152
+    fi
+    port_iterations=$((port_iterations+1))
+    if [ "$port_iterations" -gt $((65535 - 49152)) ]; then
+      echo "ERROR: No free ports available in ephemeral range"
+      exit 1
+    fi
+  done
+  echo "Selected Sirius port: ${sirius_port}"
   set -x
   if [[ "$load_docs_using" == "sirius_go_sdk" ]]; then
     echo "Launching Sirius GO SDK to load documents."
