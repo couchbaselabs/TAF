@@ -176,27 +176,47 @@ class CommunityEditionRestrictions(ClusterSetup):
             raw = raw.decode()
         return json.loads(raw)
 
-    def _reb_and_wait(self, timeout=120):
+    def _reb_and_wait(self, timeout=120, max_retries=2, retry_delay=5):
         """Trigger rebalance with all known nodes and wait for completion.
-        Returns (success, error_msg)."""
-        nodes = self._get_otp_nodes(inactive_added=True)
-        ok, raw = self.rest.rebalance(
-            known_nodes=[n.id for n in nodes], eject_nodes=[])
-        if not ok:
-            return False, raw.decode() if isinstance(raw, bytes) else str(raw)
-        end = time.time() + timeout
-        while time.time() < end:
-            _, prog_raw = self.rest.rebalance_progress()
-            try:
-                data = self._as_json(prog_raw)
-            except (TypeError, ValueError, AttributeError):
-                self.sleep(2, "polling rebalance")
-                continue
-            if data.get("status") == "none":
-                err = data.get("errorMessage", "")
-                return (False, err) if err else (True, "")
-            self.sleep(2, "rebalance running: %s" % data.get("status"))
-        return False, "timeout after %ds" % timeout
+        Returns (success, error_msg).
+
+        Retries on failure: the indexer can transiently reject a rebalance
+        right after a node reset/reinit ("cleanup pending from previous
+        failed/aborted rebalance ... please retry the request later"), but
+        ns_server only surfaces this as a generic "Rebalance failed" message,
+        so matching on the specific indexer text isn't reliable. Bounded
+        retries absorb this transient state instead.
+        """
+        last_err = ""
+        for attempt in range(max_retries + 1):
+            nodes = self._get_otp_nodes(inactive_added=True)
+            ok, raw = self.rest.rebalance(
+                known_nodes=[n.id for n in nodes], eject_nodes=[])
+            if not ok:
+                last_err = raw.decode() if isinstance(raw, bytes) else str(raw)
+            else:
+                end = time.time() + timeout
+                last_err = "timeout after %ds" % timeout
+                while time.time() < end:
+                    _, prog_raw = self.rest.rebalance_progress()
+                    try:
+                        data = self._as_json(prog_raw)
+                    except (TypeError, ValueError, AttributeError):
+                        self.sleep(2, "polling rebalance")
+                        continue
+                    if data.get("status") == "none":
+                        last_err = data.get("errorMessage", "")
+                        if not last_err:
+                            return True, ""
+                        break
+                    self.sleep(2, "rebalance running: %s" % data.get("status"))
+
+            if attempt < max_retries:
+                self.sleep(
+                    retry_delay,
+                    "rebalance failed (%s), retrying (%d/%d)"
+                    % (last_err[:80], attempt + 1, max_retries))
+        return False, last_err
 
     def _eject_rebalance_out(self, node_ip, timeout=120):
         """Rebalance out an active member by IP and wait for completion."""
