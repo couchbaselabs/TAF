@@ -1,3 +1,4 @@
+import threading
 from copy import deepcopy
 from random import choice, sample, randint
 
@@ -1053,6 +1054,40 @@ class DocHistoryRetention(ClusterSetup):
         self.log.info("Running compaction")
         self.bucket_util._run_compaction(self.cluster)
 
+    def crash_node_while_load_task_runs(self, cb_err, load_task,
+                                        on_each_crash=None, max_itr=50):
+        """
+        Kills memcached via cb_err in a loop until load_task finishes.
+
+        load_task.completed (Sirius Java SDK tasks) is only set by an
+        explicit end_task()/cancel_task()/get_task_result() call, never
+        updated in the background - so this runs the crash loop in a
+        thread and blocks on get_task_result() to detect completion.
+        """
+        self.stop_crash = False
+
+        def _crash_loop():
+            itr = 0
+            while not self.stop_crash:
+                itr += 1
+                if itr > max_itr:  # backstop
+                    self.stop_crash = True
+                    break
+                self.log.info("Killing memcached")
+                cb_err.create(CouchbaseError.KILL_MEMCACHED)
+                self.sleep(choice(range(15, 20)),
+                          "Wait for memcached to boot")
+                if on_each_crash:
+                    on_each_crash()
+
+        crash_th = threading.Thread(target=_crash_loop)
+        crash_th.start()
+        try:
+            return self.task_manager.get_task_result(load_task)
+        finally:
+            self.stop_crash = True
+            crash_th.join()
+
     def test_crash_replica_node(self):
         def stop_persistence_using_cbepctl():
             if target_scenario == CouchbaseError.STOP_PERSISTENCE:
@@ -1117,12 +1152,11 @@ class DocHistoryRetention(ClusterSetup):
             track_failures=False,
             load_using=self.load_docs_using)
         if target_scenario != CouchbaseError.STOP_MEMCACHED:
-            while not load_task.completed:
-                self.log.info("Killing memcached")
-                cb_err.create(CouchbaseError.KILL_MEMCACHED)
-                self.sleep(choice(range(15, 20)), "Wait for memcached to boot")
-                stop_persistence_using_cbepctl()
-        self.task_manager.get_task_result(load_task)
+            self.crash_node_while_load_task_runs(
+                cb_err, load_task,
+                on_each_crash=stop_persistence_using_cbepctl)
+        else:
+            self.task_manager.get_task_result(load_task)
 
         cb_err.create(CouchbaseError.KILL_MEMCACHED)
         self.sleep(15, "Wait for memcached to boot")
