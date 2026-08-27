@@ -48,13 +48,14 @@ SYSTEMD_SERVER = ["centos 8", "centos 7",
                   "rocky 9",
                   "amazon linux release 2 (karoo)",
                   "amazon linux release 2023 (amazon linux)",
-                  "cbl-mariner/linux 2"]
+                  "cbl-mariner/linux 2",
+                  "azurelinux 3"]
 
 VERSION_FILE = "VERSION.txt"
 MIN_COMPACTION_THRESHOLD = 2
 MAX_COMPACTION_THRESHOLD = 100
 NR_INSTALL_LOCATION_FILE = "nonroot_install_location.txt"
-RPM_DIS_NAME = ["centos", "red hat", "opensuse", "suse", "oracle linux"]
+RPM_DIS_NAME = ["centos", "red hat", "opensuse", "suse", "oracle linux", "azure linux"]
 # Allow for easy switch to a local mirror of the download stuff
 # (for people outside the mountain view office it's nice to be able to
 # be running this locally without being on VPN (which my test machines isn't)

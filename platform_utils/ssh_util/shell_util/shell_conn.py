@@ -360,14 +360,20 @@ class ShellConnection(CommonShellAPIs):
                                          'rocky': 'rocky'}
                     log.debug("os_pretty_name:" + os_pretty_name)
                     if os_pretty_name and "Amazon Linux 2" not in os_pretty_name:
-                        os_name = os_pretty_name.split(' ')[0].lower()
-                        os_distro = os_distro_dict[os_name]
-                        if os_name != 'ubuntu':
-                            os_version = os_shortname_dict[os_name] + " " + os_version.split('.')[0]
-                        else:
-                            os_version = os_shortname_dict[os_name] + " " + os_version
-                        if os_distro:
+                        # PRETTY_NAME="Microsoft Azure Linux 3.0"
+                        if "Azure Linux" in os_pretty_name:
+                            os_distro = "Azure Linux"
+                            os_version = "azurelinux " + os_version.split('.')[0]
                             is_linux_distro = True
+                        else:
+                            os_name = os_pretty_name.split(' ')[0].lower()
+                            os_distro = os_distro_dict[os_name]
+                            if os_name != 'ubuntu':
+                                os_version = os_shortname_dict[os_name] + " " + os_version.split('.')[0]
+                            else:
+                                os_version = os_shortname_dict[os_name] + " " + os_version
+                            if os_distro:
+                                is_linux_distro = True
                     log.info("os_distro: " + os_distro + ", os_version: " + os_version +
                              ", is_linux_distro: " + str(is_linux_distro))
                     file.close()
@@ -503,6 +509,7 @@ class ShellConnection(CommonShellAPIs):
                    'Amazon Linux 2': 'rpm',
                    'AlmaLinux OS': 'rpm',
                    'Rocky Linux': 'rpm',
+                   'Azure Linux': 'rpm',
                    'Mac': 'dmg',
                    'Debian': 'deb'}.get(os_distro, '')
             arch = {'i686': "x86",

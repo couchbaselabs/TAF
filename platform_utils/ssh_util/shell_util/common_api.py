@@ -667,6 +667,15 @@ class CommonShellAPIs(object):
         if getattr(self, "info", None) is None and info is not None :
             self.info = info
 
+        # iptables is not available on Mariner/Azure Linux. Running
+        # "iptables -F" there flushes nothing but, worse, can drop the
+        # firewall rules that keep the SSH session alive, locking the node
+        # out. Skip it the same way testrunner does.
+        if "iptables -F" in command and self.info.distribution_type in (
+                "CBL-Mariner/Linux", "Azure Linux"):
+            msg = "iptables -F is disabled on Mariner/Azure Linux"
+            return [msg], [msg]
+
         if self.info.type.lower() == 'windows':
             self.use_sudo = False
 

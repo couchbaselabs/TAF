@@ -2,7 +2,7 @@ class Linux(object):
     NAME = "linux"
 
     DISTRIBUTION_NAME = ["ubuntu", "centos", "red hat", "opensuse",
-                         "suse", "oracle linux"]
+                         "suse", "oracle linux", "azure linux"]
     LOG_PATH = "/opt"
     ROOT_PATH = "/root/"
     CB_PATH = "/opt/couchbase/"
@@ -23,7 +23,7 @@ class LinuxEnterpriseAnalytics(object):
     NAME = "linux"
 
     DISTRIBUTION_NAME = ["ubuntu", "centos", "red hat", "opensuse",
-                         "suse", "oracle linux"]
+                         "suse", "oracle linux", "azure linux"]
     LOG_PATH = "/opt"
     ROOT_PATH = "/root/"
     CB_PATH = "/opt/enterprise-analytics/"
