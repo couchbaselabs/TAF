@@ -340,6 +340,10 @@ class Linux(ShellConnection, LinuxConstants):
     def disable_firewall(self):
         command_1 = "/sbin/iptables -F"
         command_2 = "/sbin/iptables -t nat -F"
+        # nftables-only hosts (e.g. Debian 12+) have no iptables binary, so
+        # enable_firewall()'s rules live in nft - flush that too, or the
+        # induced block never actually clears on those hosts.
+        command_3 = "nft flush ruleset"
         if self.nonroot:
             self.log.info("Non root user has no right to disable firewall, "
                           "switching over to root")
@@ -348,11 +352,15 @@ class Linux(ShellConnection, LinuxConstants):
             self.log_command_output(output, error)
             output, error = self.execute_command(command_2)
             self.log_command_output(output, error)
+            output, error = self.execute_command(command_3)
+            self.log_command_output(output, error)
             self.connect_with_user(user=self.server.ssh_username)
             return
         output, error = self.execute_command(command_1)
         self.log_command_output(output, error, debug=False)
         output, error = self.execute_command(command_2)
+        self.log_command_output(output, error, debug=False)
+        output, error = self.execute_command(command_3)
         self.log_command_output(output, error, debug=False)
         self.connect_with_user(user=self.server.ssh_username)
 
