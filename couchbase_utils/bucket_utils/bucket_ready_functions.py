@@ -4050,6 +4050,8 @@ class BucketUtils(ScopeUtils):
 
     def validate_oso_dcp_backfill_value(self, kv_nodes, buckets,
                                         expected_val="auto"):
+        retries = 5
+        retry_interval = 5
         result = True
         if expected_val is None:
             expected_val = "auto"
@@ -4061,15 +4063,26 @@ class BucketUtils(ScopeUtils):
         for node in kv_nodes:
             cbstat = Cbstats(node)
             for bucket in buckets:
-                stats = cbstat.all_stats(bucket.name)
-                val = stats.get("ep_dcp_oso_backfill")
+                stats = dict()
+                val = None
+                for attempt in range(1, retries + 1):
+                    stats = cbstat.all_stats(bucket.name)
+                    val = stats.get("ep_dcp_oso_backfill")
+                    if val is not None:
+                        break
+                    self.log.warning(
+                        "ep_dcp_oso_backfill missing in cbstats output for "
+                        "bucket '{}' on node {}. Attempt {}/{}"
+                        .format(bucket.name, node.ip, attempt, retries))
+                    if attempt != retries:
+                        time.sleep(retry_interval)
                 if val is None:
-                    result = False
-                    self.log.critical(
-                        "ep_dcp_oso_backfill missing in cbstats output "
-                        "for bucket '{}' on node {}. Full stats: {}"
-                        .format(bucket.name, node.ip, stats))
-                    continue
+                    cbstat.disconnect()
+                    raise Exception(
+                        "ep_dcp_oso_backfill stat not reported for bucket "
+                        "'{}' on node {} after {} attempts. Last cbstats "
+                        "output: {}".format(bucket.name, node.ip, retries,
+                                            stats))
                 if val != expected_val:
                     result = False
                     self.log.critical("Bucket {}, oso_dcp_backfill mismatch."
