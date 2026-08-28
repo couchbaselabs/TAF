@@ -822,6 +822,33 @@ class OnPremBaseTest(CouchbaseBaseTest):
         except Exception as e:
             self.log.warning("Exception during REST log_client_error: %s" % e)
 
+    def _prepare_node_paths(self, server, shell=None):
+        """Create and set ownership for data/index paths so that
+        set_data_path() can set them successfully.
+        Removes immutable attr (chattr -i) on all path components, since
+        an immutable parent (like /data) blocks mkdir under it."""
+        paths = " ".join([_f for _f in [server.data_path, server.index_path]
+                          if _f])
+        if not paths:
+            return
+        own_shell = shell is None
+        if own_shell:
+            shell = RemoteMachineShellConnection(server)
+        try:
+            chattr_paths = set()
+            for path in paths.split():
+                parts = path.strip("/").split("/")
+                for index in range(1, len(parts) + 1):
+                    chattr_paths.add("/" + "/".join(parts[:index]))
+            chattr_str = " ".join(sorted(chattr_paths))
+            shell.execute_command(
+                "chattr -i {0} ;"
+                "mkdir -p {1} ;"
+                "chown -R couchbase:couchbase {1}".format(chattr_str, paths))
+        finally:
+            if own_shell:
+                shell.disconnect()
+
     def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
                           rebalance_index_waiting_disabled=None,
                           rebalance_index_pausing_disabled=None,
@@ -848,6 +875,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 server.cbas_path = str([server.data_path])
             if not server.eventing_path:
                 server.eventing_path = server.data_path
+            # chattr -i / mkdir -p the paths before wiping them,
+            # else an immutable /data fails the data-path setup
+            self._prepare_node_paths(server, ssh_sessions[server.ip])
             for path in set([_f for _f in [server.data_path, server.index_path]
                              if _f]):
                 for cmd in ("rm -rf {0}/*".format(path),
