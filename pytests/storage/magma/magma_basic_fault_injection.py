@@ -1189,6 +1189,240 @@ class MagmaFaultInjectionBasic(MagmaFaultInjection):
         self._set_fault_injection(enabled=False)
         self.log.info("test_wal_middle_segment_integrity complete")
 
+    def test_magma_sstable_corruption_detection(self):
+        """
+        Magma SSTable Corruption Detection — ep_magma_corruption_errors (MB-49275)
+
+        MB-49275 (https://jira.issues.couchbase.com/browse/MB-49275) added a
+        corruption-error *counter* so on-disk corruption is caught early
+        instead of surfacing much later as a customer escalation with no
+        reproducer. From the ticket's comment thread (Shivani Gupta, quoting
+        a real CBSE-20120-derived failure verbatim):
+
+          WARNING Failed background fetch {"bucket":"bucket-1","vb":"vb:0",
+          "seqno":-5,"status":"generic failure"}
+          CRITICAL MagmaKVStore::getMulti::GetDocs vb:0
+          key:<ud>cid:0x0:1doc-5058</ud> status:Corruption: Invalid checksum:
+          sstable: /data/bucket-1/magma.0/kvstore-0/rev-000000001/seqIndex/
+          sstable.3.data at offset:4632, {"bucket":"bucket-1"}
+
+        Magma checksums every sstable block it reads. MB-49275 counts each
+        block read that fails that check: magma commit 96c1d67 increments
+        NCorruptionErrors in lsm/sstable/sstable.cc for normal, compaction
+        and iterator reads, and kv_engine commit 26d5b2d exposes it as
+        `ep_magma_corruption_errors` (the commit title says "_count", the
+        stat key is "_errors").
+
+        This test corrupts a live seqIndex sstable on disk with a targeted
+        byte overwrite (mirrors a bad disk sector — the file stays the same
+        size and openable, only its body is wrong).
+
+        Preconditions (from a manual repro on 8.5.0-1282):
+          - Reads must reach disk. Background warmup reloads every value
+            into memory, so the bucket is switched to warmupBehavior=none
+            and restarted BEFORE the corruption, never after.
+          - The corrupted vbucket must be active on the corrupted node, hence
+            nodes_init=1, replicas=0.
+          - The counter is per failed block read, not per bad block (35 keys
+            in one bad block gave 770), so only increases are asserted.
+          - Compaction over the bad sstable still completes at bucket level
+            (vb-level CompactDBStatus::Failed only), so the compaction path
+            is judged by the counter, not by an exception.
+
+        Steps:
+        1. Load docs, wait for persistence.
+        2. Set warmupBehavior=none, restart, wait for warmup.
+        3. Control: counter is 0; reading control_reads docs must raise
+           ep_bg_fetched (reads hit disk) and leave the counter at 0; a
+           healthy compaction must run and leave the counter at 0.
+        4. Overwrite corrupt_bytes bytes mid-file in this bucket's largest
+           seqIndex sstable, drop the page cache.
+        5. Read path: read all docs, counter must increase.
+        6. Compaction path: compact, counter must increase again.
+        7. memcached.log must name the corrupted file in an "Invalid
+           checksum" line for both the read (getMulti) and the compaction
+           (CompactKVStore) path.
+        """
+        from BucketLib.bucket import Bucket
+        from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+        from cb_tools.cbstats import Cbstats
+
+        corrupt_bytes = self.input.param("corrupt_bytes", 64)
+        control_reads = self.input.param("control_reads", 1000)
+        ops_rate = self.input.param("ops_rate", 10000)
+
+        bucket = self.cluster.buckets[0]
+        servers = self.cluster.nodes_in_cluster
+        bucket_rest = BucketRestApi(self.cluster.master)
+
+        def _stats():
+            """Corruption counter, bg fetches and seqIndex compactions,
+            each summed across nodes."""
+            keys = ("ep_magma_corruption_errors", "ep_bg_fetched",
+                    "ep_magma_seqindex_compactions")
+            totals = dict.fromkeys(keys, 0)
+            for server in servers:
+                cbstat = Cbstats(server)
+                stats = cbstat.all_stats(bucket.name)
+                cbstat.disconnect()
+                for key in keys:
+                    if key not in stats:
+                        self.fail(
+                            f"'{key}' stat not found on {server.ip} — "
+                            f"ep_magma_corruption_errors needs a build with "
+                            f"MB-49275 (kv_engine commit 26d5b2d)")
+                    totals[key] += int(stats[key])
+            self.log.info(f"Stats: {totals}")
+            return totals
+
+        def _read_docs(start, end):
+            self.doc_ops = "read"
+            self.reset_doc_params()
+            self.read_start = start
+            self.read_end = end
+            self.generate_docs()
+            self.java_doc_loader(doc_ops="read", wait=True,
+                                skip_default=self.skip_load_to_default_collection,
+                                validate_docs=False, ops_rate=ops_rate)
+
+        # ---- Phase 1: clean initial load, persist ----
+        self.log.info("Phase 1: Initial data load")
+        self.create_start = 0
+        self.create_end = self.num_items
+        self.java_doc_loader(doc_ops="create", wait=True,
+                            skip_default=self.skip_load_to_default_collection,
+                            ops_rate=ops_rate)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+        # ---- Phase 2: make reads reach disk ----
+        # Background warmup reloads every value into memory, and then no
+        # read ever touches the corrupted block.
+        self.log.info("Phase 2: warmupBehavior=none, restart, wait for warmup")
+        status, content = bucket_rest.edit_bucket(
+            bucket.name,
+            {Bucket.warmupBehavior: Bucket.WarmupBehavior.NONE})
+        self.assertTrue(status, f"Failed to set warmupBehavior=none: {content}")
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            shell.restart_couchbase()
+            shell.disconnect()
+        self.assertTrue(
+            self.bucket_util._wait_warmup_completed(bucket, servers),
+            "Bucket warmup did not complete after restart")
+
+        # ---- Phase 3: control — healthy reads and compaction ----
+        baseline = _stats()
+        self.assertEqual(
+            baseline["ep_magma_corruption_errors"], 0,
+            f"ep_magma_corruption_errors is "
+            f"{baseline['ep_magma_corruption_errors']} before any corruption "
+            f"was injected")
+
+        self.log.info(f"Phase 3: Control read of {control_reads} docs")
+        _read_docs(0, control_reads)
+        after_ctl_read = _stats()
+        self.assertGreater(
+            after_ctl_read["ep_bg_fetched"], baseline["ep_bg_fetched"],
+            "Control reads did not bg-fetch — docs are still resident, so "
+            "reads can never reach the corrupted block (test setup, not a "
+            "product result)")
+        self.assertEqual(
+            after_ctl_read["ep_magma_corruption_errors"], 0,
+            "ep_magma_corruption_errors moved on healthy reads")
+
+        self.log.info("Phase 3: Control compaction")
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+        after_ctl_compaction = _stats()
+        self.assertGreater(
+            after_ctl_compaction["ep_magma_seqindex_compactions"],
+            after_ctl_read["ep_magma_seqindex_compactions"],
+            "Control compaction did not run any seqIndex compaction")
+        self.assertEqual(
+            after_ctl_compaction["ep_magma_corruption_errors"], 0,
+            "ep_magma_corruption_errors moved on a healthy compaction")
+
+        # ---- Phase 4: corrupt this bucket's largest seqIndex sstable ----
+        # Bucket files live under the bucket uuid, not the bucket name.
+        status, content = bucket_rest.get_bucket_info(bucket.name)
+        self.assertTrue(status, f"Failed to fetch bucket info: {content}")
+        bucket_dir = f"{self.data_path}/{content['uuid']}"
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        out, _ = shell.execute_command(
+            f"find {bucket_dir} -path '*/seqIndex/*' -name 'sstable.*.data' "
+            f"-type f -printf '%s %p\\n' 2>/dev/null | sort -rn | head -1")
+        out = [line.strip() for line in out if line.strip()]
+        self.assertTrue(out, f"No seqIndex sstable.*.data under {bucket_dir}")
+        target_size, target_file = out[0].split(" ", 1)
+        self.log.info(
+            f"Phase 4: Corrupting {corrupt_bytes} bytes at the mid-point of "
+            f"{target_file} ({target_size} bytes)"
+        )
+
+        corrupt_cmd = (
+            f"size=$(stat -c%s '{target_file}'); "
+            f"mid=$((size / 2)); "
+            f"dd if=/dev/urandom of='{target_file}' bs=1 count={corrupt_bytes} "
+            f"seek=$mid conv=notrunc"
+        )
+        o, e = shell.execute_command(corrupt_cmd)
+        self.log.info(f"Corruption command output={o}, error={e}")
+        shell.disconnect()
+
+        self.clear_page_cache(servers)
+        self.sleep(10, "Wait after clearing page cache")
+
+        # ---- Phase 5: read path ----
+        self.log.info(
+            "Phase 5: Reading all loaded docs to drive background fetches "
+            "through the corrupted sstable block"
+        )
+        self.track_failures = False
+        try:
+            _read_docs(0, self.num_items)
+        except Exception as exc:
+            self.log.info(
+                f"Expected read failures against the corrupted sstable: {exc}")
+        after_read = _stats()
+        self.assertGreater(
+            after_read["ep_magma_corruption_errors"],
+            after_ctl_compaction["ep_magma_corruption_errors"],
+            f"ep_magma_corruption_errors did not increase after reading "
+            f"through the corrupted sstable {target_file}")
+
+        # ---- Phase 6: compaction path ----
+        self.log.info("Phase 6: Compacting over the corrupted sstable")
+        try:
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+        except Exception as exc:
+            self.log.info(f"Compaction over the corrupted sstable raised: {exc}")
+        after_compaction = _stats()
+        self.assertGreater(
+            after_compaction["ep_magma_corruption_errors"],
+            after_read["ep_magma_corruption_errors"],
+            f"ep_magma_corruption_errors did not increase when compaction "
+            f"read the corrupted sstable {target_file}")
+
+        # ---- Phase 7: memcached.log names the corrupted file on both paths ----
+        # Full path (bucket uuid + kvstore) so lines from other buckets or
+        # earlier runs cannot match.
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        for path_name, pattern in (("read", "getMulti"),
+                                   ("compaction", "CompactKVStore failed")):
+            out, _ = shell.execute_command(
+                f"grep -h -F '{target_file}' "
+                f"/opt/couchbase/var/lib/couchbase/logs/memcached.log* "
+                f"2>/dev/null | grep -F '{pattern}' "
+                f"| grep -c 'Corruption: Invalid checksum'")
+            count = int(out[0].strip()) if out else 0
+            self.log.info(f"memcached.log {path_name}-path lines: {count}")
+            self.assertGreater(
+                count, 0,
+                f"No '{pattern} ... Corruption: Invalid checksum' line in "
+                f"memcached.log naming {target_file}")
+        shell.disconnect()
+
+        self.log.info("test_magma_sstable_corruption_detection complete")
+
     def test_wal_post_replay_sync_failure(self):
         """
         WAL Post-Replay Sync Failure
