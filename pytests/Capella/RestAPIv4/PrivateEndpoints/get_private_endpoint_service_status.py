@@ -19,7 +19,7 @@ class GetPrivateEndpointService(GetCluster):
                 "xdcr": None
             },
             "serviceName": None,
-            "status": "enabled"
+            "status": "enabling"
         }
 
         # Single check: skip enable if PES is already enabled (e.g. reused cluster

@@ -1359,6 +1359,12 @@ class APIBase(CouchbaseBaseTest):
             else:
                 self.fail("Error while creating API key for role having "
                           "access to multiple projects")
+            # Newly created keys can take a few seconds for their resource
+            # scope to propagate; using the key immediately can otherwise
+            # 404 on resources it's actually authorized for.
+            self.log.debug("Sleeping 5 seconds for new API key's resource "
+                           "scope to propagate")
+            time.sleep(5)
             self.update_auth_with_api_token(self.api_keys[key])
         else:
             self.update_auth_with_api_token(testcase)

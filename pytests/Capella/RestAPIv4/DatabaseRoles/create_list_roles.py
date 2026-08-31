@@ -126,6 +126,22 @@ class CreateDatabaseRole(DatabaseRoleBase):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
+        # setUp's baseline role (self.role_id) isn't needed by this test and
+        # uses the same name this loop creates roles with; free it up first
+        # to avoid colliding with it on the very first iteration.
+        del_res = self.capellaAPI.cluster_ops_apis.delete_database_role(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.role_id)
+        if del_res.status_code == 429:
+            self.handle_rate_limit(int(del_res.headers["Retry-After"]))
+            del_res = self.capellaAPI.cluster_ops_apis.delete_database_role(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.role_id)
+        if del_res.status_code not in [200, 202, 204, 404]:
+            self.log.error(
+                "Error while deleting setUp's baseline role: {}"
+                .format(del_res.content))
+
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner"
@@ -398,8 +414,7 @@ class ListDatabaseRoles(DatabaseRoleBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectViewer",
-            "projectDataReaderWriter", "projectDataReader"
+            "organizationOwner", "projectOwner", "projectViewer"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

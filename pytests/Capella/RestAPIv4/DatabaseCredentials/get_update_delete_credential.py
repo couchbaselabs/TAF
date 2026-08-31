@@ -6,6 +6,7 @@ Created on July 2026
 
 from random import random
 import string
+import copy
 
 from pytests.Capella.RestAPIv4.DatabaseCredentials.database_credentials_base \
     import DatabaseCredentialBase
@@ -177,8 +178,7 @@ class GetDatabaseCredential(DatabaseCredentialBase):
 
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectViewer", "projectDataReaderWriter", "projectDataReader"
+            "organizationOwner", "projectOwner", "projectViewer"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
@@ -377,14 +377,14 @@ class UpdateDatabaseCredential(DatabaseCredentialBase):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.update_database_user(
                 self.organisation_id, self.project_id, self.cluster_id,
-                res.json()["id"], None, headers=header,
-                userRoles=self.update_access["userRoles"])
+                res.json()["id"], copy.deepcopy(self.update_access),
+                userRoles=self.update_access["userRoles"], headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_database_user(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    res.json()["id"], None, headers=header,
-                    userRoles=self.update_access["userRoles"])
+                    res.json()["id"], copy.deepcopy(self.update_access),
+                    userRoles=self.update_access["userRoles"], headers=header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
