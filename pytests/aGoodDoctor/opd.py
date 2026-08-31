@@ -1929,18 +1929,24 @@ class OPD:
         Reverse setup_backup_encryption(): drop the KMS key, its Credential
         Store entry, and the bucket-encryption secrets.
 
-        Runs on both the success and failure paths -- cloud KMS keys carry
-        ongoing cost and must never be left orphaned. On failure everything a
-        human needs to find the key in the provider's console is logged first:
-        the scheduled-delete window (AWS: 7 days pending; Azure: 90-day soft
-        delete; GCP: destroys versions only) gives investigators time to
-        cancel deletion if the key is still needed for post-mortem.
+        On a passing run everything is cleaned up -- cloud KMS keys carry
+        ongoing cost and must not be left orphaned. On a failed run nothing is
+        deleted: the key, the Credential Store entry and the bucket-encryption
+        secrets are left exactly as they are so the encrypted backup can still
+        be read during post-mortem. Everything a human needs to find the key in
+        the provider's console is logged before returning.
 
         Every step swallows its own exceptions so one failure cannot strand
         the resources after it.
         """
         if not (getattr(self, "ear_bk", False)
                 or getattr(self, "ear_contbk", False)):
+            if self.is_test_failed():
+                # Same reasoning as the backup-EaR path below: keep the
+                # bucket-encryption secrets around for the post-mortem.
+                self.log.warning("Test failed. Leaving the bucket encryption "
+                                 "secrets in the same state for post-mortem")
+                return
             self._delete_bucket_encryption_secrets()
             return
 
@@ -1960,9 +1966,12 @@ class OPD:
                     self.kms_provider, "_km_created_by_us", None),
                 "km_cred_store_id": self.km_cred_store_id,
             }
-            self.log.warning(f"EaR test failed — KMS resources scheduled for "
-                             f"deletion below. Details for post-mortem "
+            self.log.warning(f"EaR test failed. Leaving the KMS keys in the "
+                             f"same state — Details for post-mortem "
                              f"lookup: {key_details}")
+
+        if self.is_test_failed():
+            return
 
         if self.kms_provider is not None:
             try:
