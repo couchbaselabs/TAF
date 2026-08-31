@@ -848,6 +848,25 @@ class CRLTest(CRLBase):
             "Permissive: missing-CRL cert should connect (fail-open)",
         )
         self.log.info("Permissive: missing-CRL cert connects (fail-open)")
+        # Hard-assert the fail-open warning log line itself, not just the
+        # connection outcome -- apply_policy's permissive clause
+        # (cb_crl.erl) logs this exact shape at ?log_warning specifically
+        # for the fail-open path, distinct from the ?log_debug-level "will
+        # fail" clause used for require/disabled.
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            recent = grep_remote_log(shell, self.DEBUG_LOG_PATH, "(CRL)", lines=3)
+        finally:
+            shell.disconnect()
+        for expected in (
+            "Certificate status undetermined", "policy=permissive", "treat as valid",
+        ):
+            self.assertIn(
+                expected, recent,
+                f"Expected the Permissive fail-open warning log line for the "
+                f"missing-CRL cert to contain {expected!r}: {recent}",
+            )
+        self.log.info("Permissive fail-open warning log line confirmed for missing-CRL cert")
 
         # Permissive fails open on an expired applicable CRL too, a
         # distinct case from "missing" above (this CRL exists, it's just
@@ -871,21 +890,26 @@ class CRLTest(CRLBase):
             "Permissive: expired-CRL cert should connect (fail-open)",
         )
         self.log.info("Permissive: expired-CRL cert connects (fail-open)")
-        # Best-effort: look for a warning-shaped log line, never a hard
-        # assertion -- the connection outcome above is what actually proves
-        # fail-open semantics, this is just a nicety if the wording matches.
+        # Same hard assertion as the missing-CRL case above, plus "expired
+        # CRLs" -- format_undetermined_details (cb_crl.erl) only emits that
+        # literal substring via the {expired_crls, _} clause, which is
+        # exactly the shape CA-3's now-stale CRL hits here (distinct from
+        # the missing-CRL case's no-CRL-at-all reason text above).
+        shell = RemoteMachineShellConnection(self.cluster.master)
         try:
-            shell = RemoteMachineShellConnection(self.cluster.master)
-            try:
-                out, _ = shell.execute_command(
-                    "grep -i 'warn' /opt/couchbase/var/lib/couchbase/logs/debug.log "
-                    "| tail -20"
-                )
-                self.log.info(f"Warning-log check (best-effort): {out}")
-            finally:
-                shell.disconnect()
-        except Exception as exc:
-            self.log.info(f"Warning-log check skipped (best-effort): {exc}")
+            recent = grep_remote_log(shell, self.DEBUG_LOG_PATH, "(CRL)", lines=3)
+        finally:
+            shell.disconnect()
+        for expected in (
+            "Certificate status undetermined", "policy=permissive", "treat as valid",
+            "expired CRLs",
+        ):
+            self.assertIn(
+                expected, recent,
+                f"Expected the Permissive fail-open warning log line for the "
+                f"expired-CRL cert to contain {expected!r}: {recent}",
+            )
+        self.log.info("Permissive fail-open warning log line confirmed for expired-CRL cert")
 
         # Permissive -> Require: same immediate-effect check as above.
         self.crl_utils.set_settings(
@@ -1757,6 +1781,20 @@ class CRLTest(CRLBase):
                 "Revoked-cert connection rejection is audited via the "
                 "generic authentication-failure event"
             )
+            # Capture the actual auth_failure (event 8264) audit event's
+            # free-text `reason` -- this, not just "some new audit entry
+            # appeared", is what the PRD's "distinguishable audit/log
+            # reason" actually needs proving. Compared against
+            # missing/expired/untrusted's own reason text further below.
+            revoked_auth_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8264)
+            self.assertIsNotNone(
+                revoked_auth_event, "No auth_failure (8264) audit event found "
+                "for the revoked-cert rejection"
+            )
+            revoked_reason = revoked_auth_event.get("reason")
+            self.assertTrue(
+                revoked_reason, f"auth_failure event missing a reason: {revoked_auth_event}"
+            )
 
             # No raw serial number or PEM/DER bytes should leak into the
             # rejection log line. Greps for cb_crl's own log lines
@@ -1844,6 +1882,15 @@ class CRLTest(CRLBase):
                 missing_cert_path, missing_key_path,
                 ["undetermined", "no usable crl"],
             )
+            missing_auth_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8264)
+            self.assertIsNotNone(
+                missing_auth_event, "No auth_failure (8264) audit event found "
+                "for the missing-CRL rejection"
+            )
+            missing_reason = missing_auth_event.get("reason")
+            self.assertTrue(
+                missing_reason, f"auth_failure event missing a reason: {missing_auth_event}"
+            )
 
             # Expired: a short-lived CRL, uploaded valid, waited past its
             # own next_update via real wall-clock time.
@@ -1882,6 +1929,15 @@ class CRLTest(CRLBase):
                 missing_cert_path, missing_key_path,
                 ["undetermined", "expired"],
             )
+            expired_auth_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8264)
+            self.assertIsNotNone(
+                expired_auth_event, "No auth_failure (8264) audit event found "
+                "for the expired-CRL rejection"
+            )
+            expired_reason = expired_auth_event.get("reason")
+            self.assertTrue(
+                expired_reason, f"auth_failure event missing a reason: {expired_auth_event}"
+            )
             self.log.info(
                 "Revoked/missing/expired CRL rejections all produce "
                 "distinguishable log text"
@@ -1901,8 +1957,14 @@ class CRLTest(CRLBase):
                 "AuditUntrustedCA"
             )
             self._trust_ca_on_cluster(untrusted_ca_cert)
-            untrusted_leaf_cert, _, _ = self.crl_utils.generate_leaf_cert(
+            untrusted_leaf_cert, untrusted_leaf_key, _ = self.crl_utils.generate_leaf_cert(
                 untrusted_ca_cert, untrusted_ca_key, "auditUntrustedLeaf"
+            )
+            untrusted_leaf_cert_path = self._write_temp_pem(
+                self.crl_utils.cert_to_pem(untrusted_leaf_cert)
+            )
+            untrusted_leaf_key_path = self._write_temp_pem(
+                self.crl_utils.key_to_pem(untrusted_leaf_key)
             )
             untrusted_ca_filename = "audit_untrusted_ca.pem"
             status, content = self.crl_utils.upload_file(
@@ -1946,6 +2008,49 @@ class CRLTest(CRLBase):
                 "Runtime log line for an already-loaded CRL whose issuing "
                 "CA became untrusted also says 'undetermined'+'rejected', "
                 "distinguishable from missing/expired"
+            )
+
+            # A real handshake against this now-untrusted-CA cert is
+            # rejected at the generic TLS chain-validation layer (see
+            # comment above) -- still an auth_failure (8264) audit event,
+            # just via a different reason (chain/CA validation, not a CRL
+            # revocation-status verdict). Captured here purely to compare
+            # its `reason` text against revoked/missing/expired below.
+            self.assertFalse(
+                self._handshake_ok(untrusted_leaf_cert_path, untrusted_leaf_key_path),
+                "A cert whose issuing CA is untrusted should be rejected",
+            )
+            untrusted_auth_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8264)
+            self.assertIsNotNone(
+                untrusted_auth_event, "No auth_failure (8264) audit event found "
+                "for the untrusted-CA rejection"
+            )
+            untrusted_reason = untrusted_auth_event.get("reason")
+            self.assertTrue(
+                untrusted_reason, f"auth_failure event missing a reason: {untrusted_auth_event}"
+            )
+
+            # The PRD asks that revoked/missing/expired/untrusted-chain each
+            # produce "a distinguishable audit/log reason code" -- there is
+            # no such coded enum (all four route through the same generic
+            # auth_failure event, confirmed above), but its free-text
+            # `reason` field is what actually stands in for one. Prove that
+            # stand-in is genuine: all four reasons here, not just "some
+            # event fired".
+            reasons_by_case = {
+                "revoked": revoked_reason,
+                "missing": missing_reason,
+                "expired": expired_reason,
+                "untrusted": untrusted_reason,
+            }
+            self.assertEqual(
+                len(set(reasons_by_case.values())), len(reasons_by_case),
+                f"Expected all four failure types to have distinct "
+                f"auth_failure reason text, got: {reasons_by_case}",
+            )
+            self.log.info(
+                f"auth_failure audit event reason distinguishes all four "
+                f"failure types: {reasons_by_case}"
             )
 
             # No CRL load-success/failure metric should exist.
@@ -2648,11 +2753,11 @@ class CRLTest(CRLBase):
 
         # Malformed certificate input is rejected with a clear error --
         # two distinct shapes depending on whether the string is even
-        # valid base64. A PEM-shaped but truncated block (e.g. "MIIB") is
-        # still valid base64 as far as that check is concerned, so it
-        # falls through to the same per-cert "failed" path as any other
-        # well-formed-but-not-a-real-certificate input -- only a string
-        # that isn't valid base64 at all trips the request-level check.
+        # valid base64. Well-formed-but-not-a-real-certificate input (both
+        # arbitrary garbage bytes and a genuinely truncated real
+        # certificate's DER) falls through to the same per-cert "failed"
+        # path; only a string that isn't valid base64 at all trips the
+        # request-level check.
         garbage_b64 = base64.b64encode(b"not a real certificate, just bytes").decode()
         status, content = self.crl_utils.diagnostics_validate(
             self.rest, policy="Require", certs=[garbage_b64]
@@ -2662,6 +2767,24 @@ class CRLTest(CRLBase):
         )
         self.assertEqual(content["results"][0]["status"], "failed")
 
+        # A genuinely truncated real certificate -- distinct from the
+        # arbitrary-garbage-bytes case above, since this one has a valid
+        # ASN.1 DER prefix that then abruptly ends mid-structure, rather
+        # than never looking like a certificate at all.
+        truncated_der = self.crl_utils.cert_to_der(server_eku_cert)[:-20]
+        truncated_b64 = base64.b64encode(truncated_der).decode()
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[truncated_b64]
+        )
+        self.assertTrue(
+            status, f"Truncated-but-valid-base64 input should still get a 200: {content}"
+        )
+        self.assertEqual(
+            content["results"][0]["status"], "failed",
+            f"A truncated real certificate should fail the same way as any "
+            f"other well-formed-but-undecodable input: {content}",
+        )
+
         not_base64_at_all = "!!!not-base64-at-all###"
         status, content = self.crl_utils.diagnostics_validate(
             self.rest, policy="Require", certs=[not_base64_at_all]
@@ -2669,7 +2792,10 @@ class CRLTest(CRLBase):
         self.assertFalse(
             status, f"A string that isn't valid base64 at all should be rejected, got: {content}"
         )
-        self.log.info("Malformed cert input rejected with two distinct, clear error shapes")
+        self.log.info(
+            "Malformed cert input (garbage bytes, truncated real cert, "
+            "non-base64) rejected with the correct distinct error shapes"
+        )
 
         # AKI/SKI disambiguates between two trusted CAs that share the
         # same subject name -- the right CA's CRL applies only to its own
@@ -2964,7 +3090,19 @@ class CRLTest(CRLBase):
         # Revoking a certificate does not touch a same-named password
         # credential -- CRL revocation only ever governs cert-based
         # authentication, not a separate password credential for the
-        # same logical identity.
+        # same logical identity. This is also the answer to "can a
+        # non-TLS/plaintext listener be used to bypass cert revocation":
+        # confirmed from source (menelaus_auth:extract_auth/1,
+        # menelaus_auth.erl:262-287) that client-cert identity is derived
+        # exclusively from the TLS socket's own peer certificate
+        # (get_user_name_from_client_cert(Sock)) -- a plain-HTTP
+        # connection has no TLS layer and thus no peer cert to extract,
+        # so auth falls straight through to Basic/SCRAM/Bearer. There is
+        # no code path by which a cert-derived credential could ever be
+        # presented over a non-TLS listener, so there is no alternate
+        # cert-path to probe: the plain-HTTP port was simply never
+        # gated by CRL/cert-auth in the first place, by construction, not
+        # merely by observed behavior.
         username, password = self._create_rbac_test_user("bypassRace", "views_admin[*]")
         resp = requests.get(
             f"http://{self.cluster.master.ip}:8091/whoami",
@@ -2977,7 +3115,9 @@ class CRLTest(CRLBase):
         )
         self.log.info(
             "Revoking a cert does not revoke a same-named password "
-            "credential -- documented, expected behaviour"
+            "credential -- documented, expected behaviour. No plaintext-"
+            "listener bypass is possible: client-cert identity is only "
+            "ever derived from a TLS peer cert, confirmed from source"
         )
 
     def test_crl_restart_persistence(self):
@@ -3765,19 +3905,24 @@ class CRLTest(CRLBase):
     def test_crl_rebalance_and_failover_enforcement_continuity(self):
         """A deleted CRL file propagates to every cluster node, not just
         the one it was deleted from; CRL enforcement survives a
-        rebalance-out/rebalance-in cycle and an auto-failover event with
-        zero observed gap on existing/surviving cluster members, using a
-        ~1.5s probe cadence matching the validated manual QA methodology
-        for these rows. (A separately-tracked, disputed finding describes
-        a much narrower, sub-second-only-detectable CRL enforcement gap
-        specific to a node's first ~0.5-7s immediately after joining a
-        cluster -- that is out of scope here pending resolution; this
-        test intentionally checks the rejoined node's enforcement only
-        once rebalance has completed, not via continuous sub-second
-        probing of it during the join itself. A separate, confirmed
-        finding that a rebalanced-*out* node resets its own CRL policy
-        to Disabled -- rather than retaining it -- is also out of scope
-        here pending a decision on filing/tracking it.)"""
+        rebalance-out/rebalance-in cycle, a single unequal rebalance
+        operation that both adds 2 nodes and removes 1, and an
+        auto-failover event, with zero observed gap on existing/
+        surviving cluster members throughout, using a ~1.5s probe cadence
+        matching the validated manual QA methodology for these rows.
+        Needs a 4th pool node (beyond the 3 nodes_init requires) purely
+        as an always-idle spare for the unequal-rebalance case -- see the
+        comment at that block for why 3 nodes can't produce it. (A
+        separately-tracked, disputed finding describes a much narrower,
+        sub-second-only-detectable CRL enforcement gap specific to a
+        node's first ~0.5-7s immediately after joining a cluster -- that
+        is out of scope here pending resolution; this test intentionally
+        checks a newly-joined node's enforcement only once rebalance has
+        completed, not via continuous sub-second probing of it during the
+        join itself. A separate, confirmed finding that a rebalanced-
+        *out* node resets its own CRL policy to Disabled -- rather than
+        retaining it -- is also out of scope here pending a decision on
+        filing/tracking it.)"""
         self._enable_client_cert_auth(state="enable")
         self.crl_utils.set_settings(
             self.rest,
@@ -3984,4 +4129,62 @@ class CRLTest(CRLBase):
             )
         self.log.info(
             "Cluster restored to 3 healthy members; autoFailover settings restored"
+        )
+
+        # -- Unequal in+out rebalance: a single rebalance operation that
+        # both adds 2 nodes and removes 1, distinct from the sequential
+        # out-then-in cycle above. Needs a 4th pool node
+        # (self.cluster.servers[3]) -- master can never be evicted
+        # (self.rest stays bound to it for every admin call throughout),
+        # and with only 3 total nodes there's no way to have 2
+        # simultaneously-idle nodes to add while keeping master in the
+        # cluster and still having a non-master member left to remove.
+        unequal_spare = self.cluster.servers[3]
+        second_member = next(
+            s for s in stable_servers if s.ip != self.cluster.master.ip
+        )
+        self.assertTrue(
+            self.task.rebalance(self.cluster, to_add=[], to_remove=[second_member]),
+            "Preparatory rebalance-out (freeing a 2nd addable node) failed",
+        )
+        master_ip = self.cluster.master.ip
+        states = self.crl_utils.probe_during(
+            lambda: self.task.rebalance(
+                self.cluster,
+                to_add=[second_member, unequal_spare],
+                to_remove=[target_server],
+            ),
+            [master_ip], self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+        )
+        self.assertNotIn(
+            "connected", states[master_ip],
+            f"Revoked cert must never connect on {master_ip} throughout "
+            f"the unequal add-2/remove-1 rebalance, got: {states[master_ip]}",
+        )
+        self.log.info(
+            f"Unequal add-2/remove-1 rebalance: zero enforcement gap on "
+            f"the master throughout ({len(states[master_ip])} samples)"
+        )
+        for server in (second_member, unequal_spare):
+            self.assertEqual(
+                self.crl_utils.probe_mtls_state(
+                    server.ip, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+                ),
+                "rejected",
+                f"Newly-added node {server.ip} should enforce CRL "
+                f"identically to the rest once the unequal rebalance "
+                f"completes",
+            )
+            self.assertEqual(
+                self.crl_utils.probe_mtls_state(
+                    server.ip, self.MGMT_PORT, valid_cert_path, valid_key_path,
+                ),
+                "connected",
+                f"Newly-added node {server.ip} should accept the valid "
+                f"cert once the unequal rebalance completes",
+            )
+        self.log.info(
+            "Both newly-added nodes correctly enforce CRL once the "
+            "unequal add-2/remove-1 rebalance completes -- consistent "
+            "enforcement through a single unequal rebalance operation"
         )
