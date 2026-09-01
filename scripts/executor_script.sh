@@ -5,6 +5,22 @@
 # recently was) actively using never gets reclaimed as "abandoned".
 touch "$WORKSPACE/.executor_lock" 2>/dev/null
 
+cleanup_dir_before_exit() {
+  # To clean any available space from docker (does not depend on the cwd)
+  docker system prune -f
+  # Runs from an EXIT trap, so the cwd is whatever the failing step left
+  # behind. Anchor to the workspace first and bail out if that is not
+  # possible - never rm -rf whatever directory we happen to have landed in.
+  [ -n "$WORKSPACE" ] || return 0
+  cd "$WORKSPACE" || return 0
+  # To reduce the disk consumption post run
+  rm -rf .git b build conf guides pytests
+}
+
+# Cleanup on every exit path, including the early `exit`s below. Bash keeps
+# the original exit status across an EXIT trap, so this cannot mask a failure.
+trap cleanup_dir_before_exit EXIT
+
 run_populate_ini_script() {
   set -x
   $1 scripts/populateIni.py $skip_mem_info \
@@ -15,7 +31,9 @@ run_populate_ini_script() {
   -p ${os} \
   -o $WORKSPACE/testexec.$$.ini \
   -k '{'${UPDATE_INI_VALUES}'}'
+  rc=$?
   set +x
+  return $rc
 }
 
 check_and_build_testrunner_install_docker() {
@@ -253,8 +271,17 @@ if [ "${slave}" == "deb12_executor" ]; then
   git submodule init
   git submodule update --init --force --remote
   run_populate_ini_script $py_executable
+  populate_ini_status=$?
+  if [ $populate_ini_status -ne 0 ] || [ ! -s "$WORKSPACE/testexec.$$.ini" ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "populateIni.py exited $populate_ini_status and left no usable .ini"
+    echo "(commonly: no SSH connectivity to the assigned pool nodes)"
+    echo "Skipping install - the run cannot proceed"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    status=1
+  fi
 
-  if [ "$server_type" != "CAPELLA_LOCAL" ]; then
+  if [ $status -eq 0 ] && [ "$server_type" != "CAPELLA_LOCAL" ]; then
     cd platform_utils/ssh_util
     export PYTHONPATH="../../couchbase_utils:../../py_constants"
     $py_executable -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
@@ -302,7 +329,16 @@ else
       -o testexec.$$.ini \
       -k '{'${UPDATE_INI_VALUES}'}'
   fi
-  if [ "$server_type" != "CAPELLA_LOCAL" ]; then
+  populate_ini_status=$?
+  if [ $populate_ini_status -ne 0 ] || [ ! -s "$WORKSPACE/testexec.$$.ini" ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "populateIni.py exited $populate_ini_status and left no usable .ini"
+    echo "(commonly: no SSH connectivity to the assigned pool nodes)"
+    echo "Skipping install - the run cannot proceed"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    status=1
+  fi
+  if [ $status -eq 0 ] && [ "$server_type" != "CAPELLA_LOCAL" ]; then
     if [ "$os" = "windows" ] ; then
       if [ "$use_native_testrunner" = true ]; then
         (
@@ -462,9 +498,5 @@ else
   newState=failedInstall
   echo newState=failedInstall>propfile
   guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --install_failure"
+  exit $status
 fi
-
-# To reduce the disk consumption post run
-rm -rf .git b build conf guides pytests
-# To clean any available space from docker
-docker system prune -f
