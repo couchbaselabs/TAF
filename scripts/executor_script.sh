@@ -6,13 +6,26 @@
 touch "$WORKSPACE/.executor_lock" 2>/dev/null
 
 cleanup_dir_before_exit() {
+  # Runs from an EXIT trap, so the cwd is whatever the failing step left
+  # behind - anchor to the workspace before deleting anything.
+  [ -n "$WORKSPACE" ] && cd "$WORKSPACE"
   rm -rf .git b build conf pytests DocLoader lib couchbase_utils test_infra_runner
   # Remove any installers downloaded locally
   rm -rf *.deb *.rpm *.msi
 }
 
+# Cleanup on every exit path, including the early `exit`s below. Bash keeps
+# the original exit status across an EXIT trap, so this cannot mask a failure.
+trap cleanup_dir_before_exit EXIT
+
 setup_test_infra_repo_for_installation() {
   git clone https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbaselabs/test_infra_runner --depth 1
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to clone test_infra_runner"
+    newState=failedInstall
+    echo newState=failedInstall>propfile
+    exit 1
+  fi
   cd test_infra_runner/
   git submodule update --init --force --remote
   pyenv local $PYENV_VERSION
@@ -34,8 +47,10 @@ populate_ini() {
     --cb_version $version_number \
     --columnar_version "$columnar_version_number" \
     --mixed_build_config "$mixed_build_config"
+  rc=$?
   set +x
   cd ..
+  return $rc
 }
 
 do_install() {
@@ -198,6 +213,17 @@ python -m pip install -r requirements.txt
 setup_test_infra_repo_for_installation
 touch $WORKSPACE/testexec.$$.ini
 populate_ini
+populate_ini_status=$?
+if [ $populate_ini_status -ne 0 ] || [ ! -s "$WORKSPACE/testexec.$$.ini" ]; then
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo "populateIni.py exited $populate_ini_status and left no usable .ini"
+  echo "(commonly: no SSH connectivity to the assigned pool nodes)"
+  echo "Skipping install - the run cannot proceed"
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  newState=failedInstall
+  echo newState=failedInstall>propfile
+  exit 1
+fi
 
 parallel=true
 if [ "$server_type" = "CAPELLA_LOCAL" ]; then
@@ -339,7 +365,6 @@ if [ $status -eq 0 ]; then
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     echo "   Exiting.. Maven build failed"
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    cleanup_dir_before_exit
     exit 1
   fi
   cd ..
@@ -413,23 +438,28 @@ if [ $status -eq 0 ]; then
     }
     END {print "Aggregate Failures: " failures ", Aggregate Total Tests: " total_tests;}' $WORKSPACE/logs/*/*.xml
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
-  status=$?
+  rerun_status=$?
   set +x
   # testrunner.py can crash before writing any report (e.g. Sirius/doc-loader
   # launch failure) - rerun_jobs.py then finds zero testsuites and happily
   # exits 0 ("no more failed tests"), which would otherwise mask the crash
   # and let Jenkins report the build as SUCCESS with no test results at all.
+  # NOTE: this deliberately only fires when there is NO report at all.
+  # testrunner.py exits 1 for any failed/errored test case, and those runs do
+  # produce reports - they must stay a zero exit here so the JUnit publisher
+  # marks the build UNSTABLE rather than FAILURE.
   if [ "$testrunner_status" -ne 0 ] && [ "$report_count" -eq 0 ]; then
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     echo "testrunner.py exited $testrunner_status without producing any test report"
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     exit $testrunner_status
   fi
-  if [ $status -ne 0 ]; then
-    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    echo "Non-zero exit while running rerun_jobs.py"
-    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    exit $status
+  # A rerun_jobs.py crash is bookkeeping only: the run's own results are
+  # already in logs/*/*.xml, and the only fallout is that the next build finds
+  # no rerun filter and re-runs the whole suite. Warn, but do not turn a
+  # passing/unstable run into a FAILURE.
+  if [ $rerun_status -ne 0 ]; then
+    echo "WARNING: rerun_jobs.py exited $rerun_status - next build will re-run the full suite"
   fi
 else
   echo Desc: $desc
@@ -438,7 +468,5 @@ else
   set -x
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --install_failure
   set +x
+  exit $status
 fi
-
-# To reduce the disk consumption post run
-cleanup_dir_before_exit
