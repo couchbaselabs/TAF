@@ -24,6 +24,7 @@ unittest.TestCase
                           ├── LuksUpgrade          (luks_upgrade.py)
                           ├── MemCompressionUpgradeTests (mem_compression_upgrade.py)
                           ├── SystemEventLogs      (system_event_logs.py)
+                          ├── CRLUpgradeTests      (crl_upgrade.py)
                           └── E2EUpgrade           (e2e_upgrade.py)
                                 └── (also inherits BaseSecondaryIndexingTests)
 ```
@@ -250,6 +251,38 @@ System event log API upgrade compatibility test.
 
 ---
 
+### `crl_upgrade.py` — `CRLUpgradeTests`
+
+CRL (Certificate Revocation List) mixed-version-cluster upgrade tests. Closes PRD gap-analysis
+rows in `ns_server/doc/CRL KV + Nserv Test plan` that a uniform-version cluster
+(`pytests/security/crl_test.py`, `CRLBase(ClusterSetup)`) structurally cannot exercise.
+`CRLBase` and `UpgradeBase` diverge at different intermediate ancestors and can't be combined
+via multiple inheritance without MRO conflicts + double cluster-init, so this file duplicates
+`CRLBase`'s fixture helpers verbatim rather than inheriting them.
+
+**setUp extras** (after `super().setUp()`, which fully provisions the pre-CRL cluster):
+- `self.crl_utils = CRLUtils(log=self.log)`, `self.rest = RestConnection(self.cluster.master)`
+- Generates + trusts a CA via `generate_ca()` + `_trust_ca_on_cluster()` (safe pre-upgrade — CA
+  trust predates CRL support)
+- Fixture helpers copied verbatim from `crl_base.py`: `_ca_dir`, `_trust_ca_on_cluster`,
+  `_ca_remote_filename`, `_track_uploaded_file`, `_cleanup_created_files`,
+  `_reset_crl_settings`, `_disable_client_cert_auth`, `_enable_client_cert_auth`,
+  `_write_temp_pem`, `_cleanup_temp_pem_files`, `_cleanup_trusted_cas`
+
+**Test methods:**
+
+| Test | Purpose |
+|---|---|
+| `test_upgrade_crl_config_survives_online_upgrade` | Runs the standard upgrade loop to full completion. Confirms: pre-CRL cluster has zero CRL REST support; existing CA trust survives the upgrade; CRL defaults to Disabled post-upgrade; freshly configuring `Require` + uploading a CRL enforces correctly immediately (revoked cert rejected, valid cert connects) — first real exercise of CRL activation right after an upgrade (fresh cbauth push-config registration, freshly-started poller). |
+| `test_mixed_version_health_warning_and_require_policy_block` | Consolidates two PRD rows in one pass (avoids reprovisioning the expensive mixed-version window twice). Pauses after each single-node `offline()` upgrade and calls `_assert_mixed_version_crl_behavior()`, which confirms a **cluster-wide CRL capability gate**: an already-upgraded node's `GET /settings/crl` and `set_settings(Require)` both fail with `"CRL feature not yet enabled in this cluster"` while any node in the cluster remains pre-CRL — a whole-feature gate, not a per-policy-value rejection. Also pins a known gap: no health warning fires for the mixed-version state (only `crl_expired`/`crl_expires_soon` alert types exist in `menelaus_web_alerts_srv.erl`). |
+
+**Config:** `conf/upgrade/crl_upgrade.conf` — `upgrade_chain=8.0.2`, `upgrade_type=offline`,
+`nodes_init=3` (requires a 4th pool server: `UpgradeBase.setUp()` sets
+`self.spare_node = cluster.servers[nodes_init]` unconditionally even though `offline` never
+uses it). `upgrade_version` supplied externally as a real 8.5.x build.
+
+---
+
 ### `e2e_upgrade.py` — `E2EUpgrade`
 End-to-end upgrade with multi-service cluster (KV + Views + 2i + Eventing + N1QL + CBAS).
 
@@ -442,3 +475,4 @@ While upgrading from 6.5→7.2, `cluster_features` does **not** include `"collec
 | `attempt_10k_collection_creation()` wrong result | Returns `True` only on 8.5+ clusters. Asserted `False` during upgrade, `True` after. Failure = cluster not fully at 8.5+ when checked. |
 | FBR check fails | `verify_and_configure_fbr()` only called when `float(upgrade_version[:3]) >= 8.5`. Checks `internalSettings.dataServiceFileBasedRebalanceEnabled == True`. On older versions the key is absent — guarded by `if 'dataServiceFileBasedRebalanceEnabled' in content`. |
 | `if "feature" in self.cluster_features` check seems redundant but must not be removed | `cluster_features` reflects the **current** cluster version at each step of the loop, not the final target. If `upgrade_chain` starts from a base version that predates the feature (e.g. chain `["6.5", "7.2", "8.0"] + "8.5"`), the guard is necessary during the 6.5→7.2 phase even though the target supports the feature. See "WARNING" block in Upgrade Chain Configuration for the full guard table. |
+| CRL REST calls (`GET/POST /settings/crl*`) fail on an already-upgraded node during a mixed-version window | Not a bug — confirmed live (`crl_upgrade.py`). ns_server gates the entire CRL REST API **cluster-wide** until every node is upgraded; an upgraded node still 404s with `"CRL feature not yet enabled in this cluster"` while any node remains pre-CRL. `CRLUtils.node_supports_crl()` will report `False` for **every** node throughout the whole mixed-version window for this reason — it cannot be used to detect which specific node is upgraded. Use `ClusterRestAPI(server).node_details()["version"]` instead to check a node's own build. |

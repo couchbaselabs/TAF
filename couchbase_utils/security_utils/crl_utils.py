@@ -2,8 +2,11 @@ import base64
 import datetime
 import ipaddress
 import json
+import os
+import re
 import socket
 import ssl
+import tempfile
 import threading
 import time
 import uuid
@@ -18,6 +21,7 @@ from cb_server_rest_util.security.crl import (
     ENDPOINT_CRL_SETTINGS,
     ENDPOINT_RELOAD_CRL,
 )
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
@@ -29,6 +33,7 @@ from couchbase_utils.security_utils.jwt_utils import (
     remote_write_file_b64,
     start_remote_http_server,
 )
+from couchbase_utils.security_utils.x509main import x509main
 # Aliased: StatsLib.StatsOperations also exports a *different* StatsHelper
 # (cbstats-based, not Prometheus/REST) -- this is specifically the /metrics
 # one (StatsOperations_Rest.get_all_metrics()).
@@ -82,6 +87,14 @@ class CRLUtils:
 
     def __init__(self, log=None):
         self.log = log
+        # Fixture-cleanup tracking for the test-fixture helpers below --
+        # shared by CRLBase (pytests/security/crl_base.py) and
+        # CRLUpgradeTests (pytests/upgrade/crl_upgrade.py). Fresh per
+        # CRLUtils instance, so a new instance per test setUp() is enough
+        # to avoid leakage across tests.
+        self.created_files = []
+        self.trusted_ca_ids = []
+        self.temp_pem_files = []
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
@@ -416,6 +429,22 @@ class CRLUtils:
         status, content, _ = api.get_crl_settings()
         return status, self.parse_content(content)
 
+    def node_supports_crl(self, rest):
+        """
+        Live per-node CRL capability probe (GET /settings/crl) -- for
+        mixed-version-cluster tests where some nodes predate CRL support
+        entirely. Deliberately does not consult a version-string/
+        cluster_features map: upgrade_lib.couchbase's features dict has no
+        "crl" entry, so a version check would silently be wrong. A
+        pre-CRL node 404s (confirmed live against an 8.0.3 node: "Requested
+        resource not found") -- this only depends on get_settings's
+        status_bool, not the exact error body, so any 404 shape works.
+
+        Returns bool.
+        """
+        status, content = self.get_settings(rest)
+        return bool(status) and isinstance(content, dict) and "policyPerScope" in content
+
     def set_settings(self, rest, **fields):
         """
         POST /settings/crl with the given fields (partial update).
@@ -644,6 +673,195 @@ class CRLUtils:
     def get_alert_messages(rest):
         """The 'msg' text of every current /pools/default alert."""
         return [a.get("msg", "") for a in (rest.get_alerts() or [])]
+
+    # ── Test fixture helpers (CA trust, cleanup tracking) ───────────────────
+    #
+    # Shared by CRLBase (pytests/security/crl_base.py) and CRLUpgradeTests
+    # (pytests/upgrade/crl_upgrade.py) -- the two test classes can't share a
+    # common ancestor (CRLBase(ClusterSetup) and UpgradeBase(BaseTestCase)
+    # diverge at different intermediate ancestors and can't be combined via
+    # multiple inheritance without MRO conflicts + double cluster-init), so
+    # the actual fixture logic lives here once; each test class exposes
+    # thin `self._foo(...)` wrappers that just forward to `self.crl_utils`.
+    # `AssertionError` is raised (not `self.fail`/`self.assertTrue`) so this
+    # stays usable outside a TestCase -- unittest treats a raised
+    # AssertionError as a test failure regardless of where it was raised,
+    # as long as it propagates out of the test method.
+
+    def track_uploaded_file(self, filename):
+        self.created_files.append(filename)
+
+    def cleanup_created_files(self, rest):
+        for filename in self.created_files:
+            status, _ = self.delete_file(rest, filename)
+            if not status and self.log:
+                self.log.warning(f"Failed to delete CRL file {filename} in teardown")
+        self.created_files = []
+
+    def reset_crl_settings(self, rest):
+        """
+        Reset every /settings/crl field back to its documented default, not
+        just policyPerScope. Found the hard way: a test that configures
+        `urls`/`urlPollIntervalMs` (e.g. test_crl_url_poll_ingestion) left
+        the cluster polling a now-dead URL every few seconds indefinitely
+        after its own HTTP server was torn down, since only resetting
+        policyPerScope left `urls` still pointed at it -- generating
+        continuous "unexpected HTTP status 404" warnings on the node with
+        no test still running to explain them.
+        """
+        self.set_settings(
+            rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+            directory="/opt/couchbase/var/lib/couchbase/inbox/crls",
+            dirPollIntervalMs=60000,
+            checkIntermediateCerts=False,
+            urls=[],
+            urlPollIntervalMs=3600000,
+        )
+
+    @staticmethod
+    def disable_client_cert_auth(server):
+        """
+        Disables clientCertAuth on the cluster via plain HTTP (port 8091),
+        not HTTPS -- if the node was left in 'mandatory' mTLS mode, HTTPS
+        would be locked out by the very state this call is trying to clear.
+        """
+        requests.post(
+            f"http://{server.ip}:8091/settings/clientCertAuth",
+            auth=(server.rest_username, server.rest_password),
+            headers={"Content-Type": "application/json"},
+            json={"state": "disable", "prefixes": []},
+            timeout=30,
+        )
+
+    @staticmethod
+    def enable_client_cert_auth(server, state="enable", prefixes=None):
+        """
+        Enables client certificate authentication on the cluster.
+
+        state="mandatory" forces a client certificate on every TLS
+        connection -- locks out standard username/password admin REST
+        calls for the remainder of the test unless explicitly reverted.
+        """
+        if prefixes is None:
+            prefixes = [{"path": "subject.cn", "prefix": "", "delimiter": ""}]
+        status, content, _ = SecurityRestAPI(server).set_client_cert_auth_config(
+            state=state, prefixes=prefixes
+        )
+        if not status:
+            raise AssertionError(f"Failed to enable clientCertAuth: {content}")
+
+    def write_temp_pem(self, pem_bytes, suffix=".pem"):
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=suffix, mode="wb"
+        ) as tmp_file:
+            tmp_file.write(pem_bytes)
+            path = tmp_file.name
+        self.temp_pem_files.append(path)
+        return path
+
+    def cleanup_temp_pem_files(self):
+        for path in self.temp_pem_files:
+            try:
+                os.remove(path)
+            except OSError as exc:
+                if self.log:
+                    self.log.warning(f"Failed to remove temp PEM file {path}: {exc}")
+        self.temp_pem_files = []
+
+    @staticmethod
+    def _ca_dir(shell):
+        """Returns the OS-appropriate inbox/CA path for the connected shell's host."""
+        os_type = shell.extract_remote_info().distribution_type
+        if os_type == "windows":
+            install_path = x509main.WININSTALLPATH
+        elif os_type == "Mac":
+            install_path = x509main.MACINSTALLPATH
+        else:
+            install_path = x509main.LININSTALLPATH
+        return f"{install_path}{x509main.CHAINFILEPATH}/CA"
+
+    @staticmethod
+    def _ca_remote_filename(ca_cert):
+        """Unique-per-CA remote filename: sanitized CN + serial number, so
+        distinct CAs trusted in the same test never collide on disk."""
+        cn_attrs = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+        cn = cn_attrs[0].value if cn_attrs else "ca"
+        safe_cn = re.sub(r"[^A-Za-z0-9_.-]", "_", cn)
+        return f"{safe_cn}_{ca_cert.serial_number}.pem"
+
+    def trust_ca_on_cluster(self, rest, server, ca_cert):
+        """
+        Write ca_cert's PEM into the node's inbox/CA folder and instruct the
+        cluster to load it (POST /node/controller/loadTrustedCAs), mirroring
+        x509main._upload_cluster_ca_certificate but for an in-memory-generated
+        CA rather than one already on disk from an x509main._generate_cert
+        call.
+
+        Each CA gets its own remote filename, derived from its CN plus
+        serial number -- reusing a single fixed filename across calls would
+        let a second trust_ca_on_cluster() call silently overwrite (and
+        thus un-trust) a CA a test already trusted, e.g. tests that need
+        more than one simultaneously-trusted CA to check CRL-scope
+        isolation.
+        """
+        pem_bytes = self.cert_to_pem(ca_cert)
+        remote_filename = self._ca_remote_filename(ca_cert)
+
+        shell = RemoteMachineShellConnection(server)
+        try:
+            ca_dir = self._ca_dir(shell)
+            shell.execute_command(f"mkdir -p {ca_dir}")
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=".pem", mode="wb"
+            ) as tmp_file:
+                tmp_file.write(pem_bytes)
+                local_path = tmp_file.name
+            try:
+                shell.copy_file_local_to_remote(
+                    local_path, f"{ca_dir}/{remote_filename}"
+                )
+            finally:
+                os.remove(local_path)
+        finally:
+            shell.disconnect()
+
+        status, content = rest.load_trusted_CAs()
+        if not status:
+            raise AssertionError(
+                f"Failed to load trusted CAs on {server.ip}: {content}"
+            )
+
+        cn_attrs = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+        cn = cn_attrs[0].value if cn_attrs else None
+        try:
+            trusted = json.loads(content)
+            matching_ids = [
+                entry.get("id") for entry in trusted
+                if cn and cn in entry.get("subject", "")
+            ]
+            if matching_ids:
+                self.trusted_ca_ids.append(max(matching_ids))
+        except (ValueError, TypeError) as exc:
+            if self.log:
+                self.log.warning(
+                    f"Could not identify trusted CA id for {cn!r} -- it "
+                    f"won't be auto-untrusted in tearDown: {exc}"
+                )
+
+    def cleanup_trusted_cas(self, rest):
+        """Untrusts every CA trusted via trust_ca_on_cluster, via the real
+        per-id REST endpoint (DELETE /pools/default/trustedCAs/{id}) rather
+        than a raw chronicle_kv overwrite -- the latter bypasses the
+        server's own "CA still in use" protection. Best-effort: logs,
+        doesn't raise."""
+        for ca_id in self.trusted_ca_ids:
+            status, content, _ = rest.delete_trusted_CA(ca_id)
+            if not status and self.log:
+                self.log.warning(
+                    f"Failed to untrust CA id={ca_id} in teardown: {content}"
+                )
+        self.trusted_ca_ids = []
 
     # ── mTLS handshake helpers ───────────────────────────────────────────────
 
