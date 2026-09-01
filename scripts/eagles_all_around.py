@@ -97,6 +97,18 @@ STRIP_CERTS = ('sed -e "s|%s.*%s|[certificate]|g" -e "/%s/,/%s/d"'
                % (CERT_BEGIN, CERT_END, CERT_BEGIN, CERT_END))
 
 
+# Compressed payloads, such as the base64 NsMappingRecords blobs diag.log
+# carries, are single lines tens of thousands of characters long whose body
+# happens to contain the substring "panic". A real panic is always a short
+# log line, so drop the oversized ones before grepping.
+MAX_LINE_LEN = 1000
+DROP_LONG_LINES = 'awk "length < %d"' % MAX_LINE_LEN
+
+# Match "panic" as a whole word so it is not picked up from the middle of an
+# identifier or an encoded payload that survived the filters above.
+PANIC_RE = r"\bpanic\b"
+
+
 def panic_grep(find_cmd):
     """Grep for panic in the files find_cmd prints, ignoring certificates.
 
@@ -107,8 +119,9 @@ def panic_grep(find_cmd):
     """
     return trimmed(
         "%s -print0 | xargs -0 -r -I FILE sh -c "
-        "'%s \"$1\" | grep -i -A 5 panic | sed -e \"s|^|$1: |\"' _ FILE"
-        % (find_cmd, STRIP_CERTS))
+        "'%s \"$1\" | %s | grep -i -E -A 5 \"%s\" "
+        "| sed -e \"s|^|$1: |\"' _ FILE"
+        % (find_cmd, STRIP_CERTS, DROP_LONG_LINES, PANIC_RE))
 
 
 def connection(server):
