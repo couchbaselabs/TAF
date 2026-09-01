@@ -124,13 +124,28 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
 
     def test_authorization(self):
         failures = list()
+        last_deleted_id = [None]
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
+            resource_ready_check = None
+            if last_deleted_id[0]:
+                # The previous iteration's credential (same fixed name)
+                # must actually be gone before we try to reuse the name -
+                # deletes can lag independently of project-level
+                # authorization propagation (see DeleteAdminUsers/
+                # DeleteScope.test_authorization).
+                deleted_id = last_deleted_id[0]
+                resource_ready_check = (
+                    lambda deleted_id=deleted_id: self.capellaAPI
+                        .cluster_ops_apis.fetch_database_user_info(
+                            self.organisation_id, self.project_id,
+                            self.cluster_id, deleted_id).status_code == 404)
+            self.auth_test_setup(
+                testcase, failures, header, self.project_id,
+                self.other_project_id, resource_ready_check)
             result = self.capellaAPI.cluster_ops_apis.create_database_user(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["name"], self.expected_res["password"], self.expected_res["credentialType"], self.expected_res["userRoles"],
@@ -159,6 +174,8 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                     self.log.error(
                         "Error while deleting credential created during "
                         "test_authorization: {}".format(del_res.content))
+                else:
+                    last_deleted_id[0] = result.json()["id"]
 
         if failures:
             for fail in failures:

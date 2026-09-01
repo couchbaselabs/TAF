@@ -668,8 +668,14 @@ class DeleteDatabaseCredential(DatabaseCredentialBase):
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
+            self.auth_test_setup(
+                testcase, failures, header, self.project_id,
+                self.other_project_id,
+                resource_ready_check=lambda: self.capellaAPI.cluster_ops_apis
+                    .fetch_database_user_info(
+                        self.organisation_id, self.project_id,
+                        self.cluster_id,
+                        res.json()["id"]).status_code == 200)
             result = self.capellaAPI.cluster_ops_apis.delete_database_user(
                 self.organisation_id, self.project_id, self.cluster_id,
                 res.json()["id"], header)

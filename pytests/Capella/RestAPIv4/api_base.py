@@ -1287,7 +1287,8 @@ class APIBase(CouchbaseBaseTest):
             testcases[-2]["expected_error"] = failure_expected_error
 
     def auth_test_setup(self, testcase, failures, header,
-                        project_id, other_project_id=None):
+                        project_id, other_project_id=None,
+                        resource_ready_check=None):
         if "expire_key" in testcase:
             self.update_auth_with_api_token(self.curr_owner_key)
             # create a new API key with expiry of approx 2 mins
@@ -1366,8 +1367,13 @@ class APIBase(CouchbaseBaseTest):
                 # created keys can take 15-20+ seconds for their resource
                 # scope to propagate; poll a lightweight, read-only call
                 # instead of guessing a fixed sleep duration, so we wait
-                # exactly as long as needed.
-                self.wait_for_new_key_authorization(project_id)
+                # exactly as long as needed. Callers that know exactly
+                # which resource they're about to act on can also pass
+                # resource_ready_check to wait for that resource's own
+                # visibility, which can lag independently of project-level
+                # authorization (see DeleteAdminUsers.test_authorization).
+                self.wait_for_new_key_authorization(
+                    project_id, resource_ready_check)
             else:
                 # This key intentionally has NO access to project_id and
                 # is only used to assert a 403 there, which the
@@ -1379,26 +1385,41 @@ class APIBase(CouchbaseBaseTest):
         else:
             self.update_auth_with_api_token(testcase)
 
-    def wait_for_new_key_authorization(self, project_id, timeout=45,
-                                       poll_interval=3):
+    def wait_for_new_key_authorization(self, project_id, extra_check=None,
+                                       timeout=45, poll_interval=3):
         """
-        Poll a read-only project-info call using the currently active API
-        key (set via update_auth_with_api_token) until it succeeds, to
-        wait out the backend's resource-scope propagation lag observed
-        for freshly-created, resource-scoped API keys. Falls back to
-        returning after `timeout` seconds regardless, so callers relying
-        on this to avoid false failures should still expect a genuine
-        failure to surface if the backend never becomes ready.
+        Poll a read-only project-info call (and, if given, an additional
+        caller-supplied resource_ready_check) using the currently active
+        API key (set via update_auth_with_api_token) until both succeed,
+        to wait out the backend's resource-scope propagation lag observed
+        for freshly-created, resource-scoped API keys. `extra_check` must
+        be a zero-arg callable returning True once the specific resource
+        the caller is about to act on is visible to this key - project-
+        level authorization and a specific resource's own visibility have
+        been observed to propagate on independent timelines. Falls back
+        to returning after `timeout` seconds regardless, so callers
+        relying on this to avoid false failures should still expect a
+        genuine failure to surface if the backend never becomes ready.
         """
         start_time = time.time()
         while time.time() - start_time < timeout:
             resp = self.capellaAPI.org_ops_apis.fetch_project_info(
                 self.organisation_id, project_id)
             if resp.status_code == 200:
-                self.log.debug(
-                    "New API key's resource scope propagated after "
-                    "{:.1f}s".format(time.time() - start_time))
-                return True
+                ready = True
+                if extra_check is not None:
+                    try:
+                        ready = extra_check()
+                    except Exception as e:
+                        self.log.debug(
+                            "resource_ready_check raised while polling "
+                            "for resource visibility: {}".format(e))
+                        ready = False
+                if ready:
+                    self.log.debug(
+                        "New API key's resource scope propagated after "
+                        "{:.1f}s".format(time.time() - start_time))
+                    return True
             time.sleep(poll_interval)
         self.log.warning(
             "New API key's resource scope did not propagate within {}s"

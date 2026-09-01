@@ -153,8 +153,14 @@ class DeleteScope(GetScope):
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
+            self.auth_test_setup(
+                testcase, failures, header, self.project_id,
+                self.other_project_id,
+                resource_ready_check=lambda: self.capellaAPI.cluster_ops_apis
+                    .fetch_scope_info(
+                        self.organisation_id, self.project_id,
+                        self.cluster_id, self.bucket_id,
+                        self.scope_name).status_code == 200)
             result = self.capellaAPI.cluster_ops_apis.delete_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, header)
