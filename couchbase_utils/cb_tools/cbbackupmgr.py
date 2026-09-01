@@ -28,6 +28,22 @@ class CbBackupMgr(CbCmdBase):
             cmd += " %s" % self.kms_provider.get_km_flags(self.shellConn)
         return cmd
 
+    @staticmethod
+    def _append_client_cert_flags(cmd, client_cert=None, client_key=None):
+        """
+        Append --client-cert/--client-key for an mTLS-authenticated cluster
+        connection (e.g. CRL revocation testing against a mandatory-mTLS
+        cluster). Deliberately independent of `cli_flags`'s
+        --no-ssl-verify -- that flag only controls server-certificate
+        verification and doesn't conflict with the client presenting its
+        own certificate.
+        """
+        if client_cert:
+            cmd += " --client-cert %s" % client_cert
+        if client_key:
+            cmd += " --client-key %s" % client_key
+        return cmd
+
     def _append_obj_store_flags(self, cmd, obj_staging_dir=None):
         """
         Append the object-store flags, if this instance backs an object store.
@@ -66,9 +82,14 @@ class CbBackupMgr(CbCmdBase):
                resume=False, purge=False, threads=None,
                no_progress_bar=False, full_backup=False,
                value_compression=None, skip_last_compaction=False,
-               consistency_check=None, obj_staging_dir=None):
+               consistency_check=None, obj_staging_dir=None,
+               client_cert=None, client_key=None):
         """
         Execute cbbackupmgr backup command
+
+        :param client_cert str: Path to a client certificate for mTLS auth
+                                against the cluster
+        :param client_key str: Path to the client certificate's private key
         """
         if cluster_host is None:
             if CbServer.use_https:
@@ -105,6 +126,7 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --consistency-check %d" % consistency_check
 
         cmd += self.cli_flags
+        cmd = self._append_client_cert_flags(cmd, client_cert, client_key)
 
         cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
@@ -266,7 +288,8 @@ class CbBackupMgr(CbCmdBase):
                 map_analytics=True, map_eventing=True,
                 filter_keys=None, filter_values=None,
                 allow_non_worm=False, force_updates=False,
-                include_data=None, obj_staging_dir=None):
+                include_data=None, obj_staging_dir=None,
+                client_cert=None, client_key=None):
         """
         Execute cbbackupmgr restore command
         :param force_updates bool: If True, pass --force-updates so restored
@@ -275,6 +298,9 @@ class CbBackupMgr(CbCmdBase):
                                    bucket's history (e.g. restoring into a
                                    bucket that was previously flushed while
                                    continuous backup was enabled)
+        :param client_cert str: Path to a client certificate for mTLS auth
+                                against the cluster
+        :param client_key str: Path to the client certificate's private key
         """
         if cluster_host is None:
             if CbServer.use_https:
@@ -328,6 +354,7 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --force-updates"
 
         cmd += self.cli_flags
+        cmd = self._append_client_cert_flags(cmd, client_cert, client_key)
 
         cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 

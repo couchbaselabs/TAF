@@ -1,3 +1,6 @@
+import datetime
+import threading
+
 import requests
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -12,9 +15,26 @@ MGMT_PORT = 18091
 # already covered by pytests/security/crl_test.py -- so they're deliberately
 # not used here.)
 ENDPOINT_GROUPS = {
+    "cluster": "/api/v1/cluster/self",
     "plan": "/api/v1/plan",
     "repository": "/api/v1/cluster/self/repository/active",
+    "repository_archived": "/api/v1/cluster/self/repository/archived",
+    "config": "/api/v1/config",
 }
+
+# The plan's section A lists "cluster, plan, repository, task, instance, and
+# import/export" as the endpoint groups to cover. Probed against 8.5.0-1009,
+# the five above are the GET-able groups; /api/v1/task, /api/v1/instance,
+# /api/v1/export and their plural forms all 404, and import lives at
+# /api/v1/cluster/self/repository/import as a POST (GET returns 400). Task
+# history is per-repository rather than a top-level group. Revocation is
+# enforced at the TLS handshake, before any handler runs, so these five
+# spanning distinct handler groups is what makes the point -- adding paths
+# that 404 would prove nothing about the listener.
+
+# Plain-HTTP Backup Service port. No TLS, therefore no client certificate,
+# therefore nothing for revocation to evaluate.
+BACKUP_SERVICE_HTTP_PORT = 8097
 
 
 class CRLBackupRestoreTest(CRLBackupRestoreBase):
@@ -958,6 +978,16 @@ class CRLBackupRestoreTest(CRLBackupRestoreBase):
         )
         self._enable_client_cert_auth(state="enable")
 
+        # P0-13 requires not just that the connection succeeds, but that no
+        # crlsValidate round trip happens at all -- "Disabled" must short
+        # circuit inside cbauth rather than ask ns_server and ignore the
+        # answer. Counting has to start before the connection is made.
+        baseline = self._crls_validate_counter_start()
+
+        # Polled, not immediate: the clientCertAuth change above propagates
+        # asynchronously. Extra polls cost nothing here -- under Disabled
+        # none of them should produce a crlsValidate packet, which is
+        # exactly what the count below asserts.
         resp = self._wait_for_backup_service_ok(
             "GET", ENDPOINT_GROUPS["plan"], cert=(cert_path, key_path)
         )
@@ -968,6 +998,22 @@ class CRLBackupRestoreTest(CRLBackupRestoreBase):
             f"{resp.status_code}: {resp.text}"
         )
         self.log.info("Revoked-on-paper cert connects normally under Disabled policy")
+
+        calls = self._crls_validate_count()
+        self.assertIsNotNone(
+            calls,
+            "The crlsValidate counting rule went missing mid-test, so the "
+            "zero-round-trip half of P0-13 could not be measured"
+        )
+        self.assertEqual(
+            calls, baseline,
+            f"Policy Disabled must generate zero crlsValidate requests, but "
+            f"the packet count moved from {baseline} to {calls}"
+        )
+        self.log.info(
+            f"Policy Disabled made no crlsValidate calls (count stayed at "
+            f"{baseline})"
+        )
 
     def test_object_store_tls_unaffected_by_crl_policy(self):
         """
@@ -1123,4 +1169,1139 @@ class CRLBackupRestoreTest(CRLBackupRestoreBase):
             f"crlsValidate calls -- local: {local_delta}, object-store: "
             f"{obj_delta} -- object-store TLS adds no revocation checks, "
             f"as P0-14 requires"
+        )
+
+    # ── Scenario-coverage batch: sections A, D and F ────────────────────────
+
+    def test_no_ssl_verify_does_not_bypass_client_cert_revocation(self):
+        """
+        Section D: --no-ssl-verify must not become a revocation bypass.
+
+        The flag sets InsecureSkipVerify on cbbackupmgr's side, which leaves
+        verifiedChains nil. The plan asks to confirm that is not "an
+        unintended revocation bypass". This test covers the half a black-box
+        test can settle: enforcement of the CLIENT certificate is server-side
+        (cbbs/ns_server), so skipping the client's own verification of the
+        SERVER certificate must not weaken it -- a revoked client certificate
+        stays rejected either way.
+
+        The other half -- whether revocation of the SERVER's certificate is
+        skipped when verifiedChains is nil -- needs a revoked node certificate
+        and the nodeToNode scope (plan section C), and is not covered here.
+
+        --no-ssl-verify is passed explicitly rather than inherited:
+        CbBackupMgr derives it from CbServer.use_https, which is False in
+        these runs, so without forcing it the flag would be absent and the
+        test would prove nothing.
+        """
+        user, _ = self._create_rbac_test_user("crl_bkp_nosslverify", "admin")
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user
+        )
+        cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+        key_path = self._write_temp_pem(self.crl_utils.key_to_pem(key))
+        remote_cert = self._copy_pem_to_backup_node(cert_path)
+        remote_key = self._copy_pem_to_backup_node(key_path)
+
+        # Force the flag ON for this manager, whatever the cluster's TLS
+        # setting happens to be.
+        insecure_mgr = self._insecure_backup_mgr()
+        self.assertIn(
+            "--no-ssl-verify", insecure_mgr.cli_flags,
+            "The flag under test is not actually being passed, so this test "
+            "would prove nothing"
+        )
+
+        archive = self._new_archive_dir("nosslverify")
+        repo = "crl_nosslverify"
+        cluster_host = f"https://{self.cluster.master.ip}:{MGMT_PORT}"
+
+        _, stderr = insecure_mgr.configure_backup(archive, repo)
+        self.assertFalse(stderr, f"Repo creation failed: {stderr}")
+
+        # Baseline: the cert works while unrevoked, with the flag on.
+        filename = "bkp_nosslverify_allow.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+
+        output, error = insecure_mgr.backup(
+            archive, repo, cluster_host=cluster_host,
+            client_cert=remote_cert, client_key=remote_key,
+            no_progress_bar=True,
+        )
+        self.assertFalse(
+            error,
+            f"Baseline: an unrevoked cert should back up even with "
+            f"--no-ssl-verify: {error}"
+        )
+        self.log.info("Baseline backup succeeded with --no-ssl-verify")
+
+        # Revoke it. self.rest carries no client cert, so drop out of
+        # mandatory first -- the plain-HTTP escape hatch.
+        self._disable_client_cert_auth()
+        revoking = "bkp_nosslverify_revoke.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, serial, revoking,
+            crl_number=2,
+        )
+        self.assertTrue(status, f"Revoking CRL upload failed: {content}")
+        self._track_uploaded_file(revoking)
+        self._enable_client_cert_auth(state="mandatory")
+
+        output, error = insecure_mgr.backup(
+            archive, repo, cluster_host=cluster_host,
+            client_cert=remote_cert, client_key=remote_key,
+            no_progress_bar=True,
+        )
+        self.assertTrue(
+            error or not any("Backup successful" in line
+                             for line in (output or [])),
+            f"--no-ssl-verify must NOT bypass revocation of the client "
+            f"certificate: the backup succeeded with a revoked cert. "
+            f"output={output}, error={error}"
+        )
+        self.log.info(
+            "Revoked cert still rejected with --no-ssl-verify -- the flag is "
+            "not a revocation bypass for client certificates"
+        )
+
+    def test_der_encoded_crl_is_enforced_like_pem(self):
+        """
+        Section F: both PEM and DER encodings are handled on every backup
+        path. The PRD lists "CRL parsing for PEM and DER" as P0, and every
+        other test in this suite uploads PEM, so DER is otherwise untested.
+
+        The same CRL content is uploaded in DER form only; if it were ignored
+        or mis-parsed, the revoked certificate below would still connect.
+        """
+        user, _ = self._create_rbac_test_user("crl_bkp_der", "backup_admin")
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user
+        )
+        cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+        key_path = self._write_temp_pem(self.crl_utils.key_to_pem(key))
+
+        pem = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[serial], crl_number=1
+        )
+        der = self.crl_utils.pem_crl_to_der(pem)
+        self.assertNotEqual(
+            pem, der, "DER conversion produced the PEM bytes unchanged"
+        )
+
+        filename = "bkp_crl_der.pem"
+        status, content = self.crl_utils.upload_file(self.rest, filename, der)
+        self.assertTrue(
+            status, f"A DER-encoded CRL should be accepted: {content}"
+        )
+        self._track_uploaded_file(filename)
+
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="enable")
+
+        self.assert_cert_refused(
+            lambda: self._backup_service_request(
+                "GET", ENDPOINT_GROUPS["plan"], cert=(cert_path, key_path)
+            ),
+            "A certificate revoked by a DER-encoded CRL must be rejected "
+            "exactly as it would be by a PEM one -- otherwise DER CRLs are "
+            "silently not applied",
+        )
+        self.log.info("DER-encoded CRL enforced on the Backup Service path")
+
+    def test_untrusted_and_tampered_crls_are_not_applied(self):
+        """
+        Section F: a CRL signed by an unknown CA, and a CRL whose signature
+        has been altered, must not take effect on backup connections.
+
+        Both are checked by their observable outcome rather than only by the
+        upload's status code: even if a bad CRL were accepted at upload time,
+        the certificate it names must still connect, because the CRL cannot
+        be attributed to a trusted issuer.
+        """
+        user, _ = self._create_rbac_test_user("crl_bkp_badcrl", "backup_admin")
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user
+        )
+        cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+        key_path = self._write_temp_pem(self.crl_utils.key_to_pem(key))
+
+        # A CRL from a CA the cluster has never trusted, naming our serial.
+        rogue_cert, rogue_key = self.crl_utils.generate_ca("CRLBackupRogueCA")
+        rogue_crl = self.crl_utils.build_crl(
+            rogue_cert, rogue_key, revoked_serials=[serial], crl_number=1
+        )
+        status, content = self.crl_utils.upload_file(
+            self.rest, "bkp_crl_rogue.pem", rogue_crl
+        )
+        if status:
+            # Accepted at upload time -- it must still have no effect.
+            self._track_uploaded_file("bkp_crl_rogue.pem")
+            self.log.info(
+                "Untrusted-issuer CRL was accepted at upload; checking it has "
+                "no effect on enforcement"
+            )
+        else:
+            self.log.info(
+                f"Untrusted-issuer CRL rejected at upload, as expected: "
+                f"{content}"
+            )
+
+        # A CRL from the real CA with its signature corrupted.
+        good = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[serial], crl_number=2
+        )
+        der = bytearray(self.crl_utils.pem_crl_to_der(good))
+        der[-1] ^= 0xFF          # flip the last signature byte
+        status, content = self.crl_utils.upload_file(
+            self.rest, "bkp_crl_tampered.pem", bytes(der)
+        )
+        if status:
+            self._track_uploaded_file("bkp_crl_tampered.pem")
+            self.log.info(
+                "Tampered CRL was accepted at upload; checking it has no "
+                "effect on enforcement"
+            )
+        else:
+            self.log.info(
+                f"Tampered CRL rejected at upload, as expected: {content}"
+            )
+
+        # A valid CRL from the trusted CA revoking nothing, so policy Require
+        # has something applicable and the check below isolates the bad CRLs.
+        good_name = "bkp_crl_good.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], good_name, crl_number=3,
+        )
+        self.assertTrue(status, f"Valid CRL upload failed: {content}")
+        self._track_uploaded_file(good_name)
+
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="enable")
+
+        resp = self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"], cert=(cert_path, key_path)
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"Neither an untrusted-issuer CRL nor a tampered one may revoke "
+            f"this certificate -- it is named only by those two, and the only "
+            f"valid CRL revokes nothing. Got {resp.status_code}: {resp.text}"
+        )
+        self.log.info(
+            "Untrusted-issuer and tampered CRLs had no effect on enforcement"
+        )
+
+    def test_expired_cert_fails_before_revocation_is_consulted(self):
+        """
+        Section A: an expired (but not revoked) certificate fails chain
+        validation before CRL evaluation is reached, and does so distinguishably
+        from a revocation failure.
+
+        Expiry is a property of the certificate itself, so it must be caught
+        without any CRL being consulted. The log check makes the distinction
+        explicit: an expired certificate must not be reported as revoked, or an
+        operator chasing a revocation problem is sent the wrong way.
+        """
+        user, _ = self._create_rbac_test_user("crl_bkp_expired", "backup_admin")
+        # An explicit window that closed five days ago. valid_days alone cannot
+        # express this: generate_leaf_cert fixes notBefore at now-1d, so
+        # valid_days=-1 yields notBefore == notAfter -- a zero-length window a
+        # server could justifiably call malformed rather than expired, which
+        # would make this test assert the wrong thing.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expired_cert, expired_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user,
+            not_valid_before=now - datetime.timedelta(days=10),
+            not_valid_after=now - datetime.timedelta(days=5),
+        )
+        cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(expired_cert)
+        )
+        key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(expired_key)
+        )
+
+        filename = "bkp_expired_cert.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="enable")
+
+        self.assert_cert_refused(
+            lambda: self._backup_service_request(
+                "GET", ENDPOINT_GROUPS["plan"], cert=(cert_path, key_path)
+            ),
+            "An expired certificate must be refused",
+        )
+        self.log.info("Expired certificate refused, as required")
+
+        lines = self._read_backup_service_log(tail_lines=200)
+        blob = "\n".join(lines).lower()
+        if "expired" in blob or "certificate" in blob:
+            self.assertNotIn(
+                "is revoked", blob,
+                f"An expired certificate must not be reported as revoked -- "
+                f"its serial is on no CRL. Recent log: {lines[-3:]}"
+            )
+            self.log.info(
+                "Expiry was not misreported as revocation in the log"
+            )
+        else:
+            self.log.info(
+                "No relevant log line found; the refusal above already shows "
+                "expiry is enforced"
+            )
+
+    # ── Section O: out-of-scope confirmations ───────────────────────────────
+
+    def test_backup_does_not_capture_crl_material_or_policy(self):
+        """
+        Section O: a backup must not capture CRL material or the revocation
+        policy. MB-72050 was resolved Won't Do precisely because restoring a
+        stale CRL would be actively harmful, so this is a guarantee the
+        archive has to keep rather than a nice-to-have.
+
+        Checked by searching the finished archive for four distinct markers:
+        PEM CRL armour, the settings field name, the uploaded CRL's filename,
+        and this test's own CA common name. The CN is the sharpest of the
+        four -- it is unique per test run, so a hit could only have come from
+        this cluster's live CRL configuration.
+        """
+        user, _ = self._create_rbac_test_user(
+            "crl_bkp_nocapture", "backup_admin"
+        )
+        cert, key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user
+        )
+        remote_cert = self._copy_pem_to_backup_node(
+            self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+        )
+        remote_key = self._copy_pem_to_backup_node(
+            self._write_temp_pem(self.crl_utils.key_to_pem(key))
+        )
+
+        filename = "bkp_o_no_capture.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+
+        archive = self._new_archive_dir("no_capture")
+        repo = "crl_no_capture"
+        cluster_host = f"https://{self.cluster.master.ip}:{MGMT_PORT}"
+        _, stderr = self.backup_mgr.configure_backup(archive, repo)
+        self.assertFalse(stderr, f"cbbackupmgr repo create failed: {stderr}")
+
+        output, error = self.backup_mgr.backup(
+            archive, repo, cluster_host=cluster_host,
+            client_cert=remote_cert, client_key=remote_key,
+            no_progress_bar=True,
+        )
+        self.assertFalse(
+            error,
+            f"Backup should succeed while CRLs are configured: {error}"
+        )
+        self.log.info("Backup taken with CRLs configured and policy Require")
+
+        ca_cn = self.ca_cert.subject.rfc4514_string().split("CN=")[-1].split(",")[0]
+        markers = {
+            "PEM CRL armour": "BEGIN X509 CRL",
+            "policy field": "policyPerScope",
+            "uploaded CRL filename": filename.replace(".pem", ""),
+            "this test's CA CN": ca_cn,
+        }
+        shell = RemoteMachineShellConnection(self.backup_node)
+        try:
+            for label, marker in markers.items():
+                # -a so binary archive files are searched as text, -l for
+                # just the filenames, -F so nothing in the marker is treated
+                # as a regex.
+                hits, _ = shell.execute_command(
+                    f"grep -rlaF -- '{marker}' {archive} 2>/dev/null | head -5"
+                )
+                found = [line.strip() for line in (hits or []) if line.strip()]
+                self.assertFalse(
+                    found,
+                    f"A backup must not capture CRL material or policy, but "
+                    f"{label} ('{marker}') was found in the archive at: "
+                    f"{found}"
+                )
+            self.log.info(
+                "Archive contains no CRL material, policy, CRL filename or CA CN"
+            )
+        finally:
+            shell.disconnect()
+
+    def test_restore_does_not_alter_cluster_crl_configuration(self):
+        """
+        Section O: restoring an older backup must not overwrite, clear or
+        otherwise alter the target cluster's CRL configuration or policy.
+
+        The backup is taken under one configuration (CRL A, Permissive) and
+        restored under a deliberately different one (CRL A + CRL B, Require).
+        If restore carried CRL state, the post-restore configuration would
+        drift back towards the state captured at backup time.
+        """
+        user, _ = self._create_rbac_test_user(
+            "crl_bkp_restorecfg", "backup_admin"
+        )
+        cert, key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user
+        )
+        remote_cert = self._copy_pem_to_backup_node(
+            self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+        )
+        remote_key = self._copy_pem_to_backup_node(
+            self._write_temp_pem(self.crl_utils.key_to_pem(key))
+        )
+
+        # ── State 1, captured by the backup.
+        first = "bkp_o_restore_state1.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], first, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(first)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Permissive",
+                            "nodeToNode": "Disabled"},
+        )
+
+        archive = self._new_archive_dir("restore_cfg")
+        repo = "crl_restore_cfg"
+        cluster_host = f"https://{self.cluster.master.ip}:{MGMT_PORT}"
+        _, stderr = self.backup_mgr.configure_backup(archive, repo)
+        self.assertFalse(stderr, f"cbbackupmgr repo create failed: {stderr}")
+        output, error = self.backup_mgr.backup(
+            archive, repo, cluster_host=cluster_host,
+            client_cert=remote_cert, client_key=remote_key,
+            no_progress_bar=True,
+        )
+        self.assertFalse(error, f"Backup should succeed: {error}")
+
+        # ── State 2, deliberately different, and what must survive.
+        second = "bkp_o_restore_state2.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], second, crl_number=2,
+        )
+        self.assertTrue(status, f"Second CRL upload failed: {content}")
+        self._track_uploaded_file(second)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+
+        settings_before = self.crl_utils.get_settings(self.rest)
+        files_before = self.crl_utils.list_files(self.rest)
+
+        output, error = self.backup_mgr.restore(
+            archive, repo, cluster_host=cluster_host,
+            client_cert=remote_cert, client_key=remote_key,
+            no_progress_bar=True, force_updates=True,
+        )
+        self.assertFalse(
+            error,
+            f"Restore should succeed so the check below is about CRL state "
+            f"rather than about a failed restore: {error}"
+        )
+        self.log.info("Restore of a backup taken under a different CRL config done")
+
+        settings_after = self.crl_utils.get_settings(self.rest)
+        files_after = self.crl_utils.list_files(self.rest)
+        self.assertEqual(
+            settings_before, settings_after,
+            f"A restore must not alter the cluster's CRL settings: before="
+            f"{settings_before}, after={settings_after}"
+        )
+        self.assertEqual(
+            files_before, files_after,
+            f"A restore must not add, remove or replace uploaded CRL files: "
+            f"before={files_before}, after={files_after}"
+        )
+        self.log.info("CRL settings and uploaded CRL files unchanged by restore")
+
+
+    # ── Section A: remaining Backup Service REST API coverage ───────────────
+
+    def test_mutating_requests_enforce_revocation_like_reads(self):
+        """
+        Section A: rejection must apply equally to read-only GETs and to
+        mutating requests. Every other REST test in this suite uses GETs, so
+        without this a write path could in principle be served by a listener
+        that never consulted the CRL.
+
+        Uses plan creation as the mutating request: it is a POST with a body,
+        it is cheap, and it is trivially reversible.
+        """
+        valid_user, _ = self._create_rbac_test_user(
+            "crl_bkp_mut_ok", "backup_admin"
+        )
+        valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, valid_user
+        )
+        valid_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(valid_cert))
+        valid_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(valid_key))
+
+        revoked_user, _ = self._create_rbac_test_user(
+            "crl_bkp_mut_rev", "backup_admin"
+        )
+        revoked_cert, revoked_key, revoked_serial = \
+            self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, revoked_user
+            )
+        revoked_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(revoked_cert))
+        revoked_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(revoked_key))
+
+        filename = "bkp_a_mutating.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, revoked_serial, filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+
+        plan_name = "crl_mutating_plan"
+        path = f"/api/v1/plan/{plan_name}"
+        plan_body = {
+            "description": "CRL mutating-request probe",
+            "tasks": [{
+                "name": "crl_probe_task",
+                "task_type": "BACKUP",
+                "schedule": {"job_type": "BACKUP", "frequency": 1,
+                             "period": "HOURS"},
+            }],
+        }
+
+        # Clear any leftover from an aborted earlier run, so the valid-cert
+        # POST below is a real create rather than a 400 "already exists".
+        try:
+            self._backup_service_request(
+                "DELETE", path, cert=(valid_cert_path, valid_key_path))
+        except Exception as exc:
+            self.log.info(f"No pre-existing probe plan to remove ({exc})")
+
+        self.assert_cert_refused(
+            lambda: self._backup_service_request(
+                "POST", path, cert=(revoked_cert_path, revoked_key_path),
+                json=plan_body,
+            ),
+            "A revoked cert must be refused on a mutating POST exactly as it "
+            "is on a read-only GET",
+        )
+        self.log.info("Revoked cert refused on a mutating POST as expected")
+
+        # Absorb the propagation delay with a GET before the POST rather than
+        # polling the POST itself: creating a plan is not idempotent, so a
+        # retry would hit "already exists" and report a failure that is really
+        # a second attempt succeeding at the wrong thing.
+        self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"],
+            cert=(valid_cert_path, valid_key_path),
+        )
+        try:
+            resp = self._backup_service_request(
+                "POST", path, cert=(valid_cert_path, valid_key_path),
+                json=plan_body,
+            )
+            self.assertEqual(
+                resp.status_code, 200,
+                f"A valid cert must still be able to mutate: "
+                f"{resp.status_code}: {resp.text}"
+            )
+            self.log.info("Valid cert completed the mutating POST as expected")
+        finally:
+            self._backup_service_request(
+                "DELETE", path, cert=(valid_cert_path, valid_key_path))
+
+    def test_plain_http_port_has_no_revocation_check(self):
+        """
+        Section A: the plain HTTP Backup Service port (8097) is unchanged and
+        no revocation check applies where no TLS certificate is presented.
+
+        The user here owns a revoked certificate, but presents none -- the
+        connection carries no TLS at all. Under Require that must still
+        authenticate by password, and must generate no crlsValidate round
+        trip, since there is nothing to validate.
+        """
+        user, password = self._create_rbac_test_user(
+            "crl_bkp_plainhttp", "backup_admin"
+        )
+        _, _, serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user
+        )
+
+        filename = "bkp_a_plain_http.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, serial, filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        # Deliberately NOT enabling client cert auth: mandatory mTLS would
+        # reject a certificate-less connection before the point of this test
+        # could be reached.
+
+        baseline = self._crls_validate_counter_start()
+        url = (f"http://{self.backup_node.ip}:{BACKUP_SERVICE_HTTP_PORT}"
+               f"{ENDPOINT_GROUPS['plan']}")
+        resp = requests.get(
+            url, auth=(user, password), timeout=30,
+            headers={"Connection": "close"},
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"Password auth over the plain HTTP port must be unaffected by a "
+            f"Require policy, got {resp.status_code}: {resp.text}"
+        )
+        self.log.info("Password auth over plain HTTP 8097 succeeded under Require")
+
+        calls = self._crls_validate_count()
+        self.assertIsNotNone(
+            calls,
+            "The crlsValidate counting rule went missing mid-test, so the "
+            "zero-round-trip half of this test could not be measured"
+        )
+        self.assertEqual(
+            calls, baseline,
+            f"A connection presenting no TLS certificate must generate no "
+            f"crlsValidate request, but the count moved from {baseline} to "
+            f"{calls}"
+        )
+        self.log.info("Plain HTTP connection made no crlsValidate calls")
+
+    def test_chain_missing_intermediate_is_rejected(self):
+        """
+        Section A: behaviour when the client presents a chain missing its
+        intermediate certificate.
+
+        Policy is Disabled throughout, deliberately: that removes revocation
+        from the picture entirely, so a refusal can only be attributed to the
+        incomplete chain. The second leg is the control -- the same leaf and
+        key, with the intermediate appended, must succeed, which is what
+        proves the first leg failed for the missing intermediate rather than
+        because the leaf was unusable to begin with.
+        """
+        inter_cert, inter_key, _ = self.crl_utils.generate_intermediate_ca(
+            self.ca_cert, self.ca_key, "BackupCRLChainInter"
+        )
+        user, _ = self._create_rbac_test_user(
+            "crl_bkp_chain", "backup_admin"
+        )
+        leaf, leaf_key, _ = self.crl_utils.generate_leaf_cert(
+            inter_cert, inter_key, user
+        )
+        leaf_pem = self.crl_utils.cert_to_pem(leaf)
+        inter_pem = self.crl_utils.cert_to_pem(inter_cert)
+        leaf_only_path = self._write_temp_pem(leaf_pem)
+        full_chain_path = self._write_temp_pem(leaf_pem + inter_pem)
+        key_path = self._write_temp_pem(self.crl_utils.key_to_pem(leaf_key))
+
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+
+        self.assert_cert_refused(
+            lambda: self._backup_service_request(
+                "GET", ENDPOINT_GROUPS["plan"],
+                cert=(leaf_only_path, key_path),
+            ),
+            "A client chain missing its intermediate must not authenticate "
+            "against the Backup Service REST API",
+        )
+        self.log.info("Leaf presented without its intermediate was refused")
+
+        resp = self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"],
+            cert=(full_chain_path, key_path),
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"Control leg: the same leaf with its intermediate appended must "
+            f"authenticate, otherwise the refusal above cannot be attributed "
+            f"to the missing intermediate. Got {resp.status_code}: "
+            f"{resp.text}"
+        )
+        self.log.info("Same leaf with the intermediate appended authenticated")
+
+    def test_concurrent_mixed_certs_are_judged_independently(self):
+        """
+        Section A: concurrent connections carrying a mix of revoked and valid
+        certificates are judged independently and correctly.
+
+        This is the case a per-connection cache bug or a shared verdict would
+        break: three valid and three revoked certificates, all issued by the
+        same CA, all hitting the same endpoint at the same moment. Every
+        valid one must get 200 and every revoked one must be refused.
+
+        Uses plain threads rather than a ThreadPoolExecutor -- the executor's
+        non-daemon worker threads have hung this suite at interpreter exit
+        before.
+        """
+        valid_certs, revoked_certs, revoked_serials = [], [], []
+        for i in range(3):
+            user, _ = self._create_rbac_test_user(
+                f"crl_bkp_par_ok{i}", "backup_admin"
+            )
+            cert, key, _ = self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, user
+            )
+            valid_certs.append((
+                self._write_temp_pem(self.crl_utils.cert_to_pem(cert)),
+                self._write_temp_pem(self.crl_utils.key_to_pem(key)),
+            ))
+        for i in range(3):
+            user, _ = self._create_rbac_test_user(
+                f"crl_bkp_par_rev{i}", "backup_admin"
+            )
+            cert, key, serial = self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, user
+            )
+            revoked_certs.append((
+                self._write_temp_pem(self.crl_utils.cert_to_pem(cert)),
+                self._write_temp_pem(self.crl_utils.key_to_pem(key)),
+            ))
+            revoked_serials.append(serial)
+
+        filename = "bkp_a_concurrent.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, revoked_serials, filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+
+        results = {}
+
+        def probe(label, cert_pair):
+            try:
+                resp = self._backup_service_request(
+                    "GET", ENDPOINT_GROUPS["plan"], cert=cert_pair
+                )
+                results[label] = resp.status_code
+            except (requests.exceptions.SSLError,
+                    requests.exceptions.ConnectionError) as exc:
+                results[label] = type(exc).__name__
+            except Exception as exc:                      # noqa: BLE001
+                results[label] = f"UNEXPECTED:{type(exc).__name__}:{exc}"
+
+        threads = []
+        for i, pair in enumerate(valid_certs):
+            threads.append(threading.Thread(
+                target=probe, args=(f"valid{i}", pair)))
+        for i, pair in enumerate(revoked_certs):
+            threads.append(threading.Thread(
+                target=probe, args=(f"revoked{i}", pair)))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=120)
+
+        self.assertEqual(
+            len(results), len(threads),
+            f"Every concurrent probe should have recorded an outcome, got "
+            f"{results}"
+        )
+        for i in range(3):
+            self.assertEqual(
+                results.get(f"valid{i}"), 200,
+                f"Concurrent valid cert {i} must be judged on its own merits "
+                f"and get 200, got {results.get(f'valid{i}')}. Full result "
+                f"set: {results}"
+            )
+        for i in range(3):
+            outcome = results.get(f"revoked{i}")
+            self.assertIn(
+                outcome, (401, "SSLError", "ConnectionError"),
+                f"Concurrent revoked cert {i} must be refused -- a TLS alert "
+                f"or 401 -- got {outcome}. Full result set: {results}"
+            )
+        self.log.info(
+            f"Six concurrent mixed-cert connections judged independently: "
+            f"{results}"
+        )
+
+    # ── Section B: cbbs inbound - internal gRPC (9124) ──────────────────────
+
+    def test_internal_grpc_listener_revocation_and_governing_scope(self):
+        """
+        Section B: a peer presenting a revoked certificate must not establish
+        the internal gRPC channel, and -- the plan's explicit open question --
+        which scope that listener applies, clientAuth or nodeToNode.
+
+        The scope is settled empirically by probing the same revoked
+        certificate under two configurations that differ only in which scope
+        is switched on. Whatever the answer, one invariant has to hold in the
+        clientAuth/Require pass: a revoked certificate must not come away
+        with a usable channel while a valid one does.
+
+        Note this listener is probed with a raw HTTP/2 preface rather than
+        gRPC proper. That is enough to tell a granted channel from a refused
+        one, which is what revocation enforcement turns on, without needing
+        cbbs's protobuf definitions.
+        """
+        valid_user, _ = self._create_rbac_test_user(
+            "crl_bkp_grpc_ok", "backup_admin"
+        )
+        valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, valid_user
+        )
+        valid_pair = (
+            self._write_temp_pem(self.crl_utils.cert_to_pem(valid_cert)),
+            self._write_temp_pem(self.crl_utils.key_to_pem(valid_key)),
+        )
+
+        revoked_user, _ = self._create_rbac_test_user(
+            "crl_bkp_grpc_rev", "backup_admin"
+        )
+        revoked_cert, revoked_key, revoked_serial = \
+            self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, revoked_user
+            )
+        revoked_pair = (
+            self._write_temp_pem(self.crl_utils.cert_to_pem(revoked_cert)),
+            self._write_temp_pem(self.crl_utils.key_to_pem(revoked_key)),
+        )
+
+        filename = "bkp_b_grpc.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, revoked_serial, filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+
+        # ── Pass 1: clientAuth governs.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+
+        no_cert = self._grpc_channel_probe(cert=None)
+        revoked_under_client_auth = self._grpc_channel_probe(cert=revoked_pair)
+        valid_under_client_auth = self._grpc_channel_probe(cert=valid_pair)
+        self.log.info(
+            f"clientAuth=Require, mandatory mTLS -- gRPC 9124 probes: "
+            f"no cert={no_cert}, revoked={revoked_under_client_auth}, "
+            f"valid={valid_under_client_auth}"
+        )
+
+        # ── Pass 2: only nodeToNode is on. Drop out of mandatory first over
+        # plain HTTP, exactly as the cbbackupmgr tests do, or self.rest is
+        # walled out while changing the policy.
+        self._disable_client_cert_auth()
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Require"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+        revoked_under_node_to_node = self._grpc_channel_probe(cert=revoked_pair)
+        valid_under_node_to_node = self._grpc_channel_probe(cert=valid_pair)
+        self.log.info(
+            f"clientAuth=Disabled, nodeToNode=Require -- gRPC 9124 probes: "
+            f"revoked={revoked_under_node_to_node}, "
+            f"valid={valid_under_node_to_node}"
+        )
+
+        governing = []
+        if revoked_under_client_auth != "SETTINGS":
+            governing.append("clientAuth")
+        if revoked_under_node_to_node != "SETTINGS":
+            governing.append("nodeToNode")
+        self.log.info(
+            f"FINDING -- scope(s) under which gRPC 9124 refused a revoked "
+            f"certificate: {governing or 'none'}"
+        )
+
+        self.assertEqual(
+            valid_under_client_auth, "SETTINGS",
+            f"A valid, unrevoked certificate must still be granted the "
+            f"internal gRPC channel, got {valid_under_client_auth}"
+        )
+        self.assertNotEqual(
+            revoked_under_client_auth, "SETTINGS",
+            f"Under clientAuth=Require with mandatory mTLS, a revoked "
+            f"certificate must not be granted a usable internal gRPC "
+            f"channel, but the listener answered with an HTTP/2 SETTINGS "
+            f"frame. Probes -- no cert={no_cert}, "
+            f"revoked={revoked_under_client_auth}, "
+            f"valid={valid_under_client_auth}"
+        )
+        self.assertNotEqual(
+            no_cert, "SETTINGS",
+            f"Under mandatory mTLS, a connection presenting no certificate "
+            f"at all must not be granted a usable internal gRPC channel -- "
+            f"the verify-peer-cert method sits behind this listener and must "
+            f"not be reachable by an unauthenticated remote caller. Got "
+            f"{no_cert}"
+        )
+
+        # Pass 2 is pinned, not merely logged. The commit claims this test
+        # answers the plan's open question about which scope governs 9124, and
+        # an unasserted probe would let a future change flip that answer
+        # silently -- delete pass 2 entirely and no assertion would notice.
+        self.assertEqual(
+            valid_under_node_to_node, "SETTINGS",
+            f"Control for pass 2: a valid certificate must still be granted "
+            f"the channel here, otherwise a refusal of the revoked one cannot "
+            f"be attributed to the nodeToNode scope rather than to the "
+            f"listener being down. Got {valid_under_node_to_node}"
+        )
+        self.assertEqual(
+            revoked_under_node_to_node, "SETTINGS",
+            f"With clientAuth=Disabled and only nodeToNode=Require, the "
+            f"revoked certificate must still be granted the channel -- that "
+            f"is what makes clientAuth, not nodeToNode, the governing scope "
+            f"for this listener. A refusal here ({revoked_under_node_to_node}) "
+            f"would contradict the finding this test records and is worth "
+            f"revisiting rather than silently accepting."
+        )
+
+    def test_internal_grpc_listener_survives_malformed_payloads(self):
+        """
+        Section B: the listener must reject malformed, empty and oversized
+        payloads without crashing or hanging cbbs.
+
+        Health is judged by cbbs's pid being unchanged (it neither died nor
+        was restarted) and by the REST API on 18097 still serving afterwards.
+        A pid change would mean a crash even if the service came back.
+        """
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        filename = "bkp_b_malformed.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+
+        pid_before, fds_before = self._backup_service_pid_and_fds()
+        self.assertIsNotNone(
+            pid_before, "Could not read cbbs's pid before the probes"
+        )
+
+        payloads = {
+            "empty": b"",
+            "garbage": bytes(range(256)) * 4,
+            "truncated h2 preface": self.H2_PREFACE[:8],
+            "h2 preface + bad frame": self.H2_PREFACE + bytes([255] * 32),
+            # An HTTP/2 frame header claiming a body far larger than the
+            # default 16KiB maximum frame size, followed by nothing.
+            "oversized frame header": (
+                self.H2_PREFACE + bytes([0xFF, 0xFF, 0xFF, 4, 0, 0, 0, 0, 0])
+            ),
+            "1MiB of noise": self.H2_PREFACE + (b"\xde\xad\xbe\xef" * 262144),
+        }
+        for label, payload in payloads.items():
+            outcome = self._grpc_channel_probe(payload=payload)
+            self.log.info(f"gRPC 9124 with a {label} payload -> {outcome}")
+
+        pid_after, fds_after = self._backup_service_pid_and_fds()
+        self.assertEqual(
+            pid_before, pid_after,
+            f"cbbs must survive malformed gRPC payloads without crashing or "
+            f"restarting, but its pid changed from {pid_before} to {pid_after}"
+        )
+        resp = self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"],
+            auth=(self.cluster.master.rest_username,
+                  self.cluster.master.rest_password),
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"The Backup Service REST API must still serve after the "
+            f"malformed-payload probes, got {resp.status_code}: {resp.text}"
+        )
+        self.log.info(
+            f"cbbs healthy after malformed payloads (pid {pid_after} "
+            f"unchanged, fds {fds_before} -> {fds_after})"
+        )
+
+    def test_internal_grpc_listener_handles_rapid_connections(self):
+        """
+        Section B: rapid repeated calls -- one per DCP connection in the real
+        system -- must not exhaust connections, file descriptors or goroutines
+        on cbbs.
+
+        Sixty sequential connect/preface/close cycles, then a descriptor
+        count. The assertion is deliberately about unbounded growth rather
+        than an exact number: a handful of descriptors may legitimately be in
+        flight when the count is taken, but sixty leaked sockets would not be.
+        """
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        filename = "bkp_b_rapid.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+
+        pid_before, fds_before = self._backup_service_pid_and_fds()
+        self.assertIsNotNone(
+            pid_before, "Could not read cbbs's pid before the probes"
+        )
+
+        attempts = 60
+        outcomes = {}
+        for _ in range(attempts):
+            outcome = self._grpc_channel_probe(timeout=10)
+            outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        self.log.info(f"{attempts} rapid gRPC 9124 probes -> {outcomes}")
+
+        pid_after, fds_after = self._backup_service_pid_and_fds()
+        self.assertEqual(
+            pid_before, pid_after,
+            f"cbbs must survive rapid repeated gRPC connections without "
+            f"crashing or restarting, but its pid changed from {pid_before} "
+            f"to {pid_after}"
+        )
+        self.assertIsNotNone(
+            fds_after, "Could not read cbbs's descriptor count after the probes"
+        )
+        self.assertLess(
+            fds_after, fds_before + attempts // 2,
+            f"cbbs looks to be leaking descriptors across rapid gRPC "
+            f"connections: {fds_before} before, {fds_after} after "
+            f"{attempts} probes"
+        )
+        resp = self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"],
+            auth=(self.cluster.master.rest_username,
+                  self.cluster.master.rest_password),
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"The Backup Service REST API must still serve after {attempts} "
+            f"rapid gRPC probes, got {resp.status_code}: {resp.text}"
+        )
+        self.log.info(
+            f"cbbs healthy after {attempts} rapid probes (pid unchanged, "
+            f"fds {fds_before} -> {fds_after})"
+        )
+
+    # ── Section C: cbbs outbound - nodeToNode scope ─────────────────────────
+
+    def test_client_auth_and_node_to_node_scopes_are_independent(self):
+        """
+        Section C: clientAuth and nodeToNode can be set to different
+        strictness levels, and each path must honour only its own scope --
+        inbound checks are skipped entirely when clientAuth is Disabled even
+        while nodeToNode is Require, and vice versa.
+
+        Both legs use the same revoked certificate on the same inbound
+        endpoint, so the only variable is which scope is switched on. If the
+        scopes leaked into each other, the second leg would refuse a
+        certificate that nothing in its configured scope says to check.
+
+        The outbound half of section C -- a revoked follower node
+        certificate, leader failover with a revoked leader cert, and an
+        intermediate CA revoked beneath the outbound path -- needs the
+        cluster's own node certificates reissued by the test CA and is not
+        covered here.
+        """
+        user, _ = self._create_rbac_test_user(
+            "crl_bkp_scopes", "backup_admin"
+        )
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, user
+        )
+        cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+        key_path = self._write_temp_pem(self.crl_utils.key_to_pem(key))
+
+        filename = "bkp_c_scopes.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, serial, filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+
+        # ── Leg 1: the scope that governs inbound is on -> refused.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+        self.assert_cert_refused(
+            lambda: self._backup_service_request(
+                "GET", ENDPOINT_GROUPS["plan"], cert=(cert_path, key_path)
+            ),
+            "With clientAuth=Require, a revoked cert must be refused on the "
+            "inbound REST path",
+        )
+        self.log.info("clientAuth=Require, nodeToNode=Disabled -> refused")
+
+        # ── Leg 2: only the other scope is on -> the same cert must pass.
+        self._disable_client_cert_auth()
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Require"},
+        )
+        self._enable_client_cert_auth(state="mandatory")
+        resp = self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"], cert=(cert_path, key_path)
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"With clientAuth=Disabled the inbound path must skip revocation "
+            f"entirely, even while nodeToNode=Require -- the scopes must not "
+            f"leak into one another. The same revoked cert that was refused "
+            f"in leg 1 got {resp.status_code}: {resp.text}"
+        )
+        self.log.info(
+            "clientAuth=Disabled, nodeToNode=Require -> same revoked cert "
+            "admitted, so the scopes are honoured independently"
         )

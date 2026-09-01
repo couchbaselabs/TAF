@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import socket
+import ssl
 import tempfile
 import time
 import traceback
@@ -44,6 +46,18 @@ class CRLBackupRestoreBase(CollectionBase):
 
     BACKUP_SERVICE_PORT = CbServer.ssl_backup_port  # 18097
 
+    # cbbs's internal gRPC listener. The leader invokes gRPC on other backup
+    # nodes here, and a locally spawned cbbackupmgr calls the verify-peer-cert
+    # method on it.
+    GRPC_PORT = 9124
+
+    # Enough HTTP/2 to make a gRPC listener answer: the mandatory connection
+    # preface followed by an empty SETTINGS frame. A server that is willing to
+    # talk replies with its own SETTINGS frame; one that has rejected the
+    # connection sends a TLS alert or hangs up instead.
+    H2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+    H2_EMPTY_SETTINGS = bytes([0, 0, 0, 4, 0, 0, 0, 0, 0])
+
     def setUp(self):
         self._self_heal_stuck_client_cert_auth()
         super().setUp()
@@ -75,7 +89,13 @@ class CRLBackupRestoreBase(CollectionBase):
         self._crls_counter_installed = False
 
         self.backup_node = self.cluster.backup_nodes[0]
-        self.backup_mgr = BackupMgrUtil(self.backup_node)
+        # Every BackupMgrUtil opens an SSH shell via CbCmdBase and holds it
+        # for its lifetime. Nothing closes it implicitly, so each one built
+        # here or in the factories below is registered and disconnected in
+        # tearDown -- otherwise the framework's connect/disconnect accounting
+        # reports a leak ("Shell disconnection mismatch") on every test.
+        self._backup_mgrs = []
+        self.backup_mgr = self._track_backup_mgr(BackupMgrUtil(self.backup_node))
 
         # Unique CN per test, NOT a constant one. CRLs are matched to a
         # certificate by issuer NAME, so a CRL or trusted CA left behind by a
@@ -151,6 +171,12 @@ class CRLBackupRestoreBase(CollectionBase):
             self._cleanup_trusted_cas()
         except Exception as exc:
             self.log.warning(f"Trusted CA cleanup error: {exc}")
+        # Last, and after every cleanup step above that may still issue
+        # commands through a BackupMgrUtil (archive/object-store cleanup).
+        try:
+            self._disconnect_backup_mgrs()
+        except Exception as exc:
+            self.log.warning(f"BackupMgrUtil cleanup error: {exc}")
         finally:
             super().tearDown()
 
@@ -582,13 +608,143 @@ class CRLBackupRestoreBase(CollectionBase):
                     return lines[idx:]
         return lines
 
+    def _track_backup_mgr(self, backup_mgr):
+        """Register a BackupMgrUtil so tearDown closes its SSH shell."""
+        self._backup_mgrs.append(backup_mgr)
+        return backup_mgr
+
+    def _disconnect_backup_mgrs(self):
+        """Close the SSH shell held by every BackupMgrUtil this test built."""
+        for backup_mgr in getattr(self, "_backup_mgrs", []):
+            try:
+                backup_mgr.disconnect()
+            except Exception as exc:
+                self.log.warning(f"BackupMgrUtil disconnect error: {exc}")
+        self._backup_mgrs = []
+
+
+    # ── Internal gRPC listener (9124) probes ────────────────────────────────
+
+    # HTTP/2 frame types we care about, from the 4th byte of the 9-byte
+    # frame header (3-byte length, 1-byte type, 1-byte flags, 4-byte stream).
+    H2_FRAME_SETTINGS = 0x04
+    H2_FRAME_GOAWAY = 0x07
+
+    @classmethod
+    def _classify_h2_reply(cls, data):
+        """
+        What the server's reply to our preface actually means.
+
+        Reading "any bytes came back" as success is too loose: a listener that
+        refuses the connection can still answer, and GOAWAY in particular is
+        bytes on the wire that mean the opposite of a granted channel. Only a
+        SETTINGS frame is the server agreeing to speak HTTP/2 with us.
+
+        Returns "SETTINGS", "GOAWAY", "CLOSED" (nothing came back), "SHORT"
+        (fewer bytes than a frame header) or "FRAME_0xNN" for anything else.
+        """
+        if not data:
+            return "CLOSED"
+        if len(data) < 9:
+            return "SHORT"
+        frame_type = data[3]
+        if frame_type == cls.H2_FRAME_SETTINGS:
+            return "SETTINGS"
+        if frame_type == cls.H2_FRAME_GOAWAY:
+            return "GOAWAY"
+        return f"FRAME_0x{frame_type:02x}"
+
+    def _grpc_channel_probe(self, cert=None, payload=None, timeout=20):
+        """
+        Open a TLS connection to cbbs's internal gRPC listener and report
+        whether the server granted a usable HTTP/2 channel.
+
+        Returns one of:
+          "SETTINGS"    -- the server answered with an HTTP/2 SETTINGS frame,
+                           i.e. it granted a usable channel
+          "GOAWAY"      -- it answered, but to refuse the connection
+          "CLOSED"      -- it hung up without answering
+          "SHORT" /
+          "FRAME_0xNN"  -- it answered with something else
+          "<ExcName>"   -- the connection or handshake failed outright
+
+        A raw socket rather than CRLUtils.perform_mtls_handshake: 9124 speaks
+        gRPC over HTTP/2, so an HTTP/1 GET would prove nothing about it. And
+        the write-then-read matters -- under TLS 1.3 the server sends its
+        Finished before it has processed the client's certificate, so a
+        rejected certificate surfaces on the first read rather than as a
+        handshake failure. Probing the handshake alone would report every
+        certificate as accepted.
+        """
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        # Same reason as every other mTLS check in this suite: the node's
+        # self-signed server cert lacks CA:TRUE, so verifying it would abort
+        # locally before the server ever judged our client certificate.
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        if cert:
+            context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
+        try:
+            context.set_alpn_protocols(["h2"])
+        except NotImplementedError:
+            self.log.warning("ALPN unsupported locally; probing without it")
+
+        if payload is None:
+            payload = self.H2_PREFACE + self.H2_EMPTY_SETTINGS
+        try:
+            with socket.create_connection(
+                    (self.backup_node.ip, self.GRPC_PORT), timeout=timeout
+            ) as sock:
+                with context.wrap_socket(sock) as tls:
+                    tls.sendall(payload)
+                    return self._classify_h2_reply(tls.recv(64))
+        except (ssl.SSLError, socket.timeout, OSError) as exc:
+            return type(exc).__name__
+
+    def _backup_service_pid_and_fds(self):
+        """
+        (pid, open file descriptor count) for cbbs on self.backup_node, or
+        (None, None) if it could not be read. Used to show that a probe left
+        the service alive and did not leak descriptors.
+        """
+        shell = RemoteMachineShellConnection(self.backup_node)
+        try:
+            output, _ = shell.execute_command("pgrep -x backup | head -1")
+            pid = next(
+                (line.strip() for line in (output or []) if line.strip().isdigit()),
+                None,
+            )
+            if pid is None:
+                return None, None
+            output, _ = shell.execute_command(
+                f"ls /proc/{pid}/fd 2>/dev/null | wc -l")
+            fds = next(
+                (int(line.strip()) for line in (output or [])
+                 if line.strip().isdigit()), None
+            )
+            return pid, fds
+        finally:
+            shell.disconnect()
+
     def _local_backup_mgr(self):
         """
         A BackupMgrUtil writing to a local (filesystem) archive on
         self.backup_node -- the reference leg for object-store comparisons,
         and separate from self.backup_mgr so a test can hold both at once.
         """
-        return BackupMgrUtil(self.backup_node)
+        return self._track_backup_mgr(BackupMgrUtil(self.backup_node))
+
+    def _insecure_backup_mgr(self):
+        """
+        A BackupMgrUtil with --no-ssl-verify forced ON.
+
+        Passed explicitly rather than inherited: CbBackupMgr derives the flag
+        from CbServer.use_https, which is False unless a run enables TLS, so a
+        test that merely hoped the flag was present would silently exercise
+        the ordinary path instead.
+        """
+        return self._track_backup_mgr(
+            BackupMgrUtil(self.backup_node, no_ssl_verify=True))
 
     # ── Object-store (P0-14) helpers ────────────────────────────────────────
 
@@ -635,10 +791,10 @@ class CRLBackupRestoreBase(CollectionBase):
         self._obj_staging_dirs.append(staging_dir)
         self._obj_archives.append(archive)
 
-        backup_mgr = BackupMgrUtil(
+        backup_mgr = self._track_backup_mgr(BackupMgrUtil(
             self.backup_node, cloud_provider=provider,
             obj_staging_dir=staging_dir,
-        )
+        ))
         return backup_mgr, archive, staging_dir
 
     def _cleanup_object_store(self):

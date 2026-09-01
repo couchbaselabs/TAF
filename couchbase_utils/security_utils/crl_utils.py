@@ -244,7 +244,8 @@ class CRLUtils:
     def generate_leaf_cert(ca_cert, ca_key, cn, key_algorithm="rsa2048",
                             valid_days=825, extended_key_usage=None,
                             crl_distribution_url=None, dns_names=None,
-                            serial=None):
+                            serial=None, not_valid_before=None,
+                            not_valid_after=None):
         """
         Generate a leaf cert signed by ca_cert/ca_key, in memory.
 
@@ -278,8 +279,10 @@ class CRLUtils:
             .issuer_name(ca_cert.subject)
             .public_key(key.public_key())
             .serial_number(serial)
-            .not_valid_before(now - datetime.timedelta(days=1))
-            .not_valid_after(now + datetime.timedelta(days=valid_days))
+            .not_valid_before(not_valid_before
+                              or (now - datetime.timedelta(days=1)))
+            .not_valid_after(not_valid_after
+                             or (now + datetime.timedelta(days=valid_days)))
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .add_extension(
                 x509.KeyUsage(

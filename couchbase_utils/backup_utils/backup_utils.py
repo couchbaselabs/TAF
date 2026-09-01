@@ -560,12 +560,21 @@ class ContinuousBackupUtil(object):
                 self.log.error(f"Exception during continuous backup cleanup: {e}")
 
 class BackupMgrUtil(CbBackupMgr):
-    def __init__(self, cb_node, cloud_provider=None, obj_staging_dir=None):
+    def __init__(self, cb_node, cloud_provider=None, obj_staging_dir=None,
+                 no_ssl_verify=None):
+        """
+        :param no_ssl_verify: pass True to force --no-ssl-verify on every
+            cbbackupmgr invocation, or False to force it off. The default of
+            None keeps the previous behaviour, where CbBackupMgr derives it
+            from CbServer.use_https -- so existing callers are unaffected.
+            Needed by tests that must control the flag explicitly rather than
+            inherit it from the cluster's TLS setting.
+        """
         self.cb_node = cb_node
         shell_conn = RemoteMachineShellConnection(cb_node)
         super().__init__(shell_conn, username=cb_node.rest_username,
                          password=cb_node.rest_password,
-                         no_ssl_verify=None, log=None,
+                         no_ssl_verify=no_ssl_verify, log=None,
                          cloud_provider=cloud_provider,
                          obj_staging_dir=obj_staging_dir)
 
