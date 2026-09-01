@@ -1359,15 +1359,51 @@ class APIBase(CouchbaseBaseTest):
             else:
                 self.fail("Error while creating API key for role having "
                           "access to multiple projects")
-            # Newly created keys can take a few seconds for their resource
-            # scope to propagate; using the key immediately can otherwise
-            # 404 on resources it's actually authorized for.
-            self.log.debug("Sleeping 5 seconds for new API key's resource "
-                           "scope to propagate")
-            time.sleep(5)
             self.update_auth_with_api_token(self.api_keys[key])
+            if testcase["has_multi_project_access"]:
+                # This key actually has access to project_id, so the
+                # caller will read/modify a resource in it next. Newly
+                # created keys can take 15-20+ seconds for their resource
+                # scope to propagate; poll a lightweight, read-only call
+                # instead of guessing a fixed sleep duration, so we wait
+                # exactly as long as needed.
+                self.wait_for_new_key_authorization(project_id)
+            else:
+                # This key intentionally has NO access to project_id and
+                # is only used to assert a 403 there, which the
+                # propagation lag above doesn't affect - keep the
+                # original short wait unchanged.
+                self.log.debug("Sleeping 5 seconds for new API key's "
+                               "resource scope to propagate")
+                time.sleep(5)
         else:
             self.update_auth_with_api_token(testcase)
+
+    def wait_for_new_key_authorization(self, project_id, timeout=45,
+                                       poll_interval=3):
+        """
+        Poll a read-only project-info call using the currently active API
+        key (set via update_auth_with_api_token) until it succeeds, to
+        wait out the backend's resource-scope propagation lag observed
+        for freshly-created, resource-scoped API keys. Falls back to
+        returning after `timeout` seconds regardless, so callers relying
+        on this to avoid false failures should still expect a genuine
+        failure to surface if the backend never becomes ready.
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            resp = self.capellaAPI.org_ops_apis.fetch_project_info(
+                self.organisation_id, project_id)
+            if resp.status_code == 200:
+                self.log.debug(
+                    "New API key's resource scope propagated after "
+                    "{:.1f}s".format(time.time() - start_time))
+                return True
+            time.sleep(poll_interval)
+        self.log.warning(
+            "New API key's resource scope did not propagate within {}s"
+            .format(timeout))
+        return False
 
     def validate_testcase(self, result, success_codes, testcase, failures,
                           validate_response=False, expected_res=None,
