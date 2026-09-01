@@ -1,5 +1,6 @@
 import datetime
 import threading
+import time
 
 import requests
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -2305,3 +2306,554 @@ class CRLBackupRestoreTest(CRLBackupRestoreBase):
             "clientAuth=Disabled, nodeToNode=Require -> same revoked cert "
             "admitted, so the scopes are honoured independently"
         )
+
+    def test_node_certificates_from_test_ca_are_accepted(self):
+        """
+        Fixture gate for the section C outbound tests. Before any test tries
+        to revoke a node's own certificate, prove the cluster will accept
+        node certificates issued by this suite's CA at all, that every node
+        really is serving the new certificate, and that the cluster is still
+        healthy over TLS afterwards.
+
+        Worth its own test rather than being folded into setUp: if this
+        mechanism breaks, every outbound section C test fails for a reason
+        that has nothing to do with revocation, and that is a confusing
+        place to start debugging from.
+        """
+        ca_cn = self.ca_cert.subject.rfc4514_string().split(
+            "CN=")[-1].split(",")[0]
+        servers = self.cluster.servers[:self.nodes_init]
+
+        serials = {}
+        for server in servers:
+            serials[server.ip] = self._install_node_certificate(
+                server, self.ca_cert, self.ca_key
+            )
+        self.log.info(f"Installed test-CA node certs: {serials}")
+
+        for server in servers:
+            served = self._served_certificate(server)
+            issuer = served.issuer.rfc4514_string()
+            self.assertIn(
+                ca_cn, issuer,
+                f"Node {server.ip} should be serving a certificate issued by "
+                f"this test's CA ({ca_cn}) after reloadCertificate, but its "
+                f"issuer is {issuer}. A reload that reports success without "
+                f"changing the served certificate would make every outbound "
+                f"revocation test silently vacuous."
+            )
+            self.assertEqual(
+                served.serial_number, serials[server.ip],
+                f"Node {server.ip} is serving serial "
+                f"{served.serial_number}, not the {serials[server.ip]} that "
+                f"was just installed"
+            )
+        self.log.info("Every node is serving its newly issued test-CA cert")
+
+        # The cluster has to still work over TLS: mgmt on each node, and the
+        # backup service's own listener.
+        for server in servers:
+            resp = requests.get(
+                f"https://{server.ip}:{MGMT_PORT}/pools/default",
+                auth=(self.cluster.master.rest_username,
+                      self.cluster.master.rest_password),
+                verify=False, timeout=30, headers={"Connection": "close"},
+            )
+            self.assertEqual(
+                resp.status_code, 200,
+                f"Node {server.ip} must still serve mgmt over TLS after its "
+                f"certificate was reissued, got {resp.status_code}"
+            )
+        resp = self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"],
+            auth=(self.cluster.master.rest_username,
+                  self.cluster.master.rest_password),
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"The Backup Service must still serve after every node's "
+            f"certificate was reissued, got {resp.status_code}: {resp.text}"
+        )
+        self.log.info(
+            "Cluster healthy over TLS on every node with test-CA node certs"
+        )
+
+    def test_revoked_node_certificate_is_scoped_to_node_to_node(self):
+        """
+        Section C: a revoked node certificate must matter only to the
+        nodeToNode scope, must not trigger an automatic failover, and must
+        leave unaffected nodes unimpaired.
+
+        A follower backup node's own certificate is revoked -- never the
+        master's, so that the cluster stays manageable and teardown can put
+        the certificates back. The same revoked certificate is then observed
+        under nodeToNode=Disabled and nodeToNode=Require.
+
+        The assertions here are the invariants the plan requires: no
+        automatic failover, the master still manageable, and the other backup
+        node still serving. Whether outbound enforcement is observable from
+        outside is recorded as a finding rather than asserted -- the plan
+        asks for section C to be confirmed and documented, and a test that
+        guessed at the observable would report its own guess rather than the
+        product's behaviour.
+        """
+        self.assertGreaterEqual(
+            len(self.cluster.backup_nodes), 2,
+            f"This test needs at least two backup-service nodes so a "
+            f"follower's certificate can be revoked while the master's stays "
+            f"valid, got {len(self.cluster.backup_nodes)}"
+        )
+        # Pick a follower explicitly rather than assuming backup_nodes[-1] is
+        # one: cluster.master is chosen at init from whichever node answers
+        # first and the server list is reordered around it, so the master can
+        # perfectly well be carrying the backup service too. Revoking the
+        # master's own certificate would strand the cluster and leave teardown
+        # unable to restore it.
+        followers = [node for node in self.cluster.backup_nodes
+                     if node.ip != self.cluster.master.ip]
+        self.assertTrue(
+            followers,
+            f"Every backup-service node is the master "
+            f"({self.cluster.master.ip}), so there is no follower whose "
+            f"certificate can safely be revoked. Backup nodes: "
+            f"{[node.ip for node in self.cluster.backup_nodes]}"
+        )
+        target = followers[-1]
+        # The unimpaired node may be the master; all that matters is that it
+        # is a backup node whose certificate was NOT revoked.
+        healthy_backup_node = next(
+            node for node in self.cluster.backup_nodes if node.ip != target.ip
+        )
+        self.log.info(
+            f"Revoking follower {target.ip}; expecting {healthy_backup_node.ip} "
+            f"to stay unimpaired (master is {self.cluster.master.ip})"
+        )
+
+        servers = self.cluster.servers[:self.nodes_init]
+        serials = {}
+        for server in servers:
+            serials[server.ip] = self._install_node_certificate(
+                server, self.ca_cert, self.ca_key
+            )
+
+        def cluster_node_count():
+            resp = requests.get(
+                f"https://{self.cluster.master.ip}:{MGMT_PORT}/pools/default",
+                auth=(self.cluster.master.rest_username,
+                      self.cluster.master.rest_password),
+                verify=False, timeout=30, headers={"Connection": "close"},
+            )
+            resp.raise_for_status()
+            return len(resp.json().get("nodes", []))
+
+        nodes_before = cluster_node_count()
+        self.log.info(f"Cluster has {nodes_before} nodes before revocation")
+
+        filename = "bkp_c_node_cert.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, serials[target.ip],
+            filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.log.info(
+            f"Revoked node {target.ip}'s own certificate (serial "
+            f"{serials[target.ip]})"
+        )
+
+        # ── Leg A: nodeToNode off. Outbound checks must be skipped entirely,
+        # even with clientAuth switched on.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        resp = self._wait_for_backup_service_ok(
+            "GET", ENDPOINT_GROUPS["plan"],
+            auth=(self.cluster.master.rest_username,
+                  self.cluster.master.rest_password),
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"With nodeToNode=Disabled, a revoked node certificate must be "
+            f"irrelevant to the backup service, got {resp.status_code}: "
+            f"{resp.text}"
+        )
+        self.log.info(
+            "nodeToNode=Disabled with a revoked node cert -> backup service "
+            "unaffected, as required"
+        )
+
+        # ── Leg B: nodeToNode on.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Require"},
+        )
+        # New connections, not established ones, are what get judged -- give
+        # cbbs a moment to make some.
+        time.sleep(30)
+
+        nodes_after = cluster_node_count()
+        self.assertEqual(
+            nodes_before, nodes_after,
+            f"A revoked node certificate must not trigger an automatic "
+            f"failover: the cluster had {nodes_before} nodes before and "
+            f"{nodes_after} after switching nodeToNode to Require"
+        )
+        self.log.info(f"No automatic failover ({nodes_after} nodes still)")
+
+        resp = requests.get(
+            f"https://{healthy_backup_node.ip}:{self.BACKUP_SERVICE_PORT}"
+            f"{ENDPOINT_GROUPS['plan']}",
+            auth=(self.cluster.master.rest_username,
+                  self.cluster.master.rest_password),
+            verify=False, timeout=30, headers={"Connection": "close"},
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"The backup node whose certificate was NOT revoked must be "
+            f"unimpaired, but {healthy_backup_node.ip} returned "
+            f"{resp.status_code}: {resp.text}"
+        )
+        self.log.info(f"Unaffected node {healthy_backup_node.ip} still serving")
+
+        log_lines = self._read_backup_service_log(tail_lines=2000) or []
+        evidence = [
+            line.strip() for line in log_lines
+            if any(token in line.lower()
+                   for token in ("revok", "crl", "certificate"))
+        ]
+        self.log.info(
+            f"FINDING -- nodeToNode=Require with a revoked node certificate "
+            f"on {target.ip}: {len(evidence)} certificate/revocation-related "
+            f"backup_service.log lines. Sample: {evidence[-5:]}"
+        )
+
+    def _section_c_topology(self):
+        """
+        (revocation target, a backup node that keeps a valid cert).
+
+        The target is always a follower: cluster.master is chosen at init from
+        whichever node answers first and the server list is reordered around
+        it, so the master can carry the backup service too, and revoking its
+        certificate would strand the cluster.
+        """
+        self.assertGreaterEqual(
+            len(self.cluster.backup_nodes), 2,
+            f"Needs at least two backup-service nodes, got "
+            f"{[n.ip for n in self.cluster.backup_nodes]}"
+        )
+        followers = [node for node in self.cluster.backup_nodes
+                     if node.ip != self.cluster.master.ip]
+        self.assertTrue(
+            followers,
+            f"Every backup node is the master ({self.cluster.master.ip}); no "
+            f"follower certificate can safely be revoked"
+        )
+        target = followers[-1]
+        probe_node = next(node for node in self.cluster.backup_nodes
+                          if node.ip != target.ip)
+        return target, probe_node
+
+    def _cluster_node_count(self):
+        resp = requests.get(
+            f"https://{self.cluster.master.ip}:{MGMT_PORT}/pools/default",
+            auth=(self.cluster.master.rest_username,
+                  self.cluster.master.rest_password),
+            verify=False, timeout=60, headers={"Connection": "close"},
+        )
+        resp.raise_for_status()
+        return len(resp.json().get("nodes", []))
+
+    def test_leader_to_follower_grpc_fails_specifically_on_revoked_peer_cert(self):
+        """
+        P0-07 and section C: cbbs's outbound leader-to-follower gRPC must fail
+        against a revoked peer node certificate, with a revocation-specific
+        reason rather than a generic one, without retrying indefinitely,
+        without triggering an automatic failover, and leaving unaffected nodes
+        unimpaired.
+
+        This is the conclusive form of the earlier scope test, which could
+        only report that nothing appeared in backup_service.log -- with no new
+        outbound connections in its observation window there may have been
+        nothing to check. Here repository creation is used to FORCE a
+        leader-to-follower round trip: the service asks every other backup
+        node to confirm it can reach the archive, over the internal gRPC
+        channel. Aimed at a local path that check always fails, and the error
+        text is the measurement -- a missing file means the peer was reached,
+        a TLS/x509 complaint means the channel was refused.
+
+        The baseline leg matters as much as the revoked one: without proving
+        the probe returns a FILE-level error while all certificates are
+        valid, a TLS error afterwards could not be attributed to revocation.
+        """
+        target, probe_node = self._section_c_topology()
+        self.log.info(
+            f"Revoking follower {target.ip}; probing via {probe_node.ip} "
+            f"(master is {self.cluster.master.ip})"
+        )
+
+        serials = {}
+        for server in self.cluster.servers[:self.nodes_init]:
+            serials[server.ip] = self._install_node_certificate(
+                server, self.ca_cert, self.ca_key
+            )
+
+        plan_name = "crl_p007_plan"
+        self._create_backup_plan(probe_node, plan_name)
+        nodes_before = self._cluster_node_count()
+        try:
+            # ── Baseline: every certificate valid, so the peer must be
+            # reachable and the complaint must be about the file.
+            #
+            # The benign CRL is a precondition, not decoration. Under Require
+            # with no applicable CRL for the issuing CA, cbauth answers
+            # "status undetermined" and the handshake is refused fail-closed --
+            # correct product behaviour, but it would make the baseline fail
+            # at TLS and destroy the comparison this test depends on.
+            # Confirmed against 8.5.0-1009, which returned exactly
+            # "CRLsValidate: CN=<node> status undetermined" without it.
+            benign = "bkp_p007_benign.pem"
+            status_up, content = self.crl_utils.revoke_and_upload(
+                self.rest, self.ca_cert, self.ca_key, [], benign,
+                crl_number=1,
+            )
+            self.assertTrue(status_up, f"Benign CRL upload failed: {content}")
+            self._track_uploaded_file(benign)
+            self.crl_utils.set_settings(
+                self.rest,
+                policyPerScope={"clientAuth": "Disabled",
+                                "nodeToNode": "Require"},
+            )
+            status, body, elapsed = self._cross_node_archive_probe(
+                probe_node, plan_name, "crl_p007_before"
+            )
+            self.log.info(
+                f"Baseline probe ({elapsed:.1f}s, HTTP {status}): {body[:300]}"
+            )
+            self.assertTrue(
+                self._file_level_failure_in(body),
+                f"Baseline: with every node certificate valid the cross-node "
+                f"check should reach the peer and complain about the archive "
+                f"file, which is what makes a TLS failure below attributable "
+                f"to revocation. Got HTTP {status}: {body[:400]}"
+            )
+            self.assertFalse(
+                self._tls_failure_in(body),
+                f"Baseline: no TLS/certificate failure expected while every "
+                f"certificate is valid. Got HTTP {status}: {body[:400]}"
+            )
+            self.log.info("Baseline: peer reached over gRPC, file-level error")
+
+            # ── Revoke the follower's own certificate.
+            filename = "bkp_p007_node.pem"
+            status_up, content = self.crl_utils.revoke_and_upload(
+                self.rest, self.ca_cert, self.ca_key, serials[target.ip],
+                filename, crl_number=2,
+            )
+            self.assertTrue(status_up, f"CRL upload failed: {content}")
+            self._track_uploaded_file(filename)
+            self.log.info(
+                f"Revoked {target.ip}'s node certificate (serial "
+                f"{serials[target.ip]})"
+            )
+
+            status, body, elapsed = self._cross_node_archive_probe(
+                probe_node, plan_name, "crl_p007_after"
+            )
+            self.log.info(
+                f"Post-revocation probe ({elapsed:.1f}s, HTTP {status}): "
+                f"{body[:400]}"
+            )
+
+            # No indefinite retry: the call has to come back on its own.
+            self.assertIsNotNone(
+                status,
+                f"The cross-node check must return rather than hang when a "
+                f"peer certificate is revoked; the request did not complete "
+                f"in {elapsed:.0f}s: {body[:300]}"
+            )
+            self.assertLess(
+                elapsed, 240,
+                f"The cross-node check must not retry indefinitely against a "
+                f"revoked peer; it took {elapsed:.0f}s"
+            )
+
+            # No automatic failover, and the other backup node unimpaired.
+            nodes_after = self._cluster_node_count()
+            self.assertEqual(
+                nodes_before, nodes_after,
+                f"A revoked peer node certificate must not trigger an "
+                f"automatic failover: {nodes_before} nodes before, "
+                f"{nodes_after} after"
+            )
+            resp = requests.get(
+                f"http://{probe_node.ip}:{self.BACKUP_SERVICE_HTTP_PORT}"
+                f"{ENDPOINT_GROUPS['plan']}",
+                auth=(self.cluster.master.rest_username,
+                      self.cluster.master.rest_password),
+                timeout=60, headers={"Connection": "close"},
+            )
+            self.assertEqual(
+                resp.status_code, 200,
+                f"The node whose certificate was not revoked must be "
+                f"unimpaired, got {resp.status_code}: {resp.text[:200]}"
+            )
+            self.log.info(
+                f"No failover ({nodes_after} nodes), {probe_node.ip} still "
+                f"serving"
+            )
+
+            # The reason must be revocation-specific.
+            self.assertTrue(
+                self._tls_failure_in(body),
+                f"P0-07: leader-to-follower gRPC against a REVOKED peer node "
+                f"certificate must fail at the transport, not with the same "
+                f"file-level error seen while every certificate was valid. "
+                f"HTTP {status}: {body[:600]}"
+            )
+            # "status undetermined" is fail-closed, not revocation. P0-07 asks
+            # for a revocation-specific reason, so require one.
+            self.assertTrue(
+                self._revoked_reason_in(body),
+                f"P0-07 requires a REVOCATION-specific reason. The peer was "
+                f"refused, but the reason does not name revocation -- if it "
+                f"says 'status undetermined' the check failed closed without "
+                f"consulting the CRL that names this certificate. HTTP "
+                f"{status}: {body[:600]}"
+            )
+            self.log.info(
+                "Revoked peer node cert produced a TLS/certificate-specific "
+                "cross-node failure, as P0-07 requires"
+            )
+        finally:
+            self._delete_backup_plan(probe_node, plan_name)
+
+    def test_revoked_intermediate_ca_invalidates_node_certs_beneath_it(self):
+        """
+        Section C: revoking an intermediate CA must invalidate every node
+        certificate issued beneath it on the outbound path.
+
+        Requires checkIntermediateCerts=true: with the default (false) only
+        the peer certificate's own serial is consulted, so the cascade is not
+        expected to happen at all.
+
+        Only the target follower is moved onto the intermediate; the other
+        nodes stay directly under the root. The intermediate's own serial is
+        then revoked by a CRL from the root, so nothing names the node's
+        certificate directly -- if the cascade works, the node is still
+        rejected.
+        """
+        target, probe_node = self._section_c_topology()
+
+        inter_cert, inter_key, inter_serial = \
+            self.crl_utils.generate_intermediate_ca(
+                self.ca_cert, self.ca_key, "BackupCRLOutboundInter"
+            )
+        inter_pem = self.crl_utils.cert_to_pem(inter_cert)
+        # The intermediate has to be trusted in its own right before a CRL it
+        # issued will be accepted -- ns_server refuses an upload whose issuer
+        # it cannot match with "CRL issuer not trusted", even when the
+        # issuer's own parent is trusted. Same fix as the peer-vs-chain test.
+        self._trust_ca_on_cluster(inter_cert)
+
+        for server in self.cluster.servers[:self.nodes_init]:
+            if server.ip == target.ip:
+                # Node must serve the intermediate too: the cluster trusts
+                # only the root, so a leaf alone would not chain.
+                self._install_node_certificate(
+                    server, inter_cert, inter_key, chain_suffix=inter_pem
+                )
+            else:
+                self._install_node_certificate(
+                    server, self.ca_cert, self.ca_key
+                )
+        self.log.info(
+            f"{target.ip} now chains through the intermediate; other nodes "
+            f"remain directly under the root"
+        )
+
+        plan_name = "crl_inter_plan"
+        self._create_backup_plan(probe_node, plan_name)
+        nodes_before = self._cluster_node_count()
+        try:
+            # Benign CRLs from BOTH issuers: the target chains through the
+            # intermediate, the other nodes directly under the root, and
+            # Require fails closed on any issuer with no applicable CRL.
+            for label, ca_cert, ca_key in (
+                ("bkp_c_inter_benign_root.pem", self.ca_cert, self.ca_key),
+                ("bkp_c_inter_benign_int.pem", inter_cert, inter_key),
+            ):
+                status_up, content = self.crl_utils.revoke_and_upload(
+                    self.rest, ca_cert, ca_key, [], label, crl_number=1,
+                )
+                self.assertTrue(
+                    status_up, f"Benign CRL upload failed for {label}: "
+                               f"{content}")
+                self._track_uploaded_file(label)
+            # checkIntermediateCerts must be ON for this test to mean
+            # anything. Its default is false, which evaluates revocation for
+            # the PEER certificate only -- so a revoked intermediate is
+            # correctly ignored and the cascade never happens. That default is
+            # already pinned by test_peer_only_vs_full_chain_revocation_
+            # checking; without setting it here this test asserted behaviour
+            # the product is not configured to perform, and failed for a
+            # reason that had nothing to do with the outbound path.
+            self.crl_utils.set_settings(
+                self.rest,
+                policyPerScope={"clientAuth": "Disabled",
+                                "nodeToNode": "Require"},
+                checkIntermediateCerts=True,
+            )
+            status, body, elapsed = self._cross_node_archive_probe(
+                probe_node, plan_name, "crl_inter_before"
+            )
+            self.log.info(
+                f"Baseline probe ({elapsed:.1f}s, HTTP {status}): {body[:300]}"
+            )
+            self.assertTrue(
+                self._file_level_failure_in(body),
+                f"Baseline: a node chaining through a trusted intermediate "
+                f"must still be reachable over gRPC. Got HTTP {status}: "
+                f"{body[:400]}"
+            )
+            self.assertFalse(
+                self._tls_failure_in(body),
+                f"Baseline: no TLS failure expected before the intermediate "
+                f"is revoked. Got HTTP {status}: {body[:400]}"
+            )
+
+            # Revoke the INTERMEDIATE, by a CRL from the root that issued it.
+            filename = "bkp_c_intermediate.pem"
+            status_up, content = self.crl_utils.revoke_and_upload(
+                self.rest, self.ca_cert, self.ca_key, inter_serial, filename,
+                crl_number=2,
+            )
+            self.assertTrue(status_up, f"CRL upload failed: {content}")
+            self._track_uploaded_file(filename)
+            self.log.info(f"Revoked the intermediate CA (serial {inter_serial})")
+
+            status, body, elapsed = self._cross_node_archive_probe(
+                probe_node, plan_name, "crl_inter_after"
+            )
+            self.log.info(
+                f"Post-revocation probe ({elapsed:.1f}s, HTTP {status}): "
+                f"{body[:400]}"
+            )
+            self.assertEqual(
+                nodes_before, self._cluster_node_count(),
+                "Revoking an intermediate CA must not trigger an automatic "
+                "failover"
+            )
+            self.assertTrue(
+                self._tls_failure_in(body),
+                f"Revoking an intermediate CA must invalidate the node "
+                f"certificate issued beneath it on the outbound path, even "
+                f"though no CRL names that certificate directly. HTTP "
+                f"{status}: {body[:600]}"
+            )
+            self.log.info(
+                "Revoking the intermediate cascaded to the node certificate "
+                "beneath it, as required"
+            )
+        finally:
+            self._delete_backup_plan(probe_node, plan_name)

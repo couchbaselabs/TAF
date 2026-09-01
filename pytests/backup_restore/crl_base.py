@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -9,7 +10,8 @@ import traceback
 import uuid
 
 import requests
-from cryptography.x509.oid import NameOID
+from cryptography import x509
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from cb_constants import CbServer
 from cb_server_rest_util.security.security_api import SecurityRestAPI
@@ -51,6 +53,11 @@ class CRLBackupRestoreBase(CollectionBase):
     # method on it.
     GRPC_PORT = 9124
 
+    # Plain-HTTP Backup Service port. Used for the cross-node probes below so
+    # they exercise the OUTBOUND (nodeToNode) path without dragging inbound
+    # clientAuth/mTLS into the picture.
+    BACKUP_SERVICE_HTTP_PORT = 8097
+
     # Enough HTTP/2 to make a gRPC listener answer: the mandatory connection
     # preface followed by an empty SETTINGS frame. A server that is willing to
     # talk replies with its own SETTINGS frame; one that has rejected the
@@ -87,6 +94,11 @@ class CRLBackupRestoreBase(CollectionBase):
         self._obj_staging_dirs = []
         # Whether the crlsValidate counting iptables rule is currently installed
         self._crls_counter_installed = False
+        # Nodes whose certificate this test reissued from the test CA --
+        # every one has to go back to a built-in self-signed cert in
+        # tearDown, or a test-CA-issued (possibly revoked) node cert
+        # outlives the test and breaks every later test on these machines.
+        self._nodes_with_test_certs = []
 
         self.backup_node = self.cluster.backup_nodes[0]
         # Every BackupMgrUtil opens an SSH shell via CbCmdBase and holds it
@@ -167,6 +179,26 @@ class CRLBackupRestoreBase(CollectionBase):
             self._cleanup_temp_pem_files()
         except Exception as exc:
             self.log.warning(f"Temp PEM file cleanup error: {exc}")
+        # Restore node certificates BEFORE untrusting this suite's CAs, and
+        # not the other way round.
+        #
+        # Cleaning the trust store first looks tempting but strands the
+        # cluster: while a node still serves a test-CA certificate, removing
+        # that CA breaks node-to-node TLS, and the regenerate that was
+        # supposed to recover is itself a chronicle write that then cannot
+        # complete. Observed exactly that -- a run left every node on
+        # CN=BackupCRLTestCA_5dd09f73 with the CA already gone from the trust
+        # store, needing a manual regenerate to recover.
+        #
+        # This order is safe because _cleanup_trusted_cas removes only the
+        # ids this test tracked, so it never touches the CA that regeneration
+        # just installed. (The helper that DID delete the cluster's own CA
+        # was _self_heal_stuck_trusted_cas, via "keep only id 0"; that is
+        # fixed separately by matching on subject.)
+        try:
+            self._restore_self_signed_node_certs()
+        except Exception as exc:
+            self.log.warning(f"Node certificate restore error: {exc}")
         try:
             self._cleanup_trusted_cas()
         except Exception as exc:
@@ -239,26 +271,51 @@ class CRLBackupRestoreBase(CollectionBase):
         except requests.exceptions.RequestException:
             pass
 
+    # Subject marker every CA this suite generates carries. Used to decide
+    # what may be untrusted -- see _self_heal_stuck_trusted_cas.
+    TEST_CA_SUBJECT_MARKER = "BackupCRLTestCA_"
+
     def _self_heal_stuck_trusted_cas(self):
+        """
+        Untrust CAs left behind by a previous run of THIS suite.
+
+        Selected by subject, never by id. The earlier version kept only the
+        CA at id 0, which looks equivalent and is not: after any
+        regenerateCertificate the cluster's own generated CA is no longer id
+        0, so "keep id 0" silently deleted the CA that signs every node's
+        certificate. The cluster was then serving certificates signed by a CA
+        it did not trust, which breaks node-to-node TLS -- and because
+        chronicle's own inter-node traffic runs over it, the next chronicle
+        write hangs. That surfaced as loadTrustedCAs returning HTTP 500 with
+        chronicle_rsm:leader_request timing out underneath, and it cost
+        several ten-minute runs plus a full node reset before the chain was
+        traced back to here.
+        """
+        # Returns the number of CAs removed. Validated against a live 8.5.0
+        # cluster: an earlier form computed the count as
+        # "length(Certs) - length(NewCerts) + 1" and died with badarith.
         code = (
             "{ok, {Certs, _Rev}} = chronicle_kv:get(kv, ca_certificates), "
-            "NewCerts = lists:filter(fun(PL) -> "
-            "proplists:get_value(id, PL) =:= 0 end, Certs), "
-            "OldCount = length(Certs), "
+            "IsTestCA = fun(PL) -> case re:run("
+            "proplists:get_value(subject, PL, \"\"), "
+            f"\"{self.TEST_CA_SUBJECT_MARKER}\") of "
+            "{match, _} -> true; _ -> false end end, "
+            "NewCerts = lists:filter(fun(PL) -> not IsTestCA(PL) end, Certs), "
+            "Removed = length(Certs) - length(NewCerts), "
             "chronicle_kv:set(kv, ca_certificates, NewCerts), "
-            "OldCount."
+            "Removed."
         )
         try:
-            status, old_count = self.rest.diag_eval(code)
+            status, removed_count = self.rest.diag_eval(code)
             if not status:
-                raise RuntimeError(f"diag/eval failed: {old_count}")
-            removed = int(old_count) - 1
+                raise RuntimeError(f"diag/eval failed: {removed_count}")
+            removed = int(removed_count)
             if removed > 0:
                 self.log.warning(
                     f"{self.cluster.master.ip} had {removed} stale trusted "
-                    f"CA(s) left over from a previous run -- untrusted all "
-                    f"of them (kept only the node's own auto-generated CA) "
-                    f"before this test starts."
+                    f"CA(s) from a previous run of this suite -- untrusted "
+                    f"them before this test starts. The cluster's own "
+                    f"generated CA is deliberately left alone."
                 )
         except Exception as exc:
             self.log.warning(f"Trusted CA self-heal error: {exc}")
@@ -307,6 +364,10 @@ class CRLBackupRestoreBase(CollectionBase):
         try:
             ca_dir = self._ca_dir(shell)
             shell.execute_command(f"mkdir -p {ca_dir}")
+            # A test whose teardown could not run leaves its CA behind here,
+            # and ns_server loads every file in this directory. Clearing
+            # first keeps one failed run from compounding into the next.
+            shell.execute_command(f"rm -f {ca_dir}/BackupCRLTestCA_*.pem")
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=".pem", mode="wb"
             ) as tmp_file:
@@ -321,9 +382,27 @@ class CRLBackupRestoreBase(CollectionBase):
         finally:
             shell.disconnect()
 
-        status, content = self.rest.load_trusted_CAs()
+        # Retry rather than fail on the first refusal. loadTrustedCAs writes
+        # to chronicle, and setUp calls this immediately after cluster init,
+        # rebalance and a bucket load -- while chronicle can still be
+        # settling. On a busy cluster it comes back "Unexpected server error,
+        # request logged." (HTTP 500), and ns_server logs a no_quorum
+        # activity failure at the same moment; the identical call against the
+        # same idle cluster succeeds. Failing on the first attempt turned that
+        # into a lost 10-minute run several times over.
+        status, content = False, None
+        for attempt in range(5):
+            status, content = self.rest.load_trusted_CAs()
+            if status:
+                break
+            self.log.warning(
+                f"load_trusted_CAs attempt {attempt + 1}/5 on {server.ip} "
+                f"failed ({content}); chronicle may still be settling")
+            time.sleep(10)
         if not status:
-            self.fail(f"Failed to load trusted CAs on {server.ip}: {content}")
+            self.fail(
+                f"Failed to load trusted CAs on {server.ip} after 5 "
+                f"attempts: {content}")
 
         cn_attrs = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
         cn = cn_attrs[0].value if cn_attrs else None
@@ -725,6 +804,269 @@ class CRLBackupRestoreBase(CollectionBase):
             return pid, fds
         finally:
             shell.disconnect()
+
+
+    # ── Node certificates issued by the test CA ─────────────────────────────
+
+    def _served_certificate(self, server, port=None):
+        """
+        The certificate a node actually serves on a TLS port, as an x509
+        object. Reads what is on the wire rather than what the REST API says
+        is configured -- after a reloadCertificate the two can disagree if
+        the reload silently did nothing.
+        """
+        pem = ssl.get_server_certificate(
+            (server.ip, port or CbServer.ssl_port))
+        return x509.load_pem_x509_certificate(pem.encode())
+
+    def _install_node_certificate(self, server, ca_cert, ca_key,
+                                  chain_suffix=b""):
+        """
+        Reissue `server`'s own node certificate from the given CA and reload
+        it, so that this node's certificate can later be revoked by a CRL
+        this suite controls. Returns the new certificate's serial.
+
+        Two details are load bearing. The certificate needs SERVER_AUTH as
+        well as CLIENT_AUTH -- a node certificate is presented on inbound
+        TLS, and cbbs also presents it outbound -- and its SANs must cover
+        every address the cluster uses to reach the node, otherwise peers
+        reject it on name mismatch long before revocation is consulted, and
+        the failure looks like enforcement when it is not.
+
+        `chain_suffix` is appended to the leaf in chain.pem, for a cert
+        issued by an intermediate: the node has to serve the intermediate
+        too, since the cluster only trusts the root.
+
+        The CA must already be trusted cluster-wide (_trust_ca_on_cluster)
+        or the reload is refused outright.
+        """
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            ca_cert, ca_key, server.ip,
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH,
+                                ExtendedKeyUsageOID.CLIENT_AUTH],
+            dns_names=[server.ip, "127.0.0.1", "localhost"],
+        )
+        chain_pem = self.crl_utils.cert_to_pem(cert) + chain_suffix
+        key_pem = self.crl_utils.key_to_pem(key)
+
+        inbox = "/opt/couchbase/var/lib/couchbase/inbox"
+        shell = RemoteMachineShellConnection(server)
+        try:
+            shell.execute_command(f"mkdir -p {inbox}")
+            # base64 through a single echo rather than a heredoc: PEM is
+            # multi-line and full of characters the remote shell would other-
+            # wise mangle.
+            for payload, name in ((chain_pem, "chain.pem"),
+                                  (key_pem, "pkey.key")):
+                encoded = base64.b64encode(payload).decode()
+                shell.execute_command(
+                    f"echo {encoded} | base64 -d > {inbox}/{name}")
+            shell.execute_command(f"chown -R couchbase:couchbase {inbox}")
+            shell.execute_command(f"chmod 600 {inbox}/pkey.key")
+        finally:
+            shell.disconnect()
+
+        rest = RestConnection(server)
+        status, content, _ = rest._http_request(
+            rest.baseUrl + "node/controller/reloadCertificate", "POST")
+        if not status:
+            raise Exception(
+                f"reloadCertificate failed on {server.ip}: {content}")
+        if server.ip not in self._nodes_with_test_certs:
+            self._nodes_with_test_certs.append(server.ip)
+        self.log.info(
+            f"Node {server.ip} now serving a test-CA certificate, serial="
+            f"{serial}")
+        return serial
+
+    def _restore_self_signed_node_certs(self):
+        """
+        Put every node back on a built-in self-signed certificate.
+
+        Cluster-wide rather than per-node: regenerateCertificate reissues for
+        the whole cluster in one call, and leaving even one node on a revoked
+        test certificate would break the next test's cluster setup.
+        """
+        if not getattr(self, "_nodes_with_test_certs", []):
+            return
+        self.log.info(
+            f"Restoring self-signed node certs (test certs were installed "
+            f"on {self._nodes_with_test_certs})")
+        RestConnection(self.cluster.master).regenerate_cluster_certificate()
+
+        # Wait until every node is demonstrably off the test CA before the
+        # caller goes on to drop that CA from the trust store. regenerate and
+        # reloadCertificate both propagate asynchronously -- cbbs logs a "TLS
+        # config refreshed" per node as it catches up -- so removing the trust
+        # anchor while a node still presents a test-CA certificate leaves the
+        # cluster unable to verify its own peers, which surfaces later as
+        # "x509: certificate signed by unknown authority" on leader-to-
+        # follower gRPC and fails the NEXT test's rebalance rather than this
+        # one's teardown.
+        ca_cn = self.ca_cert.subject.rfc4514_string().split(
+            "CN=")[-1].split(",")[0]
+        deadline = time.time() + 120
+        for server in self.cluster.servers[:self.nodes_init]:
+            if server.ip not in self._nodes_with_test_certs:
+                continue
+            while time.time() < deadline:
+                try:
+                    issuer = self._served_certificate(server).issuer
+                    if ca_cn not in issuer.rfc4514_string():
+                        break
+                except Exception as exc:
+                    self.log.warning(
+                        f"Could not read {server.ip}'s served cert while "
+                        f"waiting for the self-signed swap: {exc}")
+                time.sleep(5)
+            else:
+                self.log.error(
+                    f"Node {server.ip} still presents a {ca_cn} certificate "
+                    f"after 120s. Leaving the CA trusted rather than "
+                    f"stranding the cluster without its trust anchor.")
+                return
+
+        # Regenerating swaps the ACTIVE certificate but leaves what was
+        # staged in the inbox on disk. Left there, the next test's node-cert
+        # work starts from another test's chain and key, so remove them.
+        inbox = "/opt/couchbase/var/lib/couchbase/inbox"
+        for server in self.cluster.servers[:self.nodes_init]:
+            if server.ip not in self._nodes_with_test_certs:
+                continue
+            shell = RemoteMachineShellConnection(server)
+            try:
+                shell.execute_command(
+                    f"rm -f {inbox}/chain.pem {inbox}/pkey.key")
+            except Exception as exc:
+                self.log.warning(
+                    f"Inbox cleanup failed on {server.ip}: {exc}")
+            finally:
+                shell.disconnect()
+        self._nodes_with_test_certs = []
+
+
+    # ── Forcing leader-to-follower gRPC (section C / P0-07) ─────────────────
+
+    def _create_backup_plan(self, node, plan_name):
+        """
+        Create a minimal backup plan on `node`, replacing any leftover of the
+        same name. Needed because a repository cannot be created without a
+        plan, and repository creation is what forces the cross-node gRPC
+        round trip the section C tests measure.
+        """
+        base = (f"http://{node.ip}:{self.BACKUP_SERVICE_HTTP_PORT}"
+                f"/api/v1/plan/{plan_name}")
+        auth = (self.cluster.master.rest_username,
+                self.cluster.master.rest_password)
+        requests.delete(base, auth=auth, timeout=60)
+        body = {
+            "description": "CRL section C cross-node probe",
+            "tasks": [{
+                "name": "crl_probe_task",
+                "task_type": "BACKUP",
+                "schedule": {"job_type": "BACKUP", "frequency": 1,
+                             "period": "HOURS"},
+            }],
+        }
+        resp = requests.post(base, json=body, auth=auth, timeout=60)
+        if resp.status_code != 200:
+            raise Exception(
+                f"Could not create probe plan {plan_name}: "
+                f"{resp.status_code} {resp.text}")
+        return plan_name
+
+    def _delete_backup_plan(self, node, plan_name):
+        """Best-effort removal of a probe plan."""
+        try:
+            requests.delete(
+                f"http://{node.ip}:{self.BACKUP_SERVICE_HTTP_PORT}"
+                f"/api/v1/plan/{plan_name}",
+                auth=(self.cluster.master.rest_username,
+                      self.cluster.master.rest_password),
+                timeout=60)
+        except Exception as exc:
+            self.log.warning(f"Probe plan cleanup failed: {exc}")
+
+    def _cross_node_archive_probe(self, node, plan_name, label):
+        """
+        Force a leader-to-follower gRPC round trip and report what came back.
+
+        Creating a backup repository makes the service ask every other backup
+        node to verify it can reach the archive location, over the internal
+        gRPC channel. Pointed at a local (non-shared) path that check ALWAYS
+        fails -- which is exactly the point. The error text says whether the
+        peer was reached at all:
+
+          * "could not read file ... no such file or directory" -- the gRPC
+            channel worked and the peer answered; only the file was missing.
+          * "authentication handshake failed" / "x509" / "certificate" -- the
+            channel itself was refused.
+
+        That distinction is what makes revocation on the outbound path
+        observable from outside, without needing a shared NFS archive or
+        object-store credentials just to get a repository created.
+
+        Returns (status_code, body_text, elapsed_seconds).
+        """
+        url = (f"http://{node.ip}:{self.BACKUP_SERVICE_HTTP_PORT}"
+               f"/api/v1/cluster/self/repository/active/{label}")
+        start = time.time()
+        try:
+            resp = requests.post(
+                url, json={"plan": plan_name, "archive": f"/tmp/{label}"},
+                auth=(self.cluster.master.rest_username,
+                      self.cluster.master.rest_password),
+                timeout=300)
+            return resp.status_code, resp.text, time.time() - start
+        except requests.exceptions.RequestException as exc:
+            return None, f"{type(exc).__name__}: {exc}", time.time() - start
+
+    @staticmethod
+    def _revoked_reason_in(text):
+        """
+        True if `text` blames REVOCATION specifically, as opposed to merely
+        failing TLS.
+
+        The distinction is the whole point of P0-07: under Require with no
+        applicable CRL, cbauth answers "status undetermined" and the
+        handshake is refused fail-closed. That is a TLS failure but it is not
+        a revocation-specific reason, and a test that accepted it would pass
+        without ever proving revocation was consulted.
+        """
+        lowered = (text or "").lower()
+        # "is revoked" / "revocation" in a sentence, not the substring
+        # "revoked" that a path like /tmp/crl_x_revoked would also satisfy.
+        return "is revoked" in lowered or "revocation" in lowered
+
+    @staticmethod
+    def _undetermined_reason_in(text):
+        """True if the peer's revocation status could not be determined."""
+        return "undetermined" in (text or "").lower()
+
+    @staticmethod
+    def _tls_failure_in(text):
+        """
+        True if `text` blames the TLS transport.
+
+        Deliberately does NOT include a bare "revoked" token. An earlier
+        version did, and matched on the caller's own archive path
+        (/tmp/crl_inter_revoked) rather than on any product error -- turning a
+        test that should have failed into a silent pass. Every token here
+        names something only a transport failure produces.
+        """
+        lowered = (text or "").lower()
+        return any(token in lowered for token in (
+            "x509", "authentication handshake failed", "tls:",
+            "certificate signed by unknown authority", "bad certificate",
+            "crlsvalidate"))
+
+    @staticmethod
+    def _file_level_failure_in(text):
+        """True if `text` blames the archive file rather than the transport."""
+        lowered = (text or "").lower()
+        return any(token in lowered for token in (
+            "could not read file", "no such file or directory",
+            "cannot access location"))
 
     def _local_backup_mgr(self):
         """
