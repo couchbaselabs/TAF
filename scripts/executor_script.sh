@@ -7,8 +7,10 @@ touch "$WORKSPACE/.executor_lock" 2>/dev/null
 
 cleanup_dir_before_exit() {
   # Runs from an EXIT trap, so the cwd is whatever the failing step left
-  # behind - anchor to the workspace before deleting anything.
-  [ -n "$WORKSPACE" ] && cd "$WORKSPACE"
+  # behind. Anchor to the workspace first and bail out if that is not
+  # possible - never rm -rf whatever directory we happen to have landed in.
+  [ -n "$WORKSPACE" ] || return 0
+  cd "$WORKSPACE" || return 0
   rm -rf .git b build conf pytests DocLoader lib couchbase_utils test_infra_runner
   # Remove any installers downloaded locally
   rm -rf *.deb *.rpm *.msi
