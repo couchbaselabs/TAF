@@ -1194,12 +1194,37 @@ class DocHistoryRetention(ClusterSetup):
         self.create_bucket(self.cluster)
         bucket = self.cluster.buckets[0]
         Bucket.set_defaults(bucket)
+        CollectionBase.create_clients_for_sdk_pool(self)
         RestConnection(self.cluster.master).update_autofailover_settings(
             False, 60)
 
         self.bucket_util.create_collection(
             self.cluster.master, bucket, CbServer.default_scope,
             {"name": "c1", "history": "true"})
+
+        # Seed c1 before the cont. update/replace spec runs. Those are
+        # percentages of the collection's existing items, so without this
+        # the loader resolves to zero docs and the test loads nothing.
+        self.log.info("Loading initial data into the scope")
+        doc_gen = doc_generator(self.key, 0, self.num_items,
+                                doc_size=self.doc_size,
+                                vbuckets=bucket.numVBuckets)
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
+            scope=CbServer.default_scope, collection="c1",
+            durability=self.durability_level,
+            load_using=self.load_docs_using)
+        self.task_manager.get_task_result(load_task)
+        bucket.scopes[CbServer.default_scope].collections["c1"].num_items \
+            += self.num_items
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets,
+            check_ep_items_remaining=True)
+        # Raises if the seed did not land. A silently empty load is what this
+        # change fixes, and a wrong num_items would put the cont.
+        # update/replace percentages straight back at zero.
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, bucket)
 
         prev_stats = self.bucket_util.get_vb_details_for_bucket(
             bucket, self.cluster.nodes_in_cluster)
@@ -1238,9 +1263,17 @@ class DocHistoryRetention(ClusterSetup):
 
         curr_stat = self.bucket_util.get_vb_details_for_bucket(
             bucket, self.cluster.nodes_in_cluster)
+        # '>' (never moves backwards), not '=='. history_start_seqno is the
+        # left edge of the retained-history window, and magma advances it
+        # whenever it evicts history - on the time window
+        # (bucket_history_retention_seconds) or the per-vb byte budget
+        # (bucket_history_retention_bytes / numVBuckets), whichever hits
+        # first. Under a real doc load either one can fire well inside the
+        # test, so '==' cannot hold. '>' is the invariant a crash test
+        # actually owns: kills must never rewind the window.
         result = self.bucket_util.validate_history_start_seqno_stat(
-            prev_stats, curr_stat, "==")
-        self.assertTrue(result, "Validation failed")
+            prev_stats, curr_stat, ">")
+        self.assertTrue(result, "history_start_seqno validation failed")
         # Check dedupe occurrence
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cb_stat = Cbstats(node)

@@ -37,7 +37,22 @@ Central executor. `max_workers=100` by default (single `ThreadPoolExecutor`).
 | Method | Behaviour |
 |---|---|
 | `add_new_task(task)` | Sirius tasks (`SiriusCouchbaseLoader`, `SiriusJavaMongoLoader`): calls `task.start_task()`, raises on failure. Regular tasks: submits `task.call` to `ThreadPoolExecutor`, stores future in `self.futures[task.thread_name]` and the task object itself in `self.tasks[task.thread_name]` (the latter is only consulted by `abort_all_tasks()`, to signal a task that can't be cancelled). |
-| `get_task_result(task)` | Sirius tasks: calls `task.get_task_result()`, logs CRITICAL on `False`. Regular tasks: blocks on `future.result()`, pops from `self.futures` and `self.tasks`. Returns `bool`. |
+| `get_task_result(task)` | Sirius tasks: calls `task.get_task_result()`, logs CRITICAL on `False`, returns that `bool`. Regular tasks: blocks on `future.result()`, pops from `self.futures` and `self.tasks`, and returns **whatever `call()` returned** — see the success-check trap below. |
+
+#### Checking whether a load succeeded — read this before writing an assert
+
+There is no single expression that works across loaders. Two traps:
+
+1. **`.result` does not exist on Sirius tasks.** `async_load_gen_docs(..., load_using="sirius_java_sdk")` returns a `SiriusCouchbaseLoader`, which is not a `Task` subclass and has no `result` attribute — `assertTrue(load_task.result, ...)` raises `AttributeError: 'SiriusCouchbaseLoader' object has no attribute 'result'` at runtime. Only spec-driven tasks (`run_scenario_from_spec` → `MutateDocsFromSpecTask`) and other real `Task` subclasses have `.result`.
+2. **`get_task_result()`'s truthiness is inverted for `default_loader`.** `LoadDocumentsGeneratorsTask.call()` returns `self.fail` (a failure dict), so an empty dict — i.e. success — is falsy. `assertTrue(task_manager.get_task_result(load_task))` therefore fails on a clean load.
+
+| Task source | Success check |
+|---|---|
+| `run_scenario_from_spec(...)` | `self.assertTrue(task.result, "...")` |
+| `async_load_gen_docs(..., load_using="sirius_java_sdk")` | `self.assertTrue(self.task_manager.get_task_result(task), "...")` |
+| `async_load_gen_docs(..., load_using="default_loader")` | truthiness is inverted — do **not** assert on the return value |
+
+**Loader-agnostic guard (prefer this for a seed/initial load):** call `get_task_result()` for its side effects, update the collection's `num_items`, `_wait_for_stats_all_buckets(..., check_ep_items_remaining=True)`, then `bucket_util.validate_doc_count_as_per_collections(cluster, bucket)` — it raises `Exception("Collections stat validation failed")` on mismatch and works under every loader. Every existing `async_load_gen_docs` call site in `pytests/bucket_collections/history_retention.py` deliberately asserts nothing on the task itself for these reasons.
 | `schedule(task, sleep_time=0)` | Optional sleep then `add_new_task`. |
 | `stop_task(task)` | Sirius tasks: calls `task.end_task()`. Regular tasks: polls `future.done()` up to 30s then `future.cancel()`. |
 | `shutdown(timeout=5)` | `pool.shutdown()` + 5s sleep + `pool.shutdown(wait=True)`. |
