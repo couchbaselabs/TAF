@@ -36,37 +36,43 @@ run_populate_ini_script() {
   return $rc
 }
 
-check_and_build_testrunner_install_docker() {
+check_and_load_testrunner_install_docker() {
   docker_img=testrunner:install
+  docker_img_tar=/data/testrunner_install.docker.zip
+
+  docker_img_id=$(docker images -q $docker_img)
+  if [ "$docker_img_id" != "" ]; then
+    echo "Docker image $docker_img already present ($docker_img_id)"
+    return 0
+  fi
+
+  # Pre-staged on every slave; cannot be built here due to dependency issues.
+  if [ ! -s "$docker_img_tar" ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "ERROR: $docker_img not present and $docker_img_tar"
+    echo "is missing/empty on this node ($NODE_NAME)"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    exit 1
+  fi
+
+  echo "Docker image $docker_img not present - loading from $docker_img_tar"
+  docker load -i "$docker_img_tar"
+  docker_load_status=$?
+  if [ $docker_load_status -ne 0 ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "ERROR: 'docker load -i $docker_img_tar' exited $docker_load_status"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    exit 1
+  fi
+
   docker_img_id=$(docker images -q $docker_img)
   if [ "$docker_img_id" == "" ]; then
-    echo '
-    FROM python:3.8.4
-    WORKDIR /
-    RUN git clone https://github.com/couchbase/testrunner.git
-    WORKDIR /testrunner
-
-    # Install couchbase first to avoid fetching unsupported six package version
-    RUN python -m pip install couchbase==3.2.0
-    # Now install all other dependencies
-    RUN python -m pip install -r requirements.txt
-
-    RUN git submodule init
-    RUN git submodule update --init --force --remote
-    WORKDIR /
-
-    RUN echo "cd /testrunner" > new_install.sh
-    RUN echo "git remote update origin --prune" >> new_install.sh
-    RUN echo "git pull -q" >> new_install.sh
-    RUN echo "\"\$@\"" >> new_install.sh
-    # Set entrypoint for the docker container
-    ENTRYPOINT ["sh", "new_install.sh"]' > Dockerfile
-    echo "Building docker image $docker_img"
-    docker build . --tag $docker_img --quiet
-    echo "Docker build '${docker_img}' done"
-  else
-    echo "Docker image '${docker_img}' exists"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "ERROR: $docker_img_tar loaded but tag $docker_img is still not available"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    exit 1
   fi
+  echo "Loaded docker image $docker_img ($docker_img_id)"
 }
 
 NATIVE_TEST_INFRA_DIR="$WORKSPACE/test_infra_runner"
@@ -297,14 +303,10 @@ else
   $jython_pip install requests futures
 
   # run_populate_ini_script $py_executable
+  touch $WORKSPACE/testexec.$$.ini
   if [ "$use_native_testrunner" = true ]; then
     echo "NODE_LABELS contains 'deb12_jython_slave' - running test_infra_runner natively instead of via docker"
     setup_native_testrunner
-  else
-    check_and_build_testrunner_install_docker
-  fi
-  touch $WORKSPACE/testexec.$$.ini
-  if [ "$use_native_testrunner" = true ]; then
     (
       cd "$NATIVE_TEST_INFRA_DIR"
       python scripts/populateIni.py $skip_mem_info \
@@ -317,6 +319,7 @@ else
         -k '{'${UPDATE_INI_VALUES}'}'
     )
   else
+    check_and_load_testrunner_install_docker
     docker run --rm \
       -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini:Z \
       -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z  \
