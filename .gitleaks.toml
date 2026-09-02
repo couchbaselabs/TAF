@@ -58,6 +58,12 @@ regexes = [
   '''self\.auth\[''',
   # Deliberately malformed JWT (2 segments, no signature) — jwt_token_test.py tamper fixture
   '''eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiJqd3RfdXNlciJ9''',
+  # Keyword-argument expressions such as `inter_key, chain_suffix=inter_pem`
+  # (crl_test.py): generic-api-key fires on the `_key` identifier and captures
+  # the `name=name` that follows. A secret made up solely of two identifiers is
+  # a code expression, never a literal credential — quoted literals and random
+  # tokens do not match this shape.
+  '''^[A-Za-z_][A-Za-z0-9_]*=[A-Za-z_][A-Za-z0-9_]*$''',
 ]
 stopwords = [
   "your-api-key-here",
