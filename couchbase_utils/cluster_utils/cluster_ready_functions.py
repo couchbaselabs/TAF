@@ -415,9 +415,14 @@ class ClusterUtils:
             rest = ClusterRestAPI(server)
             result = rest.cluster_info()[1]
             version = rest.node_details()[1]["version"][:5]
+            # Builds older than 7.5.0 have no config-profile support, so
+            # /pools reports nothing to check the ini's declared profile
+            # against - take the ini at its word there. Analytics nodes carry
+            # their own version series (1.x/2.x) that this compare would
+            # wrongly catch, and they do report a profile on every build.
             if (server.type != "analytics" and not ClusterRun.is_enabled and
                     version < '7.5.0'):
-                profiles.append("default")
+                profiles.append(server.type)
             else:
                 profiles.append(result["configProfile"])
             if profiles[-1] != server.type:

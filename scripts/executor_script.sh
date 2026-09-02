@@ -48,7 +48,8 @@ populate_ini() {
     -k '{'${UPDATE_INI_VALUES}'}' \
     --cb_version $version_number \
     --columnar_version "$columnar_version_number" \
-    --mixed_build_config "$mixed_build_config"
+    --mixed_build_config "$mixed_build_config" \
+    --cluster_profile "$cluster_profile"
   rc=$?
   set +x
   cd ..
@@ -212,6 +213,16 @@ fi
 echo "Running pip install to fix Python packages"
 python -m pip install -r requirements.txt
 
+# Derived once and used twice: passed to populateIni.py so the generated .ini
+# declares the profile (TAF compares it against the cluster's reported
+# /pools configProfile), and turned into the install param further below.
+# Empty for every other server_type, which leaves the .ini untouched.
+cluster_profile=""
+case "$server_type" in
+  ELIXIR_ONPREM)       cluster_profile="serverless" ;;
+  ON_PREM_PROVISIONED) cluster_profile="provisioned" ;;
+esac
+
 setup_test_infra_repo_for_installation
 touch $WORKSPACE/testexec.$$.ini
 populate_ini
@@ -230,12 +241,8 @@ fi
 parallel=true
 if [ "$server_type" = "CAPELLA_LOCAL" ]; then
 	installParameters="install_tasks=uninstall-install,h=true"
-else
-  if [ "$server_type" = "ELIXIR_ONPREM" ]; then
-    installParameters="cluster_profile=serverless"
-  elif [ "$server_type" = "ON_PREM_PROVISIONED" ]; then
-    installParameters="cluster_profile=provisioned"
-  fi
+elif [ -n "$cluster_profile" ]; then
+  installParameters="cluster_profile=$cluster_profile"
 fi
 
 if [ "$installParameters" = "None" ]; then
