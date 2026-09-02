@@ -9,7 +9,6 @@ from cluster_utils.cluster_ready_functions import CBCluster
 from collections_helper.collections_spec_constants import MetaConstants
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from security_utils.security_utils import SecurityUtils
-from sdk_client3 import SDKClient
 from tpch_utils.tpch_utils import TPCHUtil
 
 
@@ -125,9 +124,11 @@ class CBASBaseTest(BaseTestCase):
                 name=cluster_name,
                 servers=self.servers[start:end])
             self.cb_clusters[cluster_name] = cluster
-            if self.use_https:
-                SDKClient.enable_tls_in_env(cluster)
-            SDKClient.singleton_env_build(cluster)
+            # SDKClient.enable_tls_in_env / .singleton_env_build used to be
+            # called here. Both were retired from SDKClient when the SDK env
+            # stopped being built per connection; onPrem_basetestcase's own
+            # multi-cluster branch dropped them at the time and this file was
+            # missed, so every additional cluster raised AttributeError.
             cluster.kv_nodes.append(cluster.master)
 
             self.initialize_cluster(
