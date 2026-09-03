@@ -258,7 +258,22 @@ class KVRateLimitingTests(ClusterSetup):
 
     def test_soft_limit_throttling(self):
         """
-        Validate throttling behavior when ops rate exceeds the set SOFT limit.
+        Validate ops are throttled once the offered rate crosses the
+        bucket's throttle limit.
+
+        throttleHardLimit is the only value that limits a running bucket:
+        offered load saturates exactly at it (a bucket capped at 200 tops
+        out at ~199-222 ops/sec). throttleReserved and the cluster-wide
+        node_capacity are admission control - ns_server refuses a bucket
+        whose reserved sum exceeds node_capacity - but neither caps
+        throughput, so a single bucket at reserved=100 with
+        node_capacity=500 sustained ~2000 ops/sec while
+        throttle_count_total stayed 0.
+
+        The limit therefore has to sit below the rate the client can
+        actually offer, which on a QE VM is a few hundred ops/sec: with a
+        limit above that the limiter never trips and the counter cannot
+        move no matter how much load is queued.
         """
         bucket_name = self.bucket.name
 
@@ -266,15 +281,17 @@ class KVRateLimitingTests(ClusterSetup):
         initial_throttle_count = int(initial_stats.get("throttle_count_total", 0))
         self.log.info(f"Initial throttle stats: {initial_stats}")
 
-        self.log.info("Driving load to exceed soft limit...")
-        self.load_docs_to_bucket(self.bucket, start=0, end=50000,
+        self.log.info("Driving load above the bucket throttle limit...")
+        self.load_docs_to_bucket(self.bucket, start=0, end=5000,
                                   batch_size=500, concurrency=8)
 
         final_stats = self.get_throttle_stats(bucket_name)
         final_throttle_count = int(final_stats.get("throttle_count_total", 0))
         self.log.info(f"Final throttle stats: {final_stats}")
-        self.assertGreater(final_throttle_count, initial_throttle_count,
-                           "Throttle count should increase when exceeding soft limit")
+        self.assertGreater(
+            final_throttle_count, initial_throttle_count,
+            "Throttle count should increase once the offered rate exceeds "
+            f"throttleHardLimit={final_stats.get('throttle_hard_limit')}")
 
     def test_hard_limit_rejection(self):
         """
@@ -493,12 +510,16 @@ class KVRateLimitingTests(ClusterSetup):
         initial_throttle = int(initial_stats.get("throttle_count_total", 0))
         initial_reject = int(initial_stats.get("reject_count_total", 0))
 
-        # Doc-loader task sustains a write rate above throttle_hard_limit;
-        # the SDK burst that follows only samples client-side throttle errors
+        # Doc-loader task sustains a write rate above throttleHardLimit,
+        # which is what trips the limiter; the SDK burst that follows only
+        # samples client-side throttle errors, and both stay small because
+        # the limiter caps throughput at the hard limit once it engages
         self.log.info(f"Driving load on storage={storage} to exceed limits...")
-        self.load_docs_to_bucket(self.bucket, start=0, end=50000,
+        self.load_docs_to_bucket(self.bucket, start=0, end=5000,
                                  batch_size=500, concurrency=8)
-        sdk_throttle_count = self._burst_writes()
+        sdk_throttle_count = self._burst_writes(
+            num_clients=self.input.param("burst_clients", 8),
+            ops_per_client=self.input.param("burst_ops_per_client", 500))
 
         final_stats = self.get_throttle_stats(bucket_name)
         final_throttle = int(final_stats.get("throttle_count_total", 0))
@@ -510,7 +531,8 @@ class KVRateLimitingTests(ClusterSetup):
             final_throttle > initial_throttle
             or final_reject > initial_reject
             or sdk_throttle_count > 0,
-            f"Expected throttle/reject increase on storage={storage}; "
+            f"Expected throttle/reject increase on storage={storage} at "
+            f"throttleHardLimit={final_stats.get('throttle_hard_limit')}; "
             f"throttle {initial_throttle}->{final_throttle}, "
             f"reject {initial_reject}->{final_reject}, "
             f"sdk_throttle_count={sdk_throttle_count}")
