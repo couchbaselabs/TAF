@@ -1,4 +1,5 @@
 import threading
+import time
 
 from basetestcase import ClusterSetup
 from cb_tools.cb_cli import CbCli
@@ -11,7 +12,6 @@ from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
-from upgrade.upgrade_base import UpgradeBase
 
 
 class KVRateLimitingTests(ClusterSetup):
@@ -42,8 +42,9 @@ class KVRateLimitingTests(ClusterSetup):
         # Apply per-bucket throttle limits so hard-limit rejections and SDK
         # AmbiguousTimeoutExceptions are actually triggered during burst tests
         # CE does not support throttle params — skip silently
-        throttle_reserved = self.input.param("bucket_throttle_reserved", 0)
-        throttle_hard_limit = self.input.param("bucket_throttle_hard_limit", 0)
+        # Parsed once in cb_basetest; None means the conf did not set it
+        throttle_reserved = self.bucket_throttle_reserved
+        throttle_hard_limit = self.bucket_throttle_hard_limit
         if self.cluster_util.is_enterprise_edition(self.cluster) and (throttle_reserved or throttle_hard_limit):
             edit_params = {}
             if throttle_reserved:
@@ -139,8 +140,10 @@ class KVRateLimitingTests(ClusterSetup):
         # Edit via CLI (both reserved and hard limit in one edit)
         self.log.info(f"Editing bucket {bucket_name} via CLI: throttleReserved=7000, throttleHardLimit=12000")
         cli_output = self.cb_cli.edit_bucket(bucket_name, throttleReserved=7000, throttleHardLimit=12000)
-        self.assertEqual(cli_output, "Bucket updated successfully",
-                         f"CLI bucket edit failed: {cli_output}")
+        # CbCli returns the command's output lines; couchbase-cli reports
+        # "SUCCESS: Bucket edited" on a successful bucket-edit
+        self.assertIn("SUCCESS: Bucket edited", str(cli_output),
+                      f"CLI bucket edit failed: {cli_output}")
 
         # Final verification via REST (CLI changes persistence)
         status, content = self.bucket_rest.get_bucket_info()
@@ -195,36 +198,63 @@ class KVRateLimitingTests(ClusterSetup):
         self.assertEqual(int(throttle_stats.get("reject_count_total", 0)), 0,
                          f"reject_count_total should be 0 in CE, found {throttle_stats.get('reject_count_total')}")
 
+    def get_global_throttle_enabled(self):
+        """
+        Read the cluster-wide throttle toggle from
+        /pools/default/settings/memcached/global. The endpoint omits keys
+        left at their default, so an unset toggle reads back as None.
+        """
+        status, content = self.cluster_rest.manage_global_memcached_setting()
+        self.assertTrue(
+            status, f"Failed to read global memcached settings: {content}")
+        return content.get("throttle_enabled")
+
     def test_enable_disable_rate_limiting_rest(self):
         """
-        Set and validate per-bucket enable/disable value via REST API.
+        Set and validate the enable/disable toggle via REST API.
+
+        throttle_enabled is a node-level memcached setting, not a bucket
+        property: couchbase-cli sends only throttleReserved and
+        throttleHardLimit per bucket, and drives the toggle through
+        /pools/default/settings/memcached/global.
         """
         bucket_name = self.bucket.name
 
-        status, buckets = self.bucket_rest.get_bucket_info()
-        bucket_info = next(b for b in buckets if b['name'] == bucket_name)
-        self.assertEqual(bucket_info.get('throttleEnabled'), True,
+        # setUp enabled the toggle cluster-wide
+        self.assertEqual(self.get_global_throttle_enabled(), True,
                          "Rate limiting should be enabled")
 
-        edit_params = {Bucket.throttleEnabled: "false"}
         self.log.info("Disabling rate limiting via REST")
-        status, content = self.bucket_rest.edit_bucket(bucket_name, edit_params)
+        status, content = self.cluster_rest.manage_global_memcached_setting(
+            throttle_enabled="false")
         self.assertTrue(status, f"Failed to disable rate limiting: {content}")
-
-        status, buckets = self.bucket_rest.get_bucket_info()
-        bucket_info = next(b for b in buckets if b['name'] == bucket_name)
-        self.assertEqual(bucket_info.get('throttleEnabled'), False,
+        self.assertFalse(self.get_global_throttle_enabled(),
                          "Rate limiting should be disabled")
 
-        edit_params = {Bucket.throttleEnabled: "true"}
         self.log.info("Re-enabling rate limiting via REST")
-        status, content = self.bucket_rest.edit_bucket(bucket_name, edit_params)
-        self.assertTrue(status, f"Failed to re-enable rate limiting: {content}")
+        status, content = self.cluster_rest.manage_global_memcached_setting(
+            throttle_enabled="true")
+        self.assertTrue(
+            status, f"Failed to re-enable rate limiting: {content}")
+        self.assertEqual(self.get_global_throttle_enabled(), True,
+                         "Rate limiting should be re-enabled")
 
+        # Per-bucket limits must survive the cluster-wide toggle
         status, buckets = self.bucket_rest.get_bucket_info()
         bucket_info = next(b for b in buckets if b['name'] == bucket_name)
-        self.assertEqual(bucket_info.get('throttleEnabled'), True,
-                         "Rate limiting should be re-enabled")
+        self.log.info(
+            f"Bucket limits after toggle: "
+            f"throttleReserved={bucket_info.get('throttleReserved')}, "
+            f"throttleHardLimit={bucket_info.get('throttleHardLimit')}")
+        expected = {
+            'throttleReserved': self.bucket_throttle_reserved,
+            'throttleHardLimit': self.bucket_throttle_hard_limit}
+        for field, value in expected.items():
+            if value is None:
+                continue
+            self.assertEqual(
+                bucket_info.get(field), value,
+                f"{field} changed across the enable/disable toggle")
 
     def test_soft_limit_throttling(self):
         """
@@ -248,25 +278,47 @@ class KVRateLimitingTests(ClusterSetup):
 
     def test_hard_limit_rejection(self):
         """
-        Validate operation rejection when buffer/queue size exceeds HARD limit.
+        Validate back-pressure once ops exceed the bucket's HARD limit.
+
+        The signal is throttle_count_total, not reject_count_total. Server
+        8.5.0 documents kv_reject_count_total as "operations rejected for a
+        bucket since reset (e.g., invalid operations)", while
+        kv_throttle_count_total is "the number of times requests have been
+        throttled" (etc/couchbase/kv/metrics_metadata.json). Ops held back by
+        the limiter come back as EWOULD_THROTTLE, which the error map marks
+        temp / retry-later / rate-limit, so the SDK retries them rather than
+        the engine counting a rejection.
         """
         bucket_name = self.bucket.name
 
         initial_stats = self.get_throttle_stats(bucket_name)
+        initial_throttle_count = int(
+            initial_stats.get("throttle_count_total", 0))
         initial_reject_count = int(initial_stats.get("reject_count_total", 0))
         self.log.info(f"Initial stats: {initial_stats}")
 
         self.log.info("Driving heavy load to exceed hard limit...")
+        task = None
         try:
-            self.load_docs_to_bucket(self.bucket, start=0, end=100000, batch_size=1000, concurrency=16)
+            task = self.load_docs_to_bucket(self.bucket, start=0, end=100000,
+                                            batch_size=1000, concurrency=16)
         except Exception as e:
             self.log.info(f"Expected exception during hard limit test: {e}")
 
         final_stats = self.get_throttle_stats(bucket_name)
+        final_throttle_count = int(final_stats.get("throttle_count_total", 0))
         final_reject_count = int(final_stats.get("reject_count_total", 0))
-        self.log.info(f"Final stats: {final_stats}")
-        self.assertGreater(final_reject_count, initial_reject_count,
-                           "Rejection count should increase when exceeding hard limit")
+        # Client-visible failures are logged rather than asserted on: an
+        # ephemeral/noEviction bucket can also fail writes once it is full,
+        # so they do not isolate throttling the way the counter does
+        self.log.info(
+            f"Final stats: {final_stats}, "
+            f"docs the loader could not write: "
+            f"{len(task.fail) if task is not None else 'n/a'}, "
+            f"reject_count_total {initial_reject_count}->{final_reject_count}")
+        self.assertGreater(
+            final_throttle_count, initial_throttle_count,
+            "Throttle count should increase when exceeding hard limit")
 
     def test_transaction_rate_limiting(self):
         """
@@ -369,13 +421,20 @@ class KVRateLimitingTests(ClusterSetup):
         Drive a high-rate parallel burst of SET ops via multiple SDKClients
         to force the engine's rate limiter to trip. Returns number of
         throttle-related errors observed across all threads.
+
+        A serial per-client crud() loop tops out well below the throttle
+        limits used by the suite, so callers that must exceed a limit should
+        drive load via load_docs_to_bucket() and use this only to observe
+        SDK-side throttle exceptions.
         """
         clients = [SDKClient(self.cluster, self.bucket)
                    for _ in range(num_clients)]
         throttle_counts = [0] * num_clients
+        op_counts = [0] * num_clients
 
         def worker(c_idx, client):
             for i in range(ops_per_client):
+                op_counts[c_idx] += 1
                 try:
                     result = client.crud(
                         "create", f"burst_{c_idx}_{i}",
@@ -404,15 +463,22 @@ class KVRateLimitingTests(ClusterSetup):
 
         threads = [threading.Thread(target=worker, args=(i, clients[i]))
                    for i in range(num_clients)]
+        start_time = time.time()
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+        elapsed = time.time() - start_time
         for c in clients:
             try:
                 c.close()
             except Exception:
                 pass
+        total_ops = sum(op_counts)
+        self.log.info(
+            f"Burst complete: clients={num_clients}, ops={total_ops}, "
+            f"elapsed={elapsed:.1f}s, rate={total_ops / max(elapsed, 1):.0f} "
+            f"ops/sec, sdk_throttle_count={sum(throttle_counts)}")
         return sum(throttle_counts)
 
     def test_couchstore_and_magma_throttle(self):
@@ -427,6 +493,11 @@ class KVRateLimitingTests(ClusterSetup):
         initial_throttle = int(initial_stats.get("throttle_count_total", 0))
         initial_reject = int(initial_stats.get("reject_count_total", 0))
 
+        # Doc-loader task sustains a write rate above throttle_hard_limit;
+        # the SDK burst that follows only samples client-side throttle errors
+        self.log.info(f"Driving load on storage={storage} to exceed limits...")
+        self.load_docs_to_bucket(self.bucket, start=0, end=50000,
+                                 batch_size=500, concurrency=8)
         sdk_throttle_count = self._burst_writes()
 
         final_stats = self.get_throttle_stats(bucket_name)
@@ -471,111 +542,3 @@ class KVRateLimitingTests(ClusterSetup):
             f"{initial_throttle}->{final_throttle}, "
             f"reject {initial_reject}->{final_reject}, "
             f"sdk_throttle_count={sdk_throttle_count}")
-
-
-class RateLimitingUpgradeTests(UpgradeBase):
-    """
-    Upgrade-time tests for KV rate limiting (gated to 8.5).
-    """
-    def setUp(self):
-        super(RateLimitingUpgradeTests, self).setUp()
-        self.bucket_rest = BucketRestApi(self.cluster.master)
-        self.target_throttle_reserved = self.input.param(
-            "bucket_throttle_reserved", 6000)
-        self.target_throttle_hard_limit = self.input.param(
-            "bucket_throttle_hard_limit", 12000)
-
-    def tearDown(self):
-        # Retry delete on every node — cluster may be transient after upgrade
-        import time
-        bucket_names = [b.name for b in
-                        list(getattr(self.cluster, "buckets", []) or [])]
-        nodes = list(getattr(self.cluster, "nodes_in_cluster", []) or [])
-        self.log.info(
-            f"Upgrade tearDown: buckets={bucket_names}, "
-            f"nodes={[n.ip for n in nodes]}")
-        for name in bucket_names:
-            for attempt in range(6):
-                done = False
-                for node in nodes:
-                    try:
-                        status, content = BucketRestApi(node).delete_bucket(
-                            name)
-                        self.log.info(
-                            f"Delete {name} on {node.ip} attempt "
-                            f"{attempt}: status={status}, content={content}")
-                        if status:
-                            done = True
-                            break
-                    except Exception as e:
-                        self.log.warning(
-                            f"Delete {name} on {node.ip} raised: {e}")
-                if done:
-                    break
-                time.sleep(10)
-        super(RateLimitingUpgradeTests, self).tearDown()
-
-    def _set_rate_limit(self, master_node):
-        edit_params = {
-            Bucket.throttleReserved: self.target_throttle_reserved,
-            Bucket.throttleHardLimit: self.target_throttle_hard_limit,
-        }
-        return BucketRestApi(master_node).edit_bucket(self.bucket.name,
-                                                       edit_params)
-
-    def test_rate_limit_in_mixed_mode_cluster(self):
-        """
-        With one node upgraded to 8.5 and others on the initial pre-8.5
-        version, rate-limit edits must be rejected.
-        """
-        self.upgrade_version = self.upgrade_chain[-1]
-        nodes = list(self.cluster.nodes_in_cluster)
-        first_node = nodes[0]
-        self.log.info(f"Upgrading first node {first_node.ip} only")
-        self.upgrade_function[self.upgrade_type](first_node)
-
-        status, content = self._set_rate_limit(first_node)
-        self.log.info(f"Mixed-mode rate-limit edit: status={status}, "
-                      f"content={content}")
-        try:
-            self.assertFalse(
-                status,
-                f"Rate limit edit should be rejected in mixed-mode: {content}")
-        finally:
-            # Finish upgrading remaining nodes so cluster ends uniform 8.5;
-            # otherwise bucket deletes fail in mixed-mode tearDown.
-            for node in list(self.cluster.nodes_in_cluster):
-                if node.ip == first_node.ip:
-                    continue
-                try:
-                    self.upgrade_function[self.upgrade_type](node)
-                except Exception as e:
-                    self.log.warning(
-                        f"Post-assert upgrade of {node.ip} failed: {e}")
-
-    def test_rate_limit_after_full_upgrade(self):
-        """
-        After full upgrade to 8.5+, rate-limit edits must succeed and
-        values persist via REST.
-        """
-        self.upgrade_version = self.upgrade_chain[-1]
-        for node in list(self.cluster.nodes_in_cluster):
-            self.log.info(f"Upgrading node {node.ip}")
-            self.upgrade_function[self.upgrade_type](node)
-
-        status, content = self._set_rate_limit(self.cluster.master)
-        self.assertTrue(
-            status, f"Rate limit edit should succeed post-upgrade: {content}")
-
-        _, buckets = self.bucket_rest.get_bucket_info()
-        bucket_info = next(b for b in buckets if b['name'] == self.bucket.name)
-        self.assertEqual(
-            bucket_info.get('throttleReserved'),
-            self.target_throttle_reserved,
-            f"throttleReserved mismatch post-upgrade: "
-            f"{bucket_info.get('throttleReserved')}")
-        self.assertEqual(
-            bucket_info.get('throttleHardLimit'),
-            self.target_throttle_hard_limit,
-            f"throttleHardLimit mismatch post-upgrade: "
-            f"{bucket_info.get('throttleHardLimit')}")

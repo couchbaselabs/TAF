@@ -24,7 +24,7 @@ post-upgrade feature verification.
 | `upgrade_base.py` | `UpgradeBase` | Shared base — installs initial version, builds upgrade chain, provides all upgrade strategy methods |
 | `durability_upgrade.py` | `UpgradeTests` | Primary upgrade test class — KV durability, SyncWrites, Magma, collections, storage migration, guardrails, CDC, GSI |
 | `cbas_upgrade.py` | `UpgradeTests` | Analytics (CBAS) upgrade — dataverse/dataset/index survival, replica, CBO samples |
-| `kv_upgrade_tests.py` | `KVUpgradeTests` | KV-specific scenarios: sample buckets + failover-upgrade, tombstone + XDCR |
+| `kv_upgrade_tests.py` | `KVUpgradeTests` | KV-specific scenarios: sample buckets + failover-upgrade, tombstone + XDCR, rate-limit edits across an upgrade (mixed-mode + post-upgrade in one timeline) |
 | `luks_upgrade.py` | `LuksUpgrade` | LUKS disk encryption upgrade — mixed-mode SyncWrite failure expectations |
 | `mem_compression_upgrade.py` | `MemCompressionUpgradeTests` | Memory compression + Plasma GSI index upgrade |
 | `system_event_logs.py` | `SystemEventLogs` | System event log API compatibility across mixed-mode and fully-upgraded cluster |

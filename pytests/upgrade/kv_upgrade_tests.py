@@ -1,5 +1,8 @@
+import time
+
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
 from cb_constants import DocLoading
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_tools.cbstats import Cbstats
 from cluster_utils.cluster_ready_functions import CBCluster
 from couchbase_helper.documentgenerator import doc_generator
@@ -17,10 +20,49 @@ class KVUpgradeTests(UpgradeBase):
         self.nodes_upgrade = self.input.param("nodes_upgrade", 1)
         self.graceful = self.input.param("graceful", True)
         self.recovery_type = self.input.param("recovery_type", "delta")
+        # Set by tests that leave the cluster mid-upgrade, so tearDown knows
+        # to chase bucket deletes across every node
+        self.delete_buckets_on_all_nodes = False
         self.log_setup_status("KVUpgradeTests", "completed", "setup")
 
     def tearDown(self):
+        # getattr, not attribute access: a setUp that raises before the flag
+        # is set still runs tearDown, and an AttributeError here would mask
+        # the real setUp failure
+        if getattr(self, "delete_buckets_on_all_nodes", False):
+            self.__delete_buckets_on_all_nodes()
         super(KVUpgradeTests, self).tearDown()
+
+    def __delete_buckets_on_all_nodes(self):
+        """
+        Retry the delete on every node — after a partial upgrade the master
+        may not be the node that still answers for the bucket.
+        """
+        bucket_names = [b.name for b in
+                        list(getattr(self.cluster, "buckets", []) or [])]
+        nodes = list(getattr(self.cluster, "nodes_in_cluster", []) or [])
+        self.log.info(
+            f"Upgrade tearDown: buckets={bucket_names}, "
+            f"nodes={[n.ip for n in nodes]}")
+        for name in bucket_names:
+            for attempt in range(6):
+                done = False
+                for node in nodes:
+                    try:
+                        status, content = BucketRestApi(node).delete_bucket(
+                            name)
+                        self.log.info(
+                            f"Delete {name} on {node.ip} attempt "
+                            f"{attempt}: status={status}, content={content}")
+                        if status:
+                            done = True
+                            break
+                    except Exception as e:
+                        self.log.warning(
+                            f"Delete {name} on {node.ip} raised: {e}")
+                if done:
+                    break
+                time.sleep(10)
 
     def test_multiple_sample_bucket_failover_upgrade(self):
         '''
@@ -219,3 +261,76 @@ class KVUpgradeTests(UpgradeBase):
             self.bucket_util.delete_all_buckets(xdcr_cluster)
             rest.remove_all_replications()
             rest.remove_all_remote_clusters()
+
+    def test_rate_limit_across_upgrade(self):
+        """
+        Rate-limit edits across one upgrade timeline:
+          1. mixed mode (a single node upgraded) - the edit must be rejected
+          2. uniform 8.5+ - the edit must succeed and both values persist
+
+        The two phases are one ordered sequence, not independent scenarios:
+        reaching mixed mode already requires the upgrade that phase 2 needs.
+        Phase 1 records through log_failure instead of asserting, so a
+        mixed-mode regression does not hide the post-upgrade behaviour.
+        """
+
+        def _set_rate_limit(master_node):
+            edit_params = {
+                Bucket.throttleReserved: self.bucket_throttle_reserved,
+                Bucket.throttleHardLimit: self.bucket_throttle_hard_limit,
+            }
+            return BucketRestApi(master_node).edit_bucket(self.bucket.name,
+                                                          edit_params)
+
+        self.delete_buckets_on_all_nodes = True
+        self.upgrade_version = self.upgrade_chain[-1]
+
+        # Phase 1 - upgrade one node to put the cluster into mixed mode
+        node_to_upgrade = self.fetch_node_to_upgrade()
+        self.assertIsNotNone(node_to_upgrade, "No node found to upgrade")
+        self.log.info(f"Upgrading {node_to_upgrade.ip} to enter mixed mode")
+        self.upgrade_function[self.upgrade_type](node_to_upgrade)
+
+        # fetch_node_to_upgrade() re-runs find_orchestrator, so cluster.master
+        # is a node still in the cluster. online_swap rebalances the node it
+        # upgrades *out* and leaves cluster.nodes_in_cluster untouched, so
+        # neither that list nor a cached master survives an upgrade step.
+        node_to_upgrade = self.fetch_node_to_upgrade()
+        self.assertIsNotNone(
+            node_to_upgrade,
+            "Every node reports the target version; mixed mode never reached")
+        status, content = _set_rate_limit(self.cluster.master)
+        self.log.info(f"Mixed-mode rate-limit edit: status={status}, "
+                      f"content={content}")
+        if status:
+            self.log_failure(
+                f"Rate limit edit should be rejected in mixed-mode: {content}")
+
+        # Phase 2 - finish the upgrade, then the same edit must stick
+        while node_to_upgrade is not None:
+            self.log.info(f"Upgrading node {node_to_upgrade.ip}")
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
+            node_to_upgrade = self.fetch_node_to_upgrade()
+
+        status, content = _set_rate_limit(self.cluster.master)
+        self.log.info(f"Post-upgrade rate-limit edit: status={status}, "
+                      f"content={content}")
+        if not status:
+            self.log_failure(
+                f"Rate limit edit should succeed post-upgrade: {content}")
+        else:
+            _, buckets = BucketRestApi(
+                self.cluster.master).get_bucket_info()
+            bucket_info = next(b for b in buckets
+                               if b['name'] == self.bucket.name)
+            self.log.info(f"Bucket limits post-upgrade: {bucket_info}")
+            for field, expected in (
+                    (Bucket.throttleReserved, self.bucket_throttle_reserved),
+                    (Bucket.throttleHardLimit,
+                     self.bucket_throttle_hard_limit)):
+                if bucket_info.get(field) != expected:
+                    self.log_failure(
+                        f"{field} mismatch post-upgrade: expected "
+                        f"{expected}, got {bucket_info.get(field)}")
+
+        self.validate_test_failure()

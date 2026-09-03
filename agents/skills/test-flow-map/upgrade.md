@@ -205,6 +205,24 @@ validate_test_failure()
 
 **setUp extras:**
 - `nodes_upgrade`, `graceful`, `recovery_type` params
+- No throttle params of its own — `bucket_throttle_reserved` /
+  `bucket_throttle_hard_limit` are parsed once in `cb_basetest` and read
+  straight from `self` by the rate-limit test, which its conf entries always
+  supply
+- `delete_buckets_on_all_nodes` flag (default False)
+
+> **`online_swap` invalidates cached node handles.** It rebalances the node it
+> upgrades *out* and does not update `cluster.nodes_in_cluster`, so that list
+> and any `BucketRestApi`/`cluster.master` captured before an upgrade step go
+> stale. Re-derive the target each step via `fetch_node_to_upgrade()`, which
+> re-runs `find_orchestrator` and reads live membership — never iterate
+> `nodes_in_cluster` across swap upgrades.
+
+**tearDown extras:**
+- When `delete_buckets_on_all_nodes` is set by a test, retries `delete_bucket`
+  against every node in `nodes_in_cluster` (6 attempts, 10s apart) before
+  calling `UpgradeBase.tearDown`. A test that leaves the cluster part-upgraded
+  must set the flag, since the master may no longer answer for the bucket.
 
 **Test methods:**
 
@@ -212,6 +230,7 @@ validate_test_failure()
 |---|---|
 | `test_multiple_sample_bucket_failover_upgrade` | Loads Travel/Beer/Gamesim sample buckets, then failover-upgrades nodes (MB-53493) |
 | `test_db_dump_with_empty_body_and_empty_xattr` | Creates tombstone with sys-xattr, evicts it, then upgrades; tests XDCR replication (MB-51373) |
+| `test_rate_limit_across_upgrade` | One timeline, two phases: upgrades a single node and records (via `log_failure`) that a throttle-limit edit is rejected in mixed mode, finishes the upgrade, then asserts the same edit succeeds and both values read back over REST. Ends with `validate_test_failure()` so a mixed-mode regression does not hide the post-upgrade result |
 
 ---
 

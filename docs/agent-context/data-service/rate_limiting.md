@@ -74,27 +74,34 @@ Agents must enforce these logical constraints:
 from couchbase_utils.cb_server_rest_util.buckets.manage_bucket import BucketManageAPI
 rest = BucketManageAPI(cluster_node_server_obj)
 
-# Update bucket limits
+# Update bucket limits. The REST payload keys are camelCase; only these two
+# are per-bucket properties (verified against couchbase-cli 8.5.0-1074,
+# lib/python/cluster_manager.py).
 rest.edit_bucket(bucket.name, {
-    "throttle_reserved": 5000,
-    "throttle_hard_limit": 6000
+    Bucket.throttleReserved: 5000,
+    Bucket.throttleHardLimit: 6000
 })
 ```
+
+> `throttle_enabled` is **node-level only** — POST it to
+> `/pools/default/settings/memcached/global` (see
+> `ClusterRestAPI.manage_global_memcached_setting`). There is no per-bucket
+> `throttleEnabled` property; reading one back off a bucket returns `None`.
 
 ### Couchbase CLI (CbCli)
 ```python
 from couchbase_utils.cb_tools.cb_cli import CbCli
 cb_cli = CbCli(RemoteMachineShellConnection(server_obj))
 
-# Creation: --reserved <val>, --hard-limit <val>
+# Creation: --throttle-reserved <val>, --throttle-hard-limit <val>
 cb_cli.create_bucket({
-    "name": "bucket1",
-    "throttle_reserved": 5000,
-    "throttle_hard_limit": 6000
+    Bucket.throttleReserved: 5000,
+    Bucket.throttleHardLimit: 6000
 })
 
-# Modification
-cb_cli.edit_bucket(bucket.name, throttle_reserved=5000, throttle_hard_limit=6000)
+# Modification. CbCli dispatches on the Bucket.* constants, so snake_case
+# kwargs are silently dropped.
+cb_cli.edit_bucket(bucket.name, throttleReserved=5000, throttleHardLimit=6000)
 ```
 
 ---
@@ -103,9 +110,18 @@ cb_cli.edit_bucket(bucket.name, throttle_reserved=5000, throttle_hard_limit=6000
 - **ru_total**: Counter for Read unit consumption per second.
 - **wu_total**: Counter for Write unit consumption per second.
 - **throttle_enabled**: Boolean status of feature on the node.
-- **throttle_count_total**: Number of requests being throttled.
-- **reject_count_total**: Number of requests being rejected.
-- **throttle_duration**: Duration throttled commands spent in throttled state.
+- **throttle_count_total**: Number of times requests have been throttled for
+  a bucket since reset. This is the counter that moves under rate limiting.
+- **reject_count_total**: Operations rejected for a bucket since reset,
+  **e.g. invalid operations** — it is *not* a throttling counter. Ops held
+  back by the limiter return `EWOULD_THROTTLE` (error map attrs: `temp`,
+  `retry-later`, `rate-limit`), which the SDK retries, so throttling never
+  increments this. Asserting on it for back-pressure will always fail.
+- **throttle_duration_seconds**: Histogram of throttle wait times for a
+  bucket since reset (8.5.0+).
+
+Metric help text above is quoted from
+`/opt/couchbase/etc/couchbase/kv/metrics_metadata.json` on 8.5.0-1074.
 
 ---
 
@@ -117,7 +133,7 @@ Goal: Ensure configuration consistency across interfaces.
 
 - REST/CLI Integration: Add to `pytests/buckettests/createbuckettests.py`.
   - Validate throttle_enabled, node_capacity, and unit_sizes schema.
-  - Verify bucket creation with --reserved and --hard-limit flags.
+  - Verify bucket creation with --throttle-reserved and --throttle-hard-limit flags.
   - Validate 400 Bad Request for invalid ranges (>$2^{64}-1$) or logic violations.
   - Test "Community Edition" block: Ensure CLI returns clear error messages on CE.
 
@@ -168,7 +184,10 @@ Goal: Validate that DCP consumers degrade *gracefully* under throttling. They ar
 ## 📊 VALIDATION CHECKLIST
 
 The Agent must ensure every test case includes these verification steps:
-- **Metric Check**: Verify `kv_throttle_ops_rejected` > 0 during back-pressure tests
+- **Metric Check**: Verify `kv_throttle_count_total` rises during back-pressure
+  tests. (`kv_throttle_ops_rejected` does not exist; the KV metrics are
+  `kv_throttle_count_total`, `kv_throttle_duration_seconds`,
+  `kv_throttle_hard_limit`, `kv_throttle_reserved`, `kv_pager_throttled`.)
 - **SDK Check**: Verify `EWouldThrottle` error code is caught and retried
 - **Persistence Check**: Verify bucket properties are retained after `cbbackupmgr --enable-bucket-config`
 - **DCP Check**: For any DCP-consuming component, verify `throttle_count_total` / `reject_count_total` rise under load and that the consumer degrades gracefully (no exemption exists — MB-70229)
