@@ -42,6 +42,20 @@ status, content = cbas_util.execute_statement_on_cbas(
 )
 ```
 
+### Enterprise Analytics helpers (`cbas_utils_columnar.py`)
+
+| Method | Class | Purpose |
+|---|---|---|
+| `wait_for_sample_to_be_queryable` | `CbasUtil` | Poll until a sample installed via `load_analytics_sample` answers a query. The samples API returns before the data is loaded, and a standalone EA cluster cannot use ns_server's `/sampleBuckets/install` at all (`max_vbuckets=0`). |
+| `set_user_roles` | `RBAC_Util` | REPLACE an existing user's role set — a real privilege revocation, not an append. Allow ~5s for the analytics auth cache to pick the change up. |
+| `delete_user` | `RBAC_Util` | Remove a user created by a test. Users are cluster RBAC objects, so they outlive statement-level cleanup and must be dropped in `tearDown`. |
+
+Note `execute_statement_on_cbas_util` returns a fixed 6-tuple
+`(status, metrics, errors, results, handle, warnings)` — it unpacks the response and
+DROPS every other top-level field. Tests that need the full envelope (e.g. `cachedPlan`)
+must use `AnalyticsServiceAPI.submit_service_request` with `mode=None`, or the
+`ColumnarOnPremBase._analytics_request` helper that wraps it.
+
 ## Runtype Selection
 
 The module automatically selects implementation based on `runtype` parameter:

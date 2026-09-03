@@ -43,7 +43,7 @@ model: inherit
 
 | Method | Verb | Path |
 |---|---|---|
-| `submit_service_request` | POST | `/api/v1/request` |
+| `submit_service_request` | POST | `/api/v1/request` (async by default; pass `mode=None` for a synchronous request returning the full envelope) |
 | `get_request_status` | GET | `/api/v1/request/status/{requestID}/{handle}` |
 | `get_request_result` | GET | `/api/v1/request/result/{requestID}/{handle}[/{partition}]` |
 | `discard_request_result` | DELETE | `/api/v1/request/result/{requestID}/{handle}` |
@@ -55,6 +55,16 @@ model: inherit
 |---|---|---|
 | `cancel_request` | DELETE | `/api/v1/active_requests?request_id={requestID}` |
 | `restart_analytics_service` | POST | `/api/v1/service/restart` |
+| `get_analytics_samples` | GET | `/api/v1/samples` |
+| `load_analytics_sample` | POST | `/api/v1/samples` (form param `sampleName`) |
+| `clear_plan_cache` | DELETE | `/api/v1/plan_cache` (optional username/password for the non-admin-rejected path) |
+
+**Installing sample data on Enterprise Analytics:** use `load_analytics_sample`,
+not ns_server's `/sampleBuckets/install`. A standalone EA cluster reports
+`max_vbuckets=0` and rejects the underlying bucket create with
+`Cannot create more than 0 buckets`, so the KV sample loader always exits 1.
+The body must be form-encoded — sending JSON returns code 20000
+`"Unauthorized user."` even as admin.
 
 ### analytics_config.py — `AnalyticsConfigAPI`
 

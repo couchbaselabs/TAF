@@ -432,6 +432,40 @@ class RBAC_Util(BaseUtil):
 
         return result
 
+    def set_user_roles(self, cluster, username, password, roles):
+        """
+        REPLACE an existing local user's entire role set (a real revoke/grant,
+        not an append) via PUT /settings/rbac/users/local/<user>. Callers that
+        revoke access should then wait out the analytics auth-cache TTL before
+        asserting the new privileges take effect.
+
+        :param roles: ns_server role string (e.g. "analytics_reader")
+        :return: bool - True on success.
+        """
+        status, content = SecurityRestAPI(cluster.master).create_local_user(
+            username, {"password": password, "roles": roles})
+        if not status:
+            self.log.error("Failed to set roles '{0}' on user {1}: {2}".format(
+                roles, username, content))
+        return status
+
+    def delete_user(self, cluster, username):
+        """
+        Delete a local user via DELETE /settings/rbac/users/local/<user>.
+        Counterpart to create_user/set_user_roles, so tests can drop the RBAC
+        users they provision instead of leaking them onto the cluster.
+
+        :return: bool - True on success.
+        """
+        status, content = SecurityRestAPI(cluster.master).delete_local_user(
+            username)
+        if not status:
+            self.log.error("Failed to delete user {0}: {1}".format(
+                username, content))
+        else:
+            self.database_users.pop(username, None)
+        return status
+
     def get_user_obj(self, user_id):
         """
             Get user object by user id.
@@ -6522,6 +6556,34 @@ class CbasUtil(CBOUtil):
                 time.sleep(min(10, 2 * counter))
                 counter += 1
         return analytics_recovered
+
+    def wait_for_sample_to_be_queryable(self, cluster, count_statement,
+                                        timeout=600, interval=5):
+        """
+        Poll a COUNT statement until a sample dataset's data is queryable.
+
+        Installing an Enterprise Analytics sample (POST /api/v1/samples) is
+        long-running and returns before the data is readable, so callers must
+        wait on the data itself rather than on the install call.
+
+        :param count_statement: a statement returning a single numeric count,
+            e.g. "SELECT VALUE COUNT(*) FROM `travel-sample`.inventory.airport;"
+        :return: True once the count is >= 1, False if timeout elapses first.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                status, _, _, results, _, _ = \
+                    self.execute_statement_on_cbas_util(
+                        cluster, count_statement)
+                if status == "success" and results and results[0]:
+                    self.log.info("Sample data queryable (count = {0})"
+                                  .format(results[0]))
+                    return True
+            except Exception as e:
+                self.log.debug("Sample probe failed, will retry: {0}".format(e))
+            time.sleep(interval)
+        return False
 
     # Backup Analytics metadata
     def backup_cbas_metadata(

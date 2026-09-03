@@ -61,7 +61,7 @@ Test → ColumnarOnPremBase → CBASBaseTest → BaseTestCase → OnPremBaseTest
 - **OnPremBaseTest** (`pytests/onPrem_basetestcase.py`): Handles local/VM cluster setup, provides cluster management utilities, initializes Couchbase cluster objects (self.cb_clusters), manages REST connections to cluster nodes
 - **BaseTestCase** (`pytests/basetestcase.py`): Dynamic base class selection layer - when runtype="onprem-columnar", this selects OnPremBaseTest as the parent, providing unified interface regardless of runtype
 - **CBASBaseTest** (`pytests/cbas/cbas_base_EA.py`): **Enterprise Analytics base** - initializes analytics service on local clusters, provides SDK for analytics (self.sdk_client_pool), manages rebalance utilities (self.rebalance_util), sets up security/certificates for local clusters
-- **ColumnarOnPremBase** (`pytests/Columnar/onprem/columnar_onprem_base.py`): **Your main entry point for on-prem tests** - extends CBASBaseTest for columnar testing, provides Sirius document loading (load_remote_collections method), configures columnar-specific utilities, separates analytics from KV clusters in self.cb_clusters
+- **ColumnarOnPremBase** (`pytests/Columnar/onprem/columnar_onprem_base.py`): **Your main entry point for on-prem tests** - extends CBASBaseTest for columnar testing, provides Sirius document loading (load_remote_collections method), configures columnar-specific utilities, separates analytics from KV clusters in self.cb_clusters. Also provides the `/api/v1/request` helpers `_analytics_request` / `_run_with_cache_flag` / `_cached_plan` (subclasses must set `self.analytics_api` to an `AnalyticsRestAPI` in setUp) and the order-insensitive result comparator `_norm`
 
 **When you create a new on-prem test, you inherit access to**:
 ```python

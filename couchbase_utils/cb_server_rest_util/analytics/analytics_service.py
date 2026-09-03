@@ -10,36 +10,49 @@ class AnalyticsServiceAPI(CBRestConnection):
     def __init__(self):
         super(AnalyticsServiceAPI, self).__init__()
 
-    def submit_service_request(self, statement, mode=None, client_context_id=None,
+    def submit_service_request(self, statement, mode=None,
+                               client_context_id=None,
                                format="JSON", pretty=True, query_context=None,
                                readonly=None, timeout=None, logical_plan=False,
                                expression_tree=False, rewritten_expression_tree=False,
-                               job=False):
+                               job=False, args=None, skip_plan_cache=None,
+                               max_warnings=None, extra_params=None,
+                               username=None, password=None, http_timeout=300):
         """
         POST /api/v1/request
-        Submit an async query request to Enterprise Analytics
+        Execute a SQL++ statement on Enterprise Analytics
 
         :param statement: SQL++ statement to execute
-        :param mode: Query execution mode (must be "async")
+        :param mode: "async" to submit asynchronously; omit for a synchronous request
         :param client_context_id: Optional client context ID
         :param format: Result format (default: "JSON")
         :param pretty: Whether to pretty print results
         :param query_context: Query context (e.g., "default:Default")
         :param readonly: Whether query is readonly
-        :param timeout: Query timeout (e.g., "30s")
+        :param timeout: Query timeout sent in the payload (e.g., "30s")
         :param logical_plan: Whether to include logical plan in response
         :param expression_tree: Whether to include expression tree in response
         :param rewritten_expression_tree: Whether to include rewritten expression tree
         :param job: Whether to include job information in response
+        :param args: Positional parameters for a parameterized statement
+        :param skip_plan_cache: Bypass the query plan cache for this request
+        :param max_warnings: Maximum number of warnings to return
+        :param extra_params: Additional request parameters merged into the payload
+        :param username: Run the request as this user instead of the default
+        :param password: Password for username
+        :param http_timeout: HTTP request timeout in seconds
         :return: tuple (status, content) where status is boolean and content is response dict
         """
         api = f"{self.cbas_url}/api/v1/request"
-        headers = self.get_headers_for_content_type_json()
-        params = {
-            "statement": statement,
-            "mode": mode
-        }
+        if username:
+            headers = self.create_headers(username, password,
+                                          "application/json")
+        else:
+            headers = self.get_headers_for_content_type_json()
+        params = {"statement": statement}
 
+        if mode is not None:
+            params["mode"] = mode
         if client_context_id:
             params["client_context_id"] = client_context_id
         if format:
@@ -60,10 +73,18 @@ class AnalyticsServiceAPI(CBRestConnection):
             params["rewritten-expression-tree"] = "true"
         if job:
             params["job"] = "true"
+        if args is not None:
+            params["args"] = args
+        if skip_plan_cache:
+            params["skip-plan-cache"] = True
+        if max_warnings is not None:
+            params["max-warnings"] = max_warnings
+        if extra_params:
+            params.update(extra_params)
 
         status, result, response = self.request(
             api, self.POST, headers=headers,
-            params=json.dumps(params), timeout=300)
+            params=json.dumps(params), timeout=http_timeout)
 
         if status and isinstance(result, str):
             try:

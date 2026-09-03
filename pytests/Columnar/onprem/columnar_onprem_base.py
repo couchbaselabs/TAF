@@ -352,3 +352,53 @@ class ColumnarOnPremBase(CBASBaseTest):
                 "id:string", "id:string-product_name:string"]
         columnar_spec["file_format"] = self.input.param("file_format", "json")
         return columnar_spec
+
+    def _analytics_request(self, statement, client=None, **kwargs):
+        """
+        POST a statement to /api/v1/request and return the full response dict.
+
+        :param statement: SQL++ statement to execute
+        :param client: AnalyticsRestAPI to use instead of self.analytics_api
+        :param kwargs: Passed through to submit_service_request
+        :return: the full response envelope
+        """
+        api_client = client or self.analytics_api
+        kwargs.setdefault("format", None)
+        kwargs.setdefault("pretty", None)
+        _, content, _ = api_client.submit_service_request(statement, **kwargs)
+        return content
+
+    @staticmethod
+    def _cached_plan(content):
+        """
+        Read the top-level `cachedPlan` flag from a /api/v1/request envelope.
+
+        :param content: response envelope
+        :return: True or False when the field is present, None when it is absent
+        """
+        cp = content.get("cachedPlan") if isinstance(content, dict) else None
+        if isinstance(cp, str):
+            return cp.strip().lower() == "true"
+        return cp
+
+    def _run_with_cache_flag(self, statement, **kwargs):
+        """
+        Run a statement and return its cachedPlan flag with the results.
+
+        :param statement: SQL++ statement to execute
+        :param kwargs: Passed through to _analytics_request
+        :return: tuple (cachedPlan, results, status)
+        """
+        content = self._analytics_request(statement, **kwargs)
+        return (self._cached_plan(content), content.get("results"),
+                content.get("status"))
+
+    @staticmethod
+    def _norm(results):
+        """
+        Normalise a result set for order-insensitive comparison.
+
+        :param results: list of result rows
+        :return: sorted list of canonical JSON strings
+        """
+        return sorted(json.dumps(r, sort_keys=True) for r in (results or []))
