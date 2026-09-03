@@ -125,12 +125,15 @@ class CbCli(CbCmdBase):
         """
         Add nodes to the cluster with given service
         """
-        server = "https://{}:{}".format(server.ip, CbServer.ssl_port)
-        cluster_ip = "{}:{}".format(self.shellConn.ip, self.port)
-        no_ssl_verify_flag = ""
         if CbServer.use_https:
-            cluster_ip = "https://{}".format(cluster_ip)
+            server = "https://{}:{}".format(server.ip, CbServer.ssl_port)
+            cluster_ip = "https://{}:{}".format(self.shellConn.ip, self.port)
             no_ssl_verify_flag = "--no-ssl-verify"
+        else:
+            server = "http://{}:{}".format(server.ip, CbServer.port)
+            cluster_ip = "{}:{}".format(self.shellConn.ip,
+                                       self.__get_http_port())
+            no_ssl_verify_flag = ""
         cmd = "{0} server-add -c {1} -u {2} -p {3} --server-add {4} " \
               "--server-add-username {2} --server-add-password {3} " \
               "--services {5} {6}" \
