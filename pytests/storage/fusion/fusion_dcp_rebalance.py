@@ -367,7 +367,7 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
             fusion_migration_rate_limit=self.extent_migration_rate_limit)
 
         self.log.info("Starting Fusion rebalance")
-        nodes_to_monitor = self.run_rebalance(
+        nodes_to_monitor, current_nodes_str, new_node_str = self.run_rebalance(
             output_dir=self.fusion_output_dir,
             rebalance_count=1,
             rebalance_sleep_time=120,
@@ -445,35 +445,50 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         max_wait_time = 3600
         start_time = time.time()
 
-        self.log.info("Monitoring migration stats")
+        self.log.info(f"Monitoring migration stats on {nodes_to_monitor}")
 
-        while time.time() - start_time < max_wait_time:
-            for node in nodes_to_monitor:
-                for bucket in self.cluster.buckets:
-                    try:
-                        cbstats = Cbstats(node)
-                        stats = cbstats.all_stats(bucket.name)
-                        migration_completed_bytes = int(stats['ep_fusion_migration_completed_bytes'])
-                        migration_bytes = int(stats['ep_fusion_bytes_migrated'])
-                        cbstats.disconnect()
+        cbstats_per_node = {}
+        for node in nodes_to_monitor:
+            try:
+                cbstats_per_node[node.ip] = Cbstats(node)
+            except Exception as e:
+                self.log.error(f"Unable to connect to {node.ip} for migration stats: {e}")
 
-                        if migration_completed_bytes > 0 or migration_bytes > 0:
-                            timestamp_dict['time'] = time.time()
-                            self.log.info(f"Migration started on {node.ip}:{bucket.name} "
-                                        f"at timestamp: {timestamp_dict['time']}, "
-                                        f"completed_bytes={migration_completed_bytes}, "
-                                        f"bytes_migrated={migration_bytes}")
+        try:
+            while time.time() - start_time < max_wait_time:
+                for node in nodes_to_monitor:
+                    cbstats = cbstats_per_node.get(node.ip)
+                    if cbstats is None:
+                        continue
+                    for bucket in self.cluster.buckets:
+                        try:
+                            stats = cbstats.all_stats(bucket.name)
+                            migration_completed_bytes = int(stats['ep_fusion_migration_completed_bytes'])
+                            migration_bytes = int(stats['ep_fusion_bytes_migrated'])
 
-                            if rebalance_timestamp_dict['time'] is None:
-                                self.log.error(f"VIOLATION: Migration started BEFORE rebalance 100% completion!")
+                            if migration_completed_bytes > 0 or migration_bytes > 0:
+                                timestamp_dict['time'] = time.time()
+                                self.log.info(f"Migration started on {node.ip}:{bucket.name} "
+                                            f"at timestamp: {timestamp_dict['time']}, "
+                                            f"completed_bytes={migration_completed_bytes}, "
+                                            f"bytes_migrated={migration_bytes}")
 
-                            return
-                    except Exception as e:
-                        self.log.debug(f"Error checking migration stats: {e}")
+                                if rebalance_timestamp_dict['time'] is None:
+                                    self.log.error(f"VIOLATION: Migration started BEFORE rebalance 100% completion!")
 
-            time.sleep(interval)
+                                return
+                        except Exception as e:
+                            self.log.debug(f"Error checking migration stats: {e}")
 
-        self.log.error("Migration did not start within timeout")
+                time.sleep(interval)
+
+            self.log.error("Migration did not start within timeout")
+        finally:
+            for cbstats in cbstats_per_node.values():
+                try:
+                    cbstats.disconnect()
+                except Exception as e:
+                    self.log.debug(f"Error disconnecting cbstats: {e}")
 
 
     def test_perform_dcp_and_fusion_rebalance_alternate(self):

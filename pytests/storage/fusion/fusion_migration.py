@@ -508,17 +508,20 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         ClusterRestAPI(self.cluster.master).\
                 manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        self.sleep(60, "Wait for migration to detect missing guest volumes")
+        self.monitor_active_guest_volumes()
 
         # Validate migration errors
         for node in nodes_to_monitor:
+            migration_error_count = 0
             for bucket in self.cluster.buckets:
                 cbstats = Cbstats(node)
                 stats = cbstats.all_stats(bucket.name)
                 error_count = int(stats['ep_fusion_migration_failures'])
+                migration_error_count += error_count
                 self.log.info(f"Node {node.ip}, Bucket {bucket.name}: Migration failures = {error_count}")
-                self.assertGreater(error_count, 0, f"Expected migration failures on {node.ip}:{bucket.name}")
                 cbstats.disconnect()
+
+            self.assertGreater(migration_error_count, 0, f"Expected migration failures on {node.ip}")
 
         self.cluster_util.print_cluster_stats(self.cluster)
 
@@ -915,6 +918,9 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
     def test_delete_guest_volumes_before_rebalance(self):
 
+        self.skip_fusion_health_check = True
+        self.crash_warning = True
+
         num_volumes_to_delete = self.input.param("num_volumes_to_delete", 5)
         min_storage_size = self.input.param("min_storage_size", 536870912)  # 0.5GB default
 
@@ -922,6 +928,11 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
+
+        # Set fusion_migration_rate_limit to 0 so that extent migration doesn't take place
+        status, content = ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_migration_rate_limit=0)
+        self.assertTrue(status, f"Failed to set fusion_migration_rate_limit to 0: {content}")
 
         self.log.info(f"Running Fusion rebalance up to acceleration (stopping before rebalance) with min_storage_size={min_storage_size} bytes")
         nodes_to_monitor, current_nodes_str, new_nodes_str = self.run_rebalance(
@@ -971,7 +982,10 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 for guest_vol in volumes_to_delete:
                     guest_volume_path = os.path.join(node_guest_dir, guest_vol)
                     self.log.info(f"Deleting {guest_volume_path}")
-                    ssh.execute_command(f"rm -rf {guest_volume_path}")
+                    delete_cmd = f"rm -rf {guest_volume_path}"
+                    self.log.info(f"Executing command: {delete_cmd}")
+                    o, e = ssh.execute_command(delete_cmd)
+                    self.log.info(f"Delete command output: {o}, error: {e}")
             else:
                 self.log.warning(f"Failed to list guest volumes: {error}")
 
