@@ -1,10 +1,17 @@
 import datetime
+import json
 import socket
 import ssl
 import threading
 import time
+import uuid
 
 import requests
+
+from urllib.parse import urlencode
+
+from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 from cbas.cbas_crl_base import CBASCRLBase
 
@@ -1847,3 +1854,1418 @@ class CBASCRLLifecycle(CBASCRLBase):
             f"Enforcement is consistent across "
             f"{sorted({t[0] for t in targets})}"
         )
+
+
+    def test_remote_cluster_link_topology_is_usable(self):
+        """
+        Gate for the section 3 remote-link work: prove the two-cluster
+        topology comes up and a remote Couchbase link can actually be created
+        and connected, before any revocation test is written against it.
+
+        Section 3 covers Analytics linking to a REMOTE Couchbase cluster over
+        mTLS, which is a second certificate trust relationship independent of
+        inbound client access. Nothing else in this suite needs two clusters,
+        and CBASBaseTest builds them from params rather than from the ini's
+        [clusterN] sections -- it slices self.servers using num_of_clusters,
+        nodes_init and services_init (see cbas_base_server.py:112-123). So the
+        conf must carry num_of_clusters=2 with pipe-separated per-cluster
+        values, and cluster_kv_infra needs one entry per cluster or setUp
+        raises IndexError on the second.
+
+        Asserts nothing about CRLs. Its job is to fail fast if the topology or
+        the link mechanics are the problem, rather than have six revocation
+        tests fail for an unrelated reason.
+        """
+        self.assertGreaterEqual(
+            len(self.cb_clusters), 2,
+            f"Expected two clusters from num_of_clusters=2, got "
+            f"{list(self.cb_clusters)}. Check the conf carries "
+            f"num_of_clusters=2 and pipe-separated nodes_init/services_init."
+        )
+        names = sorted(self.cb_clusters)
+        local = self.cb_clusters[names[0]]
+        remote = self.cb_clusters[names[1]]
+        self.assertIs(
+            self.cluster, local,
+            "self.cluster must be the first cluster -- Analytics services are "
+            "declared first so compute/storage separation is not applied to "
+            "the remote cluster"
+        )
+        self.assertTrue(
+            local.cbas_nodes,
+            f"C1 ({[s.ip for s in local.servers]}) has no Analytics node"
+        )
+        self.log.info(
+            f"C1 {[s.ip for s in local.servers]} (cbas on "
+            f"{[n.ip for n in local.cbas_nodes]}), "
+            f"C2 {[s.ip for s in remote.servers]} master {remote.master.ip}"
+        )
+
+        # Both clusters serve their own mgmt API, and they are genuinely
+        # separate -- a link to a node that is already in the local cluster
+        # would not exercise anything remote.
+        local_ips = {s.ip for s in local.servers}
+        remote_ips = {s.ip for s in remote.servers}
+        self.assertFalse(
+            local_ips & remote_ips,
+            f"The two clusters share nodes {local_ips & remote_ips}; a "
+            f"'remote' link would not be remote"
+        )
+        for label, cluster in (("C1", local), ("C2", remote)):
+            resp = requests.get(
+                f"http://{cluster.master.ip}:8091/pools/default",
+                auth=(cluster.master.rest_username,
+                      cluster.master.rest_password),
+                timeout=60,
+            )
+            self.assertEqual(
+                resp.status_code, 200,
+                f"{label} master {cluster.master.ip} did not serve "
+                f"/pools/default: {resp.status_code} {resp.text[:200]}"
+            )
+            self.log.info(
+                f"{label} up with {len(resp.json().get('nodes', []))} node(s)"
+            )
+
+        # Reachability from the Analytics node itself, not from the runner: a
+        # link is opened by cbas, so runner-side reachability proves nothing.
+        shell = RemoteMachineShellConnection(local.cbas_nodes[0])
+        try:
+            output, _ = shell.execute_command(
+                f"curl -s -m 10 -o /dev/null -w '%{{http_code}}' "
+                f"-u {remote.master.rest_username}:"
+                f"{remote.master.rest_password} "
+                f"http://{remote.master.ip}:8091/pools/default"
+            )
+            code = next((l.strip() for l in (output or []) if l.strip()), None)
+        finally:
+            shell.disconnect()
+        self.assertEqual(
+            code, "200",
+            f"Analytics node {local.cbas_nodes[0].ip} cannot reach C2 master "
+            f"{remote.master.ip}: got {code!r}. A link would fail for "
+            f"connectivity rather than revocation."
+        )
+        self.log.info("C2 reachable from the Analytics node")
+
+        # The part most likely to be wrong: actually create the link and
+        # connect it. Username/password with encryption none first -- mTLS is
+        # what the revocation tests will add, and this gate should not fail
+        # for certificate reasons.
+        link_name = f"crl_gate_link_{int(time.time())}"
+        link_properties = {
+            "name": link_name,
+            "dataverse": "Default",
+            "scope": "Default",
+            "type": "couchbase",
+            "hostname": remote.master.ip,
+            "username": remote.master.rest_username,
+            "password": remote.master.rest_password,
+            "encryption": "none",
+        }
+        created = self.cbas_util.create_link(
+            self.cluster, link_properties, create_dataverse=False
+        )
+        self.assertTrue(
+            created,
+            f"Could not create a remote Couchbase link to {remote.master.ip}. "
+            f"Section 3 is not testable until this works."
+        )
+        self._created_links.append(("Default", link_name))
+        self.log.info(f"Created remote link Default.{link_name}")
+
+        self.assertTrue(
+            self.cbas_util.validate_link_in_metadata(
+                self.cluster, link_name, "Default", "couchbase"
+            ),
+            f"Link {link_name} was created but is not in Analytics metadata"
+        )
+        self.log.info(
+            "Remote Couchbase link created and present -- section 3 topology "
+            "is usable"
+        )
+
+    # ── Section 3: Analytics Links to remote Couchbase clusters ─────────────
+    #
+    # Every test below turns on the same distinction: the certificate a link
+    # presents OUTBOUND is validated by the REMOTE cluster, so the policy and
+    # the CRL that decide its fate are the remote's, not the local Analytics
+    # cluster's. self.rest and self.cluster in these tests are the Analytics
+    # side; target["rest"] is where revocations are published.
+
+    def _link_baseline(self, target, client, link_name, expect_connect=True):
+        """
+        Create a link with `client`'s certificate and prove it works, so a
+        later failure is attributable to the revocation rather than to the
+        link, the topology or the certificates.
+
+        Checks the certificate at the remote's own mgmt port first. If mTLS
+        against the remote is broken, that says so directly instead of
+        letting a link failure stand in for it.
+        """
+        cert_path = self._write_temp_pem(client["cert_pem"])
+        key_path = self._write_temp_pem(client["key_pem"])
+        resp = self._mgmt_request(
+            cert=(cert_path, key_path), node=target["cluster"].master)
+        self.assertEqual(
+            resp.status_code, 200,
+            f"The link's client certificate cannot authenticate to the link "
+            f"target {target['cluster'].master.ip} at all "
+            f"({resp.status_code}: {resp.text[:300]}). That is a fixture "
+            f"problem on the remote -- CA trust, clientCertAuth or the "
+            f"mapped user -- not a revocation result."
+        )
+        self.log.info(
+            f"Client certificate for {client['username']} authenticates to "
+            f"{target['name']} (serial={client['serial']})"
+        )
+
+        props = self._couchbase_link_props(link_name, target, client=client)
+        ok, code, body = self._link_rest("POST", props)
+        self.assertTrue(
+            ok,
+            f"Could not create the mTLS link {link_name} to "
+            f"{target['name']} with a VALID certificate ({code}): "
+            f"{body[:600]}. Section 3 is not testable until this works."
+        )
+        self._created_links.append(("Default", link_name))
+        self.log.info(f"Created mTLS link Default.{link_name}")
+
+        # A dataset on the link, so that CONNECT LINK is provably a remote
+        # operation rather than a local metadata flip.
+        #
+        # This matters for what the revocation tests can claim. CONNECT LINK
+        # on a link with no datasets succeeds (see test_connect_link in
+        # cbas_external_links_CB_cluster.py) and need not touch the remote at
+        # all -- in which case a revoked certificate would ALSO connect, and
+        # the test would report a product bug that is really a no-op
+        # operation. With a dataset attached, connect has to reach the remote:
+        # the same suite's test_connect_link_when_network_up_before_timeout
+        # firewalls the remote master and CONNECT LINK blocks until the
+        # network returns, which is only possible if it dials out.
+        dataset_name = f"{link_name}_ds"
+        created = self.cbas_util.create_dataset(
+            self.cluster, dataset_name, self.REMOTE_BUCKET,
+            dataverse_name="Default", link_name=f"Default.`{link_name}`",
+        )
+        self.assertTrue(
+            created,
+            f"Could not create dataset {dataset_name} on link {link_name} "
+            f"over remote bucket {self.REMOTE_BUCKET}. Section-3 conf lines "
+            f"must give the remote cluster a bucket "
+            f"(cluster_kv_infra=None|default), or CONNECT LINK below would "
+            f"not be a remote operation and the revocation tests would "
+            f"prove nothing."
+        )
+        self._created_datasets.append(f"Default.`{dataset_name}`")
+
+        if expect_connect:
+            connected, error = self._connect_link(link_name)
+            self.assertTrue(
+                connected,
+                f"A link with a valid certificate must connect; got: "
+                f"{error[:600]}"
+            )
+            self.log.info(
+                f"Link {link_name} connected with a valid cert, with dataset "
+                f"{dataset_name} attached"
+            )
+        return props
+
+    def _link_identity(self, link_name, dataverse="Default"):
+        """
+        The identifying and configuration fields of a link, as a dict.
+
+        A stable subset rather than the whole REST blob on purpose: a link's
+        representation can legitimately carry activity state that changes
+        when it is connected, and comparing everything would fail the
+        "same object" check for a reason that has nothing to do with
+        recovery. These are the fields that WOULD differ if the link had
+        been dropped and recreated.
+        """
+        info = self.cbas_util.get_link_info(
+            self.cluster, dataverse=dataverse, link_name=link_name,
+            link_type="couchbase")
+        self.assertTrue(
+            info,
+            f"Link {dataverse}.{link_name} returned no info, so its identity "
+            f"cannot be compared: {info!r}"
+        )
+        entry = info[0] if isinstance(info, list) else info
+        keys = ("name", "scope", "dataverse", "type", "activeHostname",
+                "hostname", "encryption", "certificates", "username")
+        return {k: entry.get(k) for k in keys if k in entry}
+
+    def test_remote_link_with_revoked_cert_fails_to_connect(self):
+        """
+        Section 3: a remote link whose client certificate is later revoked on
+        the remote cluster's CRL stops being able to connect.
+
+        The link is created and connected first with the same certificate,
+        then the only thing that changes is the remote's CRL. Nothing about
+        the link, the credentials or the network is touched between the two
+        attempts, so the difference in outcome can only be the revocation.
+
+        The link is disconnected and reconnected rather than left alone: an
+        already-established connection is expected to survive revocation
+        (the plan's own reviewer makes that point about long-running queries
+        in section 2), so what section 3 asks about is whether a NEW
+        connection attempt is refused.
+        """
+        target = self._setup_remote_link_target()
+        client = self._mint_link_client_cert(target, "cbas_crl_link_user")
+        link_name = "crl_link_revoke"
+        self._link_baseline(target, client, link_name)
+
+        self._disconnect_link(link_name)
+        self._publish_remote_crl(target, [client["serial"]])
+
+        connected, error = self._connect_link(link_name)
+        self.assertFalse(
+            connected,
+            f"The link connected even though its client certificate "
+            f"(serial={client['serial']}) is on the link target's CRL under "
+            f"clientAuth=Require. Section 3 requires the link to fail to "
+            f"connect according to the remote cluster's revocation policy."
+        )
+        self._assert_link_error_kind(
+            error, "revoked",
+            "A link refused because its certificate was revoked must say so",
+            redact=[link_name, client["username"]],
+        )
+
+    def test_remote_link_error_distinguishes_revoked_unreachable_and_bad_creds(self):
+        """
+        Section 3: a link failure names its own cause -- "certificate
+        revoked" is distinguishable from "network unreachable" and from
+        "credentials invalid".
+
+        Three links are made to fail, one per cause, and the assertion is on
+        the text of each. The sharp part is the negative direction: neither
+        the unreachable nor the bad-credential failure may read as a
+        revocation. An operator who cannot tell those apart from the error
+        will replace certificates to fix a routing problem, or chase the
+        network while a serial sits on a CRL.
+
+        The unreachable leg points at a deliberately unroutable address
+        rather than firewalling a real one: a firewall rule that outlives a
+        failed teardown breaks every later test on that node, and this
+        assertion does not need a real host to be down.
+        """
+        target = self._setup_remote_link_target()
+
+        # Leg 1: revoked certificate.
+        revoked_client = self._mint_link_client_cert(
+            target, "cbas_crl_link_revoked")
+        revoked_link = "crl_link_err_revoked"
+        self._link_baseline(target, revoked_client, revoked_link)
+        self._disconnect_link(revoked_link)
+        self._publish_remote_crl(target, [revoked_client["serial"]])
+        connected, revoked_error = self._connect_link(revoked_link)
+        self.assertFalse(
+            connected,
+            "The revoked-certificate leg must fail before its error can be "
+            "compared with the other two"
+        )
+        self._assert_link_error_kind(
+            revoked_error, "revoked",
+            "The revoked leg's error must name revocation",
+            redact=[revoked_link, revoked_client["username"]],
+        )
+
+        # Leg 2: unreachable host. A valid certificate, so the only thing
+        # wrong is where the link points.
+        good_client = self._mint_link_client_cert(
+            target, "cbas_crl_link_reachable")
+        unreachable_link = "crl_link_err_unreachable"
+        # RFC 5737 TEST-NET-1: reserved for documentation, guaranteed not to
+        # be a live host on any correctly-configured network.
+        props = self._couchbase_link_props(
+            unreachable_link, target, client=good_client,
+            hostname="192.0.2.1",
+        )
+        ok, code, create_body = self._link_rest("POST", props)
+        if ok:
+            self._created_links.append(("Default", unreachable_link))
+            _, unreachable_error = self._connect_link(unreachable_link)
+        else:
+            # Link creation validates connectivity, so an unroutable host is
+            # rejected at creation -- that response is the error to judge.
+            unreachable_error = create_body
+        self._assert_link_error_kind(
+            unreachable_error, "unreachable",
+            "A link pointed at an unroutable address must report a "
+            "connectivity failure",
+            redact=[unreachable_link, good_client["username"]],
+        )
+
+        # Leg 3: wrong credentials. Username/password rather than a
+        # certificate, since "credentials invalid" is only a distinct cause
+        # when a credential is what was supplied.
+        bad_creds_link = "crl_link_err_creds"
+        props = self._couchbase_link_props(
+            bad_creds_link, target,
+            username=target["cluster"].master.rest_username,
+            password="definitely-not-the-password",
+        )
+        ok, code, create_body = self._link_rest("POST", props)
+        if ok:
+            self._created_links.append(("Default", bad_creds_link))
+            _, creds_error = self._connect_link(bad_creds_link)
+        else:
+            creds_error = create_body
+        self._assert_link_error_kind(
+            creds_error, "credentials",
+            "A link with a wrong password must report an authentication "
+            "failure",
+            redact=[bad_creds_link],
+        )
+
+        # And the three must not be the same message with different wording
+        # around the edges.
+        self.assertNotEqual(
+            revoked_error.lower(), unreachable_error.lower(),
+            "The revoked and unreachable failures produced the same error "
+            "text, so they are not distinguishable"
+        )
+        self.assertNotEqual(
+            revoked_error.lower(), creds_error.lower(),
+            "The revoked and bad-credential failures produced the same error "
+            "text, so they are not distinguishable"
+        )
+        self.log.info(
+            "Three link failures, three distinguishable errors:\n"
+            f"  revoked     : {revoked_error[:200]}\n"
+            f"  unreachable : {unreachable_error[:200]}\n"
+            f"  credentials : {creds_error[:200]}"
+        )
+
+    def test_remote_link_creation_and_edit_with_revoked_cert_fail_immediately(self):
+        """
+        Section 3: creating -- or editing -- a link with an ALREADY revoked
+        client certificate is refused when the operation is issued, not
+        silently accepted and left to fail at first sync.
+
+        Two halves, because the plan asks about both verbs:
+          create: the serial is published before the link exists, and the
+                  POST must be refused and leave nothing in metadata.
+          edit:   a working link's certificate is swapped for the revoked one
+                  by PUT, which must be refused and must leave the link still
+                  working on its original certificate.
+
+        The edit half's closing check matters most. A rejected edit that
+        nonetheless half-applied would leave an operator with a link that
+        reports its old configuration and cannot connect, which is worse
+        than either a clean success or a clean failure.
+        """
+        target = self._setup_remote_link_target()
+
+        # ── create with a revoked certificate ───────────────────────────────
+        doomed = self._mint_link_client_cert(target, "cbas_crl_link_doomed")
+        self._publish_remote_crl(target, [doomed["serial"]])
+
+        doomed_link = "crl_link_create_revoked"
+        props = self._couchbase_link_props(doomed_link, target, client=doomed)
+        ok, code, body = self._link_rest("POST", props)
+        self.assertFalse(
+            ok,
+            f"Creating a link with an already-revoked client certificate "
+            f"(serial={doomed['serial']}, on the target's CRL under "
+            f"clientAuth=Require) returned {code}. Section 3 requires this "
+            f"to fail at link-creation time with a clear error rather than "
+            f"succeeding and failing later at first sync."
+        )
+        self._assert_link_error_kind(
+            body, "revoked",
+            "A link creation refused for a revoked certificate must say so",
+            redact=[doomed_link, doomed["username"]],
+        )
+        self.assertFalse(
+            self.cbas_util.validate_link_in_metadata(
+                self.cluster, doomed_link, "Default", "couchbase"),
+            f"Link {doomed_link} was refused but still appears in Analytics "
+            f"metadata, so the refusal left a partial object behind"
+        )
+        self.log.info("Creation with a revoked certificate refused cleanly")
+
+        # ── edit a working link onto a revoked certificate ──────────────────
+        good = self._mint_link_client_cert(target, "cbas_crl_link_editable")
+        edit_link = "crl_link_edit_revoked"
+        working_props = self._link_baseline(target, good, edit_link)
+
+        # A second certificate, revoked in the same CRL generation as the
+        # first. Both serials are listed: a higher crlNumber from one issuer
+        # supersedes the earlier CRL wholesale, so dropping `doomed` here
+        # would quietly un-revoke it.
+        replacement = self._mint_link_client_cert(
+            target, "cbas_crl_link_replacement")
+        self._publish_remote_crl(
+            target, [doomed["serial"], replacement["serial"]])
+
+        self._disconnect_link(edit_link)
+        edit_props = self._couchbase_link_props(
+            edit_link, target, client=replacement)
+        ok, code, body = self._link_rest("PUT", edit_props)
+        self.assertFalse(
+            ok,
+            f"Editing link {edit_link} to use an already-revoked client "
+            f"certificate (serial={replacement['serial']}) returned {code}. "
+            f"Section 3 requires the edit to be refused when it is issued."
+        )
+        self._assert_link_error_kind(
+            body, "revoked",
+            "A link edit refused for a revoked certificate must say so",
+            redact=[edit_link, replacement["username"]],
+        )
+
+        # The refused edit must not have disturbed the working link.
+        connected, error = self._connect_link(edit_link)
+        self.assertTrue(
+            connected,
+            f"After a REFUSED edit, link {edit_link} no longer connects on "
+            f"its original, non-revoked certificate "
+            f"(serial={good['serial']}): {error[:600]}. A rejected edit must "
+            f"leave the link exactly as it was."
+        )
+        self.log.info(
+            "Edit onto a revoked certificate refused, and the link still "
+            "works on its original certificate"
+        )
+
+    def test_remote_link_recovers_when_serial_removed_from_remote_crl(self):
+        """
+        Section 3: removing the offending serial from the remote CRL restores
+        link connectivity, with no need to recreate the link.
+
+        The link object is created exactly once, at the start. Recovery is
+        then asserted on that same object -- no create, no drop, no property
+        edit between the failing and the succeeding connect -- which is what
+        "without needing to recreate the link" has to mean to be testable.
+        The link's metadata entry is compared before and after to show it is
+        the same object rather than a lookalike.
+        """
+        target = self._setup_remote_link_target()
+        client = self._mint_link_client_cert(target, "cbas_crl_link_recover")
+        link_name = "crl_link_recover"
+        self._link_baseline(target, client, link_name)
+
+        before = self._link_identity(link_name)
+
+        self._disconnect_link(link_name)
+        self._publish_remote_crl(target, [client["serial"]])
+        connected, error = self._connect_link(link_name)
+        self.assertFalse(
+            connected,
+            "The link must first fail while its serial is on the remote CRL, "
+            "or the recovery below proves nothing"
+        )
+        self.log.info(f"Link failed while revoked, as expected: {error[:200]}")
+
+        # Supersede with a CRL that lists nothing. Same issuer, higher
+        # crlNumber, so it replaces the revocation wholesale.
+        self._publish_remote_crl(target, [])
+
+        # The remote has to notice the new CRL before the link can succeed,
+        # and there is no signal to wait on from the Analytics side, so poll
+        # the operation itself.
+        deadline = time.time() + 120
+        last_error = error
+        while time.time() < deadline:
+            connected, last_error = self._connect_link(link_name)
+            if connected:
+                break
+            self._disconnect_link(link_name)
+            time.sleep(5)
+        self.assertTrue(
+            connected,
+            f"After the serial was removed from the remote CRL, the SAME "
+            f"link still cannot connect within 120s: {last_error[:600]}. "
+            f"Section 3 requires connectivity to be restored without "
+            f"recreating the link."
+        )
+
+        after = self._link_identity(link_name)
+        self.assertEqual(
+            before, after,
+            f"The link's identity and configuration changed across the "
+            f"revoke/restore cycle, so recovery did not happen on the "
+            f"original object.\nbefore: {before}\nafter:  {after}"
+        )
+        self.log.info(
+            "Link recovered on its original object once the serial was "
+            "removed from the remote CRL"
+        )
+
+    def test_link_revocation_does_not_affect_links_to_other_clusters(self):
+        """
+        Section 3: revoking one link's certificate leaves links to OTHER
+        remote clusters untouched.
+
+        Needs three clusters -- the Analytics cluster and two link targets --
+        because the isolation being tested is between remote clusters, and
+        two links to the same remote would not show it. Each target trusts
+        its OWN CA, so revoking on target A cannot even be expressed on
+        target B; that is the property, and the test proves the second link
+        keeps working rather than assuming it.
+
+        Order matters in the final check: target B's link is connected AFTER
+        A's has been broken, so it is a fresh connection attempt made while
+        A's revocation is live, not a connection that predates it.
+        """
+        target_a = self._setup_remote_link_target(
+            self._remote_cluster(1), label="C2")
+
+        # A CA of its own for target B. Sharing this test's CA would make the
+        # two targets share a revocation namespace, and the isolation would
+        # then be a property of which CRL was uploaded where rather than of
+        # the clusters being separate.
+        ca_b_cert, ca_b_key = self.crl_utils.generate_ca(
+            f"AnalyticsCRLTestCA_B_{uuid.uuid4().hex[:8]}")
+        target_b = self._setup_remote_link_target(
+            self._remote_cluster(2), label="C3",
+            ca_cert=ca_b_cert, ca_key=ca_b_key)
+
+        client_a = self._mint_link_client_cert(target_a, "cbas_crl_link_a")
+        client_b = self._mint_link_client_cert(target_b, "cbas_crl_link_b")
+        link_a, link_b = "crl_link_iso_a", "crl_link_iso_b"
+        self._link_baseline(target_a, client_a, link_a)
+        self._link_baseline(target_b, client_b, link_b)
+
+        self._disconnect_link(link_a)
+        self._disconnect_link(link_b)
+        self._publish_remote_crl(target_a, [client_a["serial"]])
+
+        connected_a, error_a = self._connect_link(link_a)
+        self.assertFalse(
+            connected_a,
+            "Link A must fail while its certificate is revoked on target A, "
+            "or the isolation check below proves nothing"
+        )
+        self._assert_link_error_kind(
+            error_a, "revoked",
+            "Link A must fail for revocation specifically",
+            redact=[link_a, client_a["username"]],
+        )
+
+        connected_b, error_b = self._connect_link(link_b)
+        self.assertTrue(
+            connected_b,
+            f"Revoking link A's certificate on {target_a['name']} also broke "
+            f"link B to {target_b['name']}, which uses a different CA and a "
+            f"different remote cluster: {error_b[:600]}. A revocation must "
+            f"not reach links to unrelated clusters."
+        )
+        self.log.info(
+            "Link A refused for revocation while link B to a different "
+            "remote cluster kept connecting"
+        )
+
+    def test_link_certificate_material_not_exposed_on_revocation_failure(self):
+        """
+        Section 3: when a link fails for a revocation reason, the link's
+        certificate and key material stays out of the logs, the audit trail
+        and diagnostic output.
+
+        Provokes the failure first, then looks in the three places the plan
+        names, plus the link's own REST representation -- which is where a
+        leak would be easiest to reach, since reading a link's properties
+        needs no node access at all.
+
+        Checks a slice of the base64 body as well as the PEM armour: a
+        service that strips the BEGIN/END lines while still writing the
+        payload would pass an armour-only check having leaked the key
+        anyway. See _assert_no_key_material.
+        """
+        target = self._setup_remote_link_target()
+        client = self._mint_link_client_cert(target, "cbas_crl_link_secret")
+        link_name = "crl_link_secret"
+        self._link_baseline(target, client, link_name)
+
+        self._set_audit(True)
+        self._disconnect_link(link_name)
+        self._publish_remote_crl(target, [client["serial"]])
+        connected, error = self._connect_link(link_name)
+        self.assertFalse(
+            connected,
+            "The link must actually fail for revocation, or there is no "
+            "revocation-related output to inspect"
+        )
+
+        # 1. The error handed back to the caller.
+        self._assert_no_key_material(
+            [error], client, "The link's connect error")
+
+        # 2. Analytics logs on the local cluster, which is what logged the
+        #    outbound failure. all_nodes because this is an ABSENCE check:
+        #    the link runs on the CC node, which is not necessarily
+        #    self.cbas_node, and reading the wrong node would report clean
+        #    logs while the material sat in another node's file.
+        analytics_lines = self._read_analytics_log(
+            grep=link_name, all_nodes=True)
+        analytics_lines += self._read_analytics_log(
+            grep="revok", all_nodes=True)
+        analytics_lines += self._read_analytics_log(
+            grep=client["username"], all_nodes=True)
+        self._assert_no_key_material(
+            analytics_lines, client, "The Analytics log")
+
+        # 3. Audit records on both clusters. The remote is where the
+        #    rejection happened, so its audit trail is the one most likely to
+        #    carry the offending certificate. Auditing is enabled on the
+        #    LOCAL cluster only -- _restore_audit puts that back -- and the
+        #    remote's log is read with whatever setting it already has,
+        #    rather than leaving a changed audit setting behind on a cluster
+        #    this test does not own the teardown for.
+        audit_lines = self._read_audit_log()
+        audit_lines += self._read_audit_log(node=target["cluster"].master)
+        self._assert_no_key_material(audit_lines, client, "The audit log")
+
+        # An absence check over output that turned out to be empty proves
+        # nothing, so say which legs actually had something to examine
+        # instead of letting a silent zero read as a clean result.
+        self.log.info(
+            f"Absence check corpus: connect error {len(error)} chars, "
+            f"{len(analytics_lines)} Analytics log line(s), "
+            f"{len(audit_lines)} audit line(s)"
+        )
+        if not analytics_lines:
+            self.log.warning(
+                "No Analytics log lines matched the link name, 'revok' or the "
+                "certificate's user on any Analytics node, so the log leg of "
+                "this check was vacuous. The error-text, diagnostics and "
+                "link-REST legs below still applied."
+            )
+
+        # 4. Diagnostic output, and the link's own properties. A link is
+        #    readable by anyone who can reach the Analytics REST API, so an
+        #    unredacted clientKey here would be the most exposed leak of all.
+        status, diagnostics = self.crl_utils.diagnostics_status(target["rest"])
+        link_info = self.cbas_util.get_link_info(
+            self.cluster, dataverse="Default", link_name=link_name,
+            link_type="couchbase")
+        self._assert_no_key_material(
+            [json.dumps(diagnostics, default=str),
+             json.dumps(link_info, default=str)],
+            client, "CRL diagnostics and the link's REST representation")
+
+        # The private key's VALUE must not be readable back out of a link's
+        # configuration. A `clientKey` field carrying a redaction marker is
+        # correct and expected -- Analytics reports it as
+        # `clientKey='<redacted N chars>'` in its own logs -- so asserting
+        # the field name is absent would fail the right behaviour.
+        info_text = json.dumps(link_info, default=str)
+        key_body = "".join(
+            ln for ln in client["key_pem"].decode().splitlines()
+            if ln and not ln.startswith("-----")
+        )
+        self.assertNotIn(
+            key_body[len(key_body) // 3:][:48], info_text,
+            f"The link's REST representation returns the actual private key "
+            f"body. It must be withheld or redacted: {info_text[:600]}"
+        )
+        if "clientkey" in info_text.lower():
+            self.log.info(
+                "The link's REST view carries a clientKey field; its value is "
+                "not the real key, which is the required behaviour."
+            )
+        self.log.info(
+            "No link certificate or key material in the error, Analytics "
+            "logs, audit records, diagnostics or the link's REST view"
+        )
+
+    # ── Section 5: shadow data, ingestion and replicas ──────────────────────
+    #
+    # Ingestion from KV into an Analytics dataset runs over the cluster's
+    # INTERNAL mTLS, not the client-facing surface every other section
+    # exercises. Confirmed on 8.5.0-1073: Analytics logs
+    # useMutualTls":true alongside
+    # clientCertPath":".../config/certs/client_chain.pem", and that
+    # certificate is CN="Couchbase Internal Client (...)" issued by the
+    # cluster's OWN generated CA (CN="Couchbase Server <id>").
+    #
+    # That issuer is the reason bullet 1 of this section is not directly
+    # testable: revoking the internal client certificate needs a CRL signed
+    # by the generated CA, whose private key is not available to a test. It
+    # would first require replacing the cluster's node and client
+    # certificates with ones issued by this suite's CA. See
+    # test_internal_ingestion_certificate_is_not_test_revocable for the
+    # recorded finding.
+
+    LOCAL_BUCKET = "crl_ingest"
+
+    def _seed_local_dataset(self, doc_count=100, key_prefix="a"):
+        """
+        A KV bucket with documents, plus an Analytics dataset ingesting from
+        it over the Local link. Returns (dataset_name, ingested_count).
+        """
+        self._ensure_bucket(self.cluster.master, self.LOCAL_BUCKET)
+        self._n1ql_insert_docs(self.LOCAL_BUCKET, doc_count, key_prefix)
+
+        # The DDL is issued directly rather than through
+        # cbas_util.create_dataset because that returns a bare boolean and
+        # drops the server's error, which left a failure here undiagnosable.
+        dataset = f"{self.LOCAL_BUCKET}_ds"
+
+        # Drop first, unconditionally. A dataset surviving a previous run's
+        # teardown is a realistic condition here rather than a hypothetical:
+        # this suite's failover test drops an Analytics node, and a teardown
+        # that runs while Analytics is still answering `code 23000 Analytics
+        # Service is temporarily unavailable` cannot drop anything -- so the
+        # dataset outlives the test that made it and the NEXT run fails with
+        # `code 24040 ... already exists`. Recreating rather than reusing it
+        # also keeps the ingested count honest, which CREATE ... IF NOT
+        # EXISTS would not.
+        self.cbas_util.execute_statement_on_cbas_util(
+            self.cluster, f"DROP DATASET Default.`{dataset}` IF EXISTS;",
+            timeout=180, analytics_timeout=180)
+
+        statement = (f"CREATE DATASET Default.`{dataset}` "
+                     f"ON `{self.LOCAL_BUCKET}`;")
+        status, _, errors, _, _ = (
+            self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement, timeout=180, analytics_timeout=180)
+        )
+        self.assertEqual(
+            status, "success",
+            f"Could not create dataset {dataset} on {self.LOCAL_BUCKET} over "
+            f"the Local link: {json.dumps(errors)[:600]}"
+        )
+        self._created_datasets.append(f"Default.`{dataset}`")
+
+        connected, error = self._connect_link("Local")
+        self.assertTrue(
+            connected, f"Could not connect the Local link: {error[:400]}")
+        self.assertTrue(
+            self.cbas_util.wait_for_ingestion_complete(
+                self.cluster, f"Default.`{dataset}`", doc_count, timeout=300),
+            f"Ingestion of {doc_count} docs into {dataset} did not complete"
+        )
+        self.log.info(f"Dataset {dataset} ingested {doc_count} docs from KV")
+        return dataset, doc_count
+
+    def test_ingestion_undisturbed_by_unrelated_client_cert_revocation(self):
+        """
+        Section 5: ongoing dataset ingestion is not disrupted by a CRL update
+        that revokes an unrelated, CLIENT-facing certificate.
+
+        Ingestion runs over the cluster's internal mTLS; the revoked
+        certificate here is one a client would present to the Analytics REST
+        endpoint. The two should be independent, and this proves it in both
+        directions rather than only asserting that ingestion survived:
+
+          - the revoked client certificate really is refused at 18095, so
+            the CRL is demonstrably live. Without this leg the test would
+            pass just as happily against a CRL that was never applied, which
+            is exactly how a previous test in this suite produced a false
+            pass.
+          - documents written AFTER the revocation still reach the dataset,
+            so ingestion is not merely un-broken but still flowing.
+        """
+        dataset, ingested = self._seed_local_dataset(doc_count=100)
+
+        valid_cert, valid_key, _ = self._client_cert_for(
+            "cbas_crl_ingest_valid", "analytics_admin")
+        revoked_cert, revoked_key, revoked_serial = self._client_cert_for(
+            "cbas_crl_ingest_revoked", "analytics_admin")
+
+        filename = "cbas_crl_section5.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, revoked_serial, filename,
+            crl_number=1)
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"})
+        self._enable_client_cert_auth(state="enable")
+
+        # Control leg: the revocation is actually in force.
+        self._wait_for_analytics_ok("SELECT 1;", cert=(valid_cert, valid_key))
+        self.assert_cert_refused(
+            lambda: self._analytics_query(
+                "SELECT 1;", cert=(revoked_cert, revoked_key)),
+            "The revoked client certificate must be refused, or this test "
+            "cannot claim the CRL was live while ingestion continued"
+        )
+        self.log.info("Revocation confirmed live on the client-facing surface")
+
+        # Ingestion must still be flowing, not merely intact.
+        self._n1ql_insert_docs(self.LOCAL_BUCKET, 50, "b")
+        self.assertTrue(
+            self.cbas_util.wait_for_ingestion_complete(
+                self.cluster, f"Default.`{dataset}`", ingested + 50,
+                timeout=300),
+            f"Documents written after an unrelated client certificate was "
+            f"revoked did not reach {dataset}. Ingestion runs over internal "
+            f"mTLS and must be unaffected by a client-facing revocation."
+        )
+        self.log.info(
+            f"Ingestion continued to {ingested + 50} docs while a client "
+            f"certificate was revoked")
+
+    def test_internal_ingestion_certificate_is_not_test_revocable(self):
+        """
+        Section 5, bullet 1: record why revoking the certificate used for
+        KV-to-Analytics internal sync cannot be tested as written, and assert
+        the premise the plan bullet rests on.
+
+        The bullet says "revoking the certificate used for KV-to-Analytics
+        internal data sync (if certificate-based)". It IS certificate-based:
+        this test asserts Analytics presents an internal client certificate.
+        But that certificate is issued by the cluster's own generated CA, and
+        a CRL is only honoured when signed by the issuing CA's key -- which a
+        test does not have. Revoking it would mean first replacing the
+        cluster's node AND internal client certificates with ones issued by
+        this suite's CA, which is a nodeToNode-scope exercise rather than an
+        Analytics one, and which the plan's own reviewer places with KV
+        ("KV would be responsible for the behavior of the connection here,
+        how it is reported / handled would be in-scope").
+
+        So this asserts the two facts that determine the bullet's fate,
+        rather than silently skipping it:
+          - Analytics uses mutual TLS internally with a client certificate
+          - that certificate is issued by the cluster-generated CA, not by
+            any CA a test can issue a CRL for
+        """
+        certs_dir = "/opt/couchbase/var/lib/couchbase/config/certs"
+        nodes = list(self.cluster.cbas_nodes or [self.cbas_node])
+        seen = {}
+        mutual_tls_nodes = []
+        for node in nodes:
+            if node.ip in seen:
+                continue
+            shell = RemoteMachineShellConnection(node)
+            try:
+                out, _ = shell.execute_command(
+                    f"openssl x509 -in {certs_dir}/client_chain.pem "
+                    f"-noout -subject -issuer 2>&1")
+                seen[node.ip] = " ".join(
+                    line.strip() for line in (out or []) if line.strip())
+                out, _ = shell.execute_command(
+                    "grep -aho 'useMutualTls\":true' "
+                    "/opt/couchbase/var/lib/couchbase/logs/analytics_*.log "
+                    "2>/dev/null | head -1")
+                if any(line.strip() for line in (out or [])):
+                    mutual_tls_nodes.append(node.ip)
+            finally:
+                shell.disconnect()
+
+        internal = {ip: info for ip, info in seen.items()
+                    if "Couchbase Internal Client" in info}
+        self.assertTrue(
+            internal,
+            f"No Analytics node presents an internal client certificate at "
+            f"{certs_dir}/client_chain.pem, so the premise that KV-to-"
+            f"Analytics sync is certificate-based does not hold on this "
+            f"build and the plan bullet needs revisiting. Read: {seen}"
+        )
+
+        # The issuer is what decides whether this bullet is testable at all.
+        not_generated = {
+            ip: info for ip, info in internal.items()
+            if "issuer=CN = Couchbase Server" not in info
+        }
+        self.assertFalse(
+            not_generated,
+            f"The internal client certificate is no longer issued by the "
+            f"cluster's own generated CA on {list(not_generated)}. If it is "
+            f"now issued by a CA a test can upload, this bullet became "
+            f"directly testable and this test should be replaced with a real "
+            f"revocation: {not_generated}"
+        )
+
+        # Corroborating only, deliberately not asserted: whether the mutual
+        # TLS handshake happens to appear in the logs depends on what the
+        # node has done since its last log rotation, so a fresh cluster can
+        # legitimately show nothing. An earlier version of this test asserted
+        # on it and failed against a perfectly healthy node purely because
+        # the evidence was on a DIFFERENT Analytics node -- the same
+        # wrong-node mistake this suite has made before.
+        self.log.info(
+            f"Section 5 bullet 1 recorded as not test-revocable. Internal "
+            f"client certificates: {internal}. Nodes logging "
+            f"useMutualTls\":true: {mutual_tls_nodes or 'none since rotation'}. "
+            f"Revoking this certificate would require replacing the cluster's "
+            f"node and internal client certificates with ones issued by this "
+            f"suite's CA -- a nodeToNode-scope exercise."
+        )
+
+    # ── Section 7: cluster distribution and topology ───────────────────────
+    #
+    # These need MORE THAN ONE Analytics node in a single cluster, which no
+    # other section in this suite requires -- so their conf lines carry
+    # services_init with cbas on two nodes, plus spare servers for the
+    # rebalance-in cases.
+
+    def _require_two_analytics_nodes(self):
+        """Both Analytics nodes, or a failure naming the conf that fixes it."""
+        nodes = list(self.cluster.cbas_nodes or [])
+        unique = []
+        for node in nodes:
+            if node.ip not in {n.ip for n in unique}:
+                unique.append(node)
+        if len(unique) < 2:
+            self.fail(
+                f"This test needs two Analytics nodes in one cluster, got "
+                f"{[n.ip for n in unique]}. Use e.g. nodes_init=3,"
+                f"services_init=kv:n1ql:index-kv:cbas-kv:cbas."
+            )
+        return unique
+
+    def _arm_revocation(self, filename, label="crl_topology"):
+        """
+        A valid and a revoked client certificate, with the revocation live
+        under clientAuth=Require. Returns (valid_pair, revoked_pair).
+        """
+        valid_cert, valid_key, _ = self._client_cert_for(
+            f"{label}_valid", "analytics_admin")
+        revoked_cert, revoked_key, revoked_serial = self._client_cert_for(
+            f"{label}_revoked", "analytics_admin")
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, revoked_serial, filename,
+            crl_number=1)
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"})
+        self._enable_client_cert_auth(state="enable")
+        return (valid_cert, valid_key), (revoked_cert, revoked_key)
+
+    def _assert_node_enforces(self, node, valid_pair, revoked_pair, where):
+        """A node accepts the valid certificate and refuses the revoked one."""
+        resp = self._wait_for_analytics_ok(
+            "SELECT 1;", cert=valid_pair, node=node)
+        self.assertEqual(
+            resp.status_code, 200,
+            f"{where}: a valid, non-revoked certificate must still reach "
+            f"Analytics on {node.ip}, got {resp.status_code}: "
+            f"{resp.text[:300]}"
+        )
+        self.assert_cert_refused(
+            lambda: self._analytics_query("SELECT 1;", cert=revoked_pair,
+                                          node=node),
+            f"{where}: the revoked certificate must be refused on {node.ip}"
+        )
+        self.log.info(f"{where}: {node.ip} enforces the CRL correctly")
+
+    def test_crl_enforcement_is_consistent_across_analytics_nodes(self):
+        """
+        Section 7: a CRL uploaded once is enforced by EVERY Analytics node,
+        not only the node that received the upload, so the verdict does not
+        depend on which node a client happens to reach.
+
+        The upload goes to cluster.master over REST; the assertions are made
+        directly against each Analytics node's own 18095 listener. Both legs
+        run on both nodes -- a node that refused everything would pass a
+        revoked-only check while being completely broken.
+        """
+        nodes = self._require_two_analytics_nodes()
+        valid_pair, revoked_pair = self._arm_revocation(
+            "cbas_crl_section7_propagation.pem", label="crl_prop")
+        self.log.info(
+            f"CRL uploaded via {self.cluster.master.ip}; checking "
+            f"{[n.ip for n in nodes]}")
+        for node in nodes:
+            self._assert_node_enforces(
+                node, valid_pair, revoked_pair, "CRL propagation")
+
+    def test_new_analytics_node_inherits_crl_and_policy(self):
+        """
+        Section 7: an Analytics node added AFTER the CRL and policy are in
+        place inherits both automatically, with no manual upload.
+
+        The new node is rebalanced in while the revocation is already live,
+        then asserted against directly. Its own /settings/crl is read back
+        too, so a node that merely proxied the verdict to another node would
+        not pass as having inherited the policy.
+        """
+        nodes = self._require_two_analytics_nodes()
+        spare = next((s for s in (self.available_servers or [])
+                      if s.ip not in {n.ip for n in self.cluster.servers}),
+                     None)
+        if spare is None:
+            self.fail(
+                "This test needs a spare server to rebalance in as a new "
+                "Analytics node. Give the run more nodes than nodes_init "
+                "consumes, e.g. a 5-node ini with nodes_init=3."
+            )
+
+        valid_pair, revoked_pair = self._arm_revocation(
+            "cbas_crl_section7_newnode.pem", label="crl_newnode")
+        for node in nodes:
+            self._assert_node_enforces(
+                node, valid_pair, revoked_pair, "before rebalance-in")
+
+        self.log.info(f"Rebalancing in {spare.ip} with the cbas service")
+        self.task.rebalance(self.cluster, [spare], [], services=["kv,cbas"])
+        self.cluster.cbas_nodes.append(spare)
+        self._rebalanced_in.append(spare)
+
+        # No CRL upload, no policy write between the rebalance and here.
+        self._assert_node_enforces(
+            spare, valid_pair, revoked_pair, "newly added Analytics node")
+
+        status, settings = self.crl_utils.get_settings(
+            RestConnection(spare))
+        self.assertTrue(status, f"Could not read /settings/crl on the new "
+                                f"node {spare.ip}: {settings}")
+        policy = (settings or {}).get("policyPerScope", {})
+        self.assertEqual(
+            policy.get("clientAuth"), "Require",
+            f"The new Analytics node {spare.ip} reports "
+            f"clientAuth={policy.get('clientAuth')!r} rather than Require, so "
+            f"it did not inherit the cluster's revocation policy: {settings}"
+        )
+        self.log.info(
+            f"New Analytics node {spare.ip} inherited the CRL and "
+            f"clientAuth=Require with no manual upload")
+
+    def test_revocation_enforced_while_analytics_node_is_rebalanced_out(self):
+        """
+        Section 7: a revoked certificate stays refused throughout a rebalance,
+        on the node being removed and on the node that remains.
+
+        Probes continuously on a background thread while the rebalance runs,
+        rather than only before and after: the bullet is about the window
+        DURING the topology change, which a before/after check would step
+        straight over. Any single acceptance of the revoked certificate is
+        recorded and fails the test.
+
+        Each cycle probes twice, with the revoked certificate and then with
+        the valid one. The valid probe is the positive control and is what
+        makes the result mean anything: "the revoked certificate was never
+        accepted" is produced both by enforcement holding and by the survivor
+        never having been reachable at all, and those are indistinguishable
+        from the revoked probe alone. The test therefore also requires that
+        the valid certificate got through at least once (the node was really
+        serving) and that the revoked one was explicitly refused at least
+        once (revocation really was exercised). A connection error with no
+        TLS alert is counted as neither -- it is recorded as a probe error,
+        since a node restarting mid-rebalance proves nothing either way.
+        """
+        nodes = self._require_two_analytics_nodes()
+        valid_pair, revoked_pair = self._arm_revocation(
+            "cbas_crl_section7_rebalance.pem", label="crl_rebal")
+        survivor, leaving = nodes[0], nodes[1]
+        if leaving.ip == self.cluster.master.ip:
+            survivor, leaving = leaving, survivor
+        for node in nodes:
+            self._assert_node_enforces(
+                node, valid_pair, revoked_pair, "before rebalance-out")
+
+        accepted = []
+        refused = []
+        reachable = []
+        probe_error = []
+        stop = threading.Event()
+
+        def probe():
+            while not stop.is_set():
+                # The revoked certificate: must be refused throughout.
+                try:
+                    resp = self._analytics_query(
+                        "SELECT 1;", cert=revoked_pair, node=survivor,
+                        timeout=15)
+                    if resp.status_code == 200:
+                        accepted.append(resp.status_code)
+                    elif resp.status_code == 401:
+                        refused.append("401")
+                except requests.exceptions.SSLError:
+                    refused.append("tls-alert")
+                except requests.exceptions.ConnectionError as exc:
+                    # Only an error carrying a TLS alert shows the peer
+                    # refused the certificate. A bare connection failure --
+                    # the node restarting mid-rebalance, say -- proves
+                    # nothing either way, so it is recorded separately and
+                    # never counted as enforcement.
+                    if self._is_tls_rejection(exc):
+                        refused.append("tls-alert")
+                    else:
+                        probe_error.append(str(exc))
+                except Exception as exc:      # noqa: BLE001 - recorded, not raised
+                    probe_error.append(str(exc))
+
+                # The valid certificate: the positive control. Without it an
+                # empty `accepted` list cannot tell enforcement holding apart
+                # from the survivor never having been reachable, because both
+                # produce exactly no acceptances.
+                try:
+                    resp = self._analytics_query(
+                        "SELECT 1;", cert=valid_pair, node=survivor,
+                        timeout=15)
+                    if resp.status_code == 200:
+                        reachable.append(resp.status_code)
+                except Exception:             # noqa: BLE001 - control probe
+                    pass
+                time.sleep(1)
+
+        thread = threading.Thread(target=probe, name="crl_rebalance_probe")
+        thread.start()
+        try:
+            self.log.info(f"Rebalancing out the Analytics node {leaving.ip}")
+            self.task.rebalance(self.cluster, [], [leaving])
+            self._rebalanced_out.append(leaving)
+        finally:
+            stop.set()
+            thread.join(timeout=60)
+
+        self.assertFalse(
+            accepted,
+            f"The revoked certificate was ACCEPTED {len(accepted)} time(s) on "
+            f"{survivor.ip} while {leaving.ip} was being rebalanced out. "
+            f"Enforcement must hold throughout a topology change."
+        )
+        # An empty `accepted` list on its own proves nothing: it looks the
+        # same whether enforcement held or the survivor was never reachable
+        # and every probe failed. These two make the instrument prove itself
+        # before the result above is believed.
+        self.assertTrue(
+            reachable,
+            f"The valid certificate never once succeeded on {survivor.ip} "
+            f"during the rebalance-out of {leaving.ip}, so the survivor was "
+            f"not serving and the 'revoked certificate was never accepted' "
+            f"result above is vacuous rather than evidence of enforcement. "
+            f"{len(probe_error)} non-TLS probe error(s) were seen"
+            + (f", first: {probe_error[0][:200]}" if probe_error else "")
+        )
+        self.assertTrue(
+            refused,
+            f"The revoked certificate was never explicitly refused on "
+            f"{survivor.ip} during the rebalance-out of {leaving.ip} -- no "
+            f"TLS alert and no 401 in {len(accepted) + len(refused)} "
+            f"conclusive probe(s). The valid certificate did get through "
+            f"{len(reachable)} time(s), so the node was serving; revocation "
+            f"simply never produced an observable rejection."
+        )
+        self.log.info(
+            f"Rebalance-out probe on {survivor.ip}: revoked refused "
+            f"{len(refused)}x, valid served {len(reachable)}x, "
+            f"accepted {len(accepted)}x, non-TLS errors {len(probe_error)}")
+        self.cluster.cbas_nodes = [
+            n for n in self.cluster.cbas_nodes if n.ip != leaving.ip]
+        self._assert_node_enforces(
+            survivor, valid_pair, revoked_pair, "after rebalance-out")
+        if probe_error:
+            self.log.info(
+                f"Probe saw {len(probe_error)} non-TLS error(s) during the "
+                f"rebalance, which is expected as the topology moves: "
+                f"{probe_error[0][:200]}")
+
+    def test_promoted_analytics_replica_still_enforces_revocation(self):
+        """
+        Section 5, replica bullets: after an Analytics node is hard failed
+        over, the node that picks up its shadow data enforces revocation with
+        the same policy and CRL set, and needs no re-configuration.
+
+        Follows the replica sequence cbas_HA.py establishes, because without
+        it there is nothing to promote and the test would only be re-checking
+        that a survivor still works:
+          - set numReplicas=1 BEFORE ingesting
+          - disconnect the Local link so shadow data is persisted
+          - wait for replication, and verify the replica count really is 1
+        Only then is the failover a promotion rather than a data loss.
+
+        Note that Analytics answers `code 23000 "Analytics Service is
+        temporarily unavailable"` for a while after an Analytics node is
+        failed over. That is expected recovery, not an enforcement result, so
+        service recovery is waited for as an explicit PRECONDITION with its
+        own failure message -- an earlier version folded it into the
+        enforcement assertion and reported a 503 as though a valid
+        certificate had been rejected.
+        """
+        nodes = self._require_two_analytics_nodes()
+
+        status = self.cbas_util.set_replica_number_from_settings(
+            self.cluster.master, replica_num=1)
+        self.assertTrue(
+            status,
+            "Could not set numReplicas=1 for Analytics. Without a replica "
+            "there is no shadow data to promote and this test cannot mean "
+            "what it claims."
+        )
+        self.log.info("Analytics numReplicas set to 1")
+
+        dataset, ingested = self._seed_local_dataset(doc_count=100)
+        valid_pair, revoked_pair = self._arm_revocation(
+            "cbas_crl_section5_replica.pem", label="crl_replica")
+
+        # Shadow data is only replicated once the link is disconnected.
+        self._disconnect_link("Local")
+        self.assertTrue(
+            self.cbas_util.wait_for_replication_to_finish(self.cluster),
+            "Analytics replication did not finish, so there is no replica to "
+            "promote"
+        )
+        self.assertTrue(
+            self.cbas_util.verify_actual_number_of_replicas(self.cluster, 1),
+            "Analytics does not actually have 1 replica, so failing a node "
+            "over would lose the shadow data rather than promote it"
+        )
+        self.log.info("One Analytics replica present and replicated")
+
+        survivor, failing = nodes[0], nodes[1]
+        if failing.ip == self.cluster.master.ip:
+            survivor, failing = failing, survivor
+        for node in nodes:
+            self._assert_node_enforces(
+                node, valid_pair, revoked_pair, "before failover")
+
+        self.log.info(f"Hard failing over the Analytics node {failing.ip}")
+        self.task.failover(self.cluster, failover_nodes=[failing],
+                           graceful=False)
+        self._failed_over.append(failing)
+        self.cluster.cbas_nodes = [
+            n for n in self.cluster.cbas_nodes if n.ip != failing.ip]
+
+        # Precondition, not an assertion about revocation.
+        self.assertTrue(
+            self.cbas_util.is_analytics_running(self.cluster, timeout=600),
+            f"Analytics did not return to ACTIVE within 600s after "
+            f"{failing.ip} was failed over, so no statement can be made "
+            f"about what the promoted node enforces. This is a recovery "
+            f"problem, not a revocation one."
+        )
+        self.log.info("Analytics is ACTIVE again after the failover")
+
+        self._assert_node_enforces(
+            survivor, valid_pair, revoked_pair, "after failover")
+
+        status, settings = self.crl_utils.get_settings(
+            RestConnection(survivor))
+        self.assertTrue(status, f"Could not read /settings/crl on "
+                                f"{survivor.ip}: {settings}")
+        policy = (settings or {}).get("policyPerScope", {})
+        self.assertEqual(
+            policy.get("clientAuth"), "Require",
+            f"After failover the surviving Analytics node {survivor.ip} "
+            f"reports clientAuth={policy.get('clientAuth')!r}; the promoted "
+            f"node must enforce the same policy with no re-configuration"
+        )
+        self.log.info(
+            f"{survivor.ip} enforces the same policy and CRL set after "
+            f"{failing.ip} was failed over, with a promoted replica")
+
+    # ── Section 10: the two remaining link-bypass bullets ──────────────────
+    #
+    # The other two section-10 bullets (tampered/unsigned CRLs, and no
+    # password fallback under optional mTLS) are covered above and need no
+    # remote cluster. These two are about using an Analytics Link as the
+    # bypass route, so they reuse the section-3 link-target fixture.
+
+    def test_revoked_link_cert_cannot_be_reused_for_a_new_or_disabled_link(self):
+        """
+        Section 10: a revoked client certificate cannot be used to stand up a
+        NEW link, nor to bring a disconnected one back.
+
+        Both halves matter and they fail differently in principle: the first
+        is refused at create time, the second at connect time on an object
+        that already exists and was working moments earlier. A product that
+        validated only on create would pass the first and fail the second,
+        which is the bypass this bullet is really about.
+        """
+        target = self._setup_remote_link_target()
+        client = self._mint_link_client_cert(target, "cbas_crl_reuse")
+        established = "crl_link_reuse"
+        self._link_baseline(target, client, established)
+
+        # Disconnect first, then revoke, so the link is a live object whose
+        # certificate has gone bad rather than one that never worked.
+        self._disconnect_link(established)
+        self._publish_remote_crl(target, [client["serial"]])
+
+        # Half 1: the same certificate cannot establish a NEW link.
+        fresh = "crl_link_reuse_new"
+        ok, code, body = self._link_rest(
+            "POST", self._couchbase_link_props(fresh, target, client=client))
+        self.assertFalse(
+            ok,
+            f"A revoked client certificate (serial={client['serial']}) was "
+            f"accepted for a NEW link {fresh} ({code}). Section 10 requires "
+            f"it to be unusable for establishing another link."
+        )
+        self._assert_link_error_kind(
+            body, "revoked",
+            "Refusing a new link built on a revoked certificate must say why",
+            redact=[fresh, client["username"]],
+        )
+        self.assertFalse(
+            self.cbas_util.validate_link_in_metadata(
+                self.cluster, fresh, "Default", "couchbase"),
+            f"Link {fresh} was refused but is present in Analytics metadata"
+        )
+
+        # Half 2: the existing, disconnected link cannot be reactivated.
+        connected, error = self._connect_link(established)
+        self.assertFalse(
+            connected,
+            f"The disconnected link {established} reconnected on a revoked "
+            f"certificate. A link that was working before the revocation "
+            f"must not be reactivatable after it."
+        )
+        self._assert_link_error_kind(
+            error, "revoked",
+            "Refusing to reactivate a disabled link must name the revocation",
+            redact=[established, client["username"]],
+        )
+        self.log.info(
+            "A revoked certificate could neither create a new link nor "
+            "reactivate the disconnected one")
+
+    def test_non_admin_cannot_change_link_certificate_configuration(self):
+        """
+        Section 10: a non-admin user cannot rewrite an Analytics Link's
+        certificate configuration, which would otherwise be a way to swap a
+        revoked certificate for a good one and carry on.
+
+        Uses analytics_reader, a role that can read Analytics data but has no
+        business altering link credentials. Two checks, because "was it
+        refused" and "did it change anything" are different questions: the
+        PUT must be rejected, AND the link must still present its original
+        certificate afterwards, proven by connecting with it.
+        """
+        target = self._setup_remote_link_target()
+        client = self._mint_link_client_cert(target, "cbas_crl_rbac_link")
+        link_name = "crl_link_rbac"
+        self._link_baseline(target, client, link_name)
+
+        reader, reader_password = self._create_rbac_test_user(
+            "cbas_crl_link_reader", "analytics_reader")
+
+        # A certificate the non-admin would be swapping in.
+        replacement = self._mint_link_client_cert(
+            target, "cbas_crl_rbac_replacement")
+        props = self._couchbase_link_props(
+            link_name, target, client=replacement)
+        body = dict(props)
+        dataverse = body.pop("dataverse", "Default")
+        name = body.pop("name")
+        resp = requests.put(
+            self._link_url(dataverse, name),
+            data=urlencode({k: v for k, v in body.items() if v}),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            auth=(reader, reader_password), verify=False, timeout=120,
+        )
+        self.assertIn(
+            resp.status_code, (401, 403),
+            f"analytics_reader was able to alter link {link_name}'s "
+            f"certificate configuration ({resp.status_code}): "
+            f"{resp.text[:400]}. Only an administrator may change link "
+            f"credentials, or CRL enforcement can be worked around by "
+            f"swapping the certificate."
+        )
+        self.log.info(
+            f"analytics_reader refused with {resp.status_code} when altering "
+            f"link certificate configuration")
+
+        # And nothing changed: the link still works on its original cert.
+        self._disconnect_link(link_name)
+        connected, error = self._connect_link(link_name)
+        self.assertTrue(
+            connected,
+            f"After a REFUSED non-admin edit, link {link_name} no longer "
+            f"connects on its original certificate: {error[:400]}. A rejected "
+            f"edit must leave the link untouched."
+        )
+        self.log.info(
+            f"Link {link_name} still works on its original certificate")

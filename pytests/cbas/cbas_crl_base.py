@@ -1,10 +1,13 @@
+import base64
 import json
 import os
 import re
+import ssl
 import tempfile
 import time
 import traceback
 import uuid
+from urllib.parse import quote_plus, urlencode
 
 import requests
 from cb_constants import CbServer
@@ -12,7 +15,8 @@ from cb_server_rest_util.security.security_api import SecurityRestAPI
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from couchbase_utils.security_utils.crl_utils import CRLUtils
 from couchbase_utils.security_utils.x509main import x509main
-from cryptography.x509.oid import NameOID
+from cryptography import x509
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -48,6 +52,23 @@ class CBASCRLBase(CBASBaseTest):
         self._rbac_users = []
         self._trusted_ca_ids = []
         self._temp_pem_files = []
+        # Datasets created on a link, dropped before the links they depend on.
+        self._created_datasets = []
+        # Buckets this suite created, as (server, name), dropped in tearDown.
+        self._buckets_created = []
+        # Topology changes a section-7 test made. Recorded rather than
+        # reversed: CBASBaseTest re-initialises the cluster in the next
+        # test's setUp, so undoing them here would duplicate that work and
+        # risk fighting it. Logged in tearDown so a later failure that turns
+        # out to be topology-related is traceable to the test that moved it.
+        self._rebalanced_in = []
+        self._rebalanced_out = []
+        self._failed_over = []
+        # Remote clusters a section-3 test has configured as a link target.
+        # Each entry owns its own cleanup lists -- see
+        # _setup_remote_link_target -- so nothing here interferes with the
+        # single-cluster state above.
+        self._remote_targets = []
 
         self._require_crl_supported()
         self._require_analytics_node()
@@ -81,7 +102,17 @@ class CBASCRLBase(CBASBaseTest):
             self.log.warning(f"clientCertAuth disable error: {exc}")
         for label, fn in (
             ("audit restore", self._restore_audit),
+            # Datasets first: a dataset on a remote link depends on that
+            # link, so dropping the link out from under it fails.
+            ("remote dataset cleanup", self._cleanup_datasets),
+            # Before the remote-target teardown below: a link is C1 metadata
+            # pointing at C2, and dropping it after C2's certificates have
+            # already been rolled back would try to reach a target that no
+            # longer trusts the link's certificate.
             ("external link cleanup", self._cleanup_links),
+            ("remote link target cleanup", self._cleanup_remote_targets),
+            ("bucket cleanup", self._cleanup_buckets),
+            ("topology change report", self._report_topology_changes),
             ("crlsValidate counter removal", self._crls_validate_counter_stop),
             ("CRL file cleanup", self._cleanup_created_files),
             ("CRL settings reset", self._reset_crl_settings),
@@ -174,6 +205,22 @@ class CBASCRLBase(CBASBaseTest):
             except Exception as exc:
                 self.log.warning(f"Link {dataverse}.{name} drop error: {exc}")
         self._created_links = []
+
+    def _cleanup_datasets(self):
+        """
+        Drop every dataset a test created on a remote link.
+
+        Runs before _cleanup_links: a dataset on a remote link depends on
+        that link, so dropping the link first leaves the dataset orphaned and
+        the drop fails.
+        """
+        for full_name in getattr(self, "_created_datasets", []):
+            try:
+                self.cbas_util.drop_dataset(
+                    self.cluster, full_name, if_exists=True)
+            except Exception as exc:
+                self.log.warning(f"Dataset {full_name} drop error: {exc}")
+        self._created_datasets = []
 
     def _link_exists(self, name, dataverse="Default"):
         """True if the named link is present in Analytics metadata."""
@@ -287,8 +334,27 @@ class CBASCRLBase(CBASBaseTest):
         safe_cn = re.sub(r"[^A-Za-z0-9_.-]", "_", cn)
         return f"{safe_cn}_{ca_cert.serial_number}.pem"
 
-    def _trust_ca_on_cluster(self, ca_cert, server=None):
+    def _trust_ca_on_cluster(self, ca_cert, server=None, rest=None,
+                             record_into=None):
+        """
+        Copy `ca_cert` into a node's CA inbox and load it into the trust store.
+
+        Args:
+            server: node whose inbox receives the PEM. Defaults to the local
+                cluster's master.
+            rest: RestConnection used for loadTrustedCAs and for reading back
+                the assigned id. Must belong to the SAME cluster as `server`
+                -- a section-3 test trusts the test CA on the remote cluster
+                too, and loading it through the local cluster's REST endpoint
+                would silently do nothing there.
+            record_into: list to append the assigned trusted-CA id to, so the
+                right teardown path removes it. Defaults to the local
+                cluster's list.
+        """
         server = server or self.cluster.master
+        rest = rest or self.rest
+        if record_into is None:
+            record_into = self._trusted_ca_ids
         pem_bytes = self.crl_utils.cert_to_pem(ca_cert)
         remote_filename = self._ca_remote_filename(ca_cert)
 
@@ -310,7 +376,7 @@ class CBASCRLBase(CBASBaseTest):
         finally:
             shell.disconnect()
 
-        status, content = self.rest.load_trusted_CAs()
+        status, content = rest.load_trusted_CAs()
         if not status:
             self.fail(f"Failed to load trusted CAs on {server.ip}: {content}")
 
@@ -323,7 +389,7 @@ class CBASCRLBase(CBASBaseTest):
                 if cn and cn in entry.get("subject", "")
             ]
             if matching:
-                self._trusted_ca_ids.append(max(matching))
+                record_into.append(max(matching))
         except (ValueError, TypeError) as exc:
             self.log.warning(
                 f"Could not identify trusted CA id for {cn!r}; it will not be "
@@ -332,19 +398,20 @@ class CBASCRLBase(CBASBaseTest):
 
     # ── mTLS / CRL configuration ─────────────────────────────────────────────
 
-    def _enable_client_cert_auth(self, state="enable", prefixes=None):
+    def _enable_client_cert_auth(self, state="enable", prefixes=None,
+                                 master=None):
         if prefixes is None:
             prefixes = [{"path": "subject.cn", "prefix": "", "delimiter": ""}]
         status, content, _ = SecurityRestAPI(
-            self.cluster.master
+            master or self.cluster.master
         ).set_client_cert_auth_config(state=state, prefixes=prefixes)
         self.assertTrue(status, f"Failed to set clientCertAuth: {content}")
 
-    def _disable_client_cert_auth(self):
+    def _disable_client_cert_auth(self, master=None):
         # Plain HTTP on purpose -- works even while clientCertAuth is
         # 'mandatory', which walls out every HTTPS call including the one that
         # would relax it.
-        server = self.cluster.master
+        server = master or self.cluster.master
         requests.post(
             f"http://{server.ip}:8091/settings/clientCertAuth",
             auth=(server.rest_username, server.rest_password),
@@ -353,9 +420,9 @@ class CBASCRLBase(CBASBaseTest):
             timeout=30,
         )
 
-    def _reset_crl_settings(self):
+    def _reset_crl_settings(self, rest=None):
         self.crl_utils.set_settings(
-            self.rest,
+            rest or self.rest,
             policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
             checkIntermediateCerts=False,
             urls=[],
@@ -407,11 +474,23 @@ class CBASCRLBase(CBASBaseTest):
 
     # ── RBAC ─────────────────────────────────────────────────────────────────
 
-    def _create_rbac_test_user(self, username, role, password="Couchbase@1234"):
-        RbacUtils(self.cluster.master)._create_user_and_grant_role(
+    def _create_rbac_test_user(self, username, role, password="Couchbase@1234",
+                               master=None, record_into=None):
+        """
+        Create an RBAC user and grant it a role.
+
+        `master` / `record_into` let a section-3 test create the user on a
+        LINK TARGET instead: the certificate a link presents is mapped to a
+        user by the remote cluster, so the user has to exist there, and its
+        cleanup belongs to that target rather than to the local cluster's
+        list.
+        """
+        RbacUtils((master or self.cluster.master))._create_user_and_grant_role(
             username, role, password=password
         )
-        self._rbac_users.append(username)
+        if record_into is None:
+            record_into = self._rbac_users
+        record_into.append(username)
         return username, password
 
     def _cleanup_rbac_users(self):
@@ -422,28 +501,95 @@ class CBASCRLBase(CBASBaseTest):
                 self.log.warning(f"Failed to delete RBAC user {username}: {exc}")
         self._rbac_users = []
 
-    def _cleanup_trusted_cas(self):
-        """
-        Drop this run's test CAs from the cluster trust store.
+    # Only a CA whose subject carries this marker is ever deleted, on top of
+    # matching a recorded id. Deleting the wrong entry here is not a tidy-up
+    # failure but a cluster-breaking one: an earlier version of the backup CRL
+    # suite filtered on `id == 0` and removed the cluster's OWN generated CA,
+    # which stranded it with no trust anchor and surfaced later as
+    # "x509: certificate signed by unknown authority" on unrelated rebalances.
+    TEST_CA_SUBJECT_MARKER = "AnalyticsCRLTestCA"
 
-        Filters ca_certificates in chronicle_kv rather than calling a
-        delete-CA API: this is the form already proven against a live cluster
-        by pytests/backup_restore/crl_base.py, and a stale test CA left behind
-        can trip the NEXT run's setUp.
+    def _untrust_ca_ids(self, server, ca_ids):
         """
+        Delete the given trusted-CA ids from one cluster, by REST.
+
+        Uses DELETE /pools/default/trustedCAs/<id>, which answers 204.
+
+        This replaced a chronicle_kv edit driven through rest.diag_eval. That
+        never worked from a test runner at all: /diag/eval only accepts
+        requests originating on the node, so every call returned "API is
+        accessible from localhost only" and the warning was swallowed by
+        tearDown's try/except. The result was silent -- test CAs accumulated
+        on every cluster (nine on one node across a single session) while the
+        teardown reported nothing. Correctness was not affected, because each
+        test generates a CA with a unique CN precisely so a leftover cannot
+        collide, but the trust store grew without bound.
+
+        Deletes only ids the listing confirms are uploaded CAs carrying this
+        suite's subject marker, so a mis-recorded id cannot take out a real
+        CA. An id the listing does not confirm is left alone rather than
+        deleted: when the listing itself fails there is nothing to check
+        against, and deleting unchecked is exactly the cluster-breaking
+        outcome the marker exists to prevent. Leaving a test CA behind is a
+        tidy-up miss and costs nothing -- each test's CA has a unique CN, so
+        a leftover cannot collide with a later run.
+        """
+        auth = (server.rest_username, server.rest_password)
+        base = f"http://{server.ip}:8091"
+        try:
+            listing = requests.get(f"{base}/pools/default/trustedCAs",
+                                   auth=auth, timeout=30)
+            if listing.status_code == 200:
+                entries = {e.get("id"): e for e in listing.json()}
+            else:
+                self.log.warning(
+                    f"Listing trusted CAs on {server.ip} returned "
+                    f"{listing.status_code}; leaving every recorded CA in "
+                    f"place rather than deleting ids this cannot verify.")
+                entries = {}
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            self.log.warning(
+                f"Could not list trusted CAs on {server.ip}: {exc}. Leaving "
+                f"every recorded CA in place rather than deleting ids this "
+                f"cannot verify.")
+            entries = {}
+
+        for ca_id in ca_ids:
+            entry = entries.get(ca_id)
+            if entry is None:
+                # Either the listing failed, or the id is already gone. Both
+                # mean the same thing here: nothing confirms this id is ours,
+                # so do not issue the DELETE.
+                self.log.warning(
+                    f"Not deleting trusted CA id={ca_id} on {server.ip}: the "
+                    f"listing does not confirm it belongs to this suite.")
+                continue
+            subject = entry.get("subject", "")
+            if (entry.get("type") != "uploaded"
+                    or self.TEST_CA_SUBJECT_MARKER not in subject):
+                self.log.warning(
+                    f"Refusing to delete trusted CA id={ca_id} on "
+                    f"{server.ip}: type={entry.get('type')!r} "
+                    f"subject={subject!r} is not one of this suite's."
+                )
+                continue
+            try:
+                resp = requests.delete(
+                    f"{base}/pools/default/trustedCAs/{ca_id}",
+                    auth=auth, timeout=60)
+                if resp.status_code not in (200, 202, 204, 404):
+                    self.log.warning(
+                        f"Trusted CA id={ca_id} delete on {server.ip} "
+                        f"returned {resp.status_code}: {resp.text[:200]}")
+            except requests.exceptions.RequestException as exc:
+                self.log.warning(
+                    f"Trusted CA id={ca_id} delete on {server.ip}: {exc}")
+
+    def _cleanup_trusted_cas(self):
+        """Drop this run's test CAs from the local cluster's trust store."""
         if not self._trusted_ca_ids:
             return
-        ids_literal = "[" + ",".join(str(i) for i in self._trusted_ca_ids) + "]"
-        code = (
-            "{ok, {Certs, _Rev}} = chronicle_kv:get(kv, ca_certificates), "
-            f"Ids = {ids_literal}, "
-            "NewCerts = lists:filter(fun(PL) -> "
-            "not lists:member(proplists:get_value(id, PL), Ids) end, Certs), "
-            "chronicle_kv:set(kv, ca_certificates, NewCerts)."
-        )
-        status, content = self.rest.diag_eval(code)
-        if not status:
-            self.log.warning(f"Trusted CA cleanup diag/eval failed: {content}")
+        self._untrust_ca_ids(self.cluster.master, self._trusted_ca_ids)
         self._trusted_ca_ids = []
 
     # ── Analytics requests ───────────────────────────────────────────────────
@@ -482,9 +628,10 @@ class CBASCRLBase(CBASBaseTest):
             headers={"Connection": "close"},
         )
 
-    def _read_analytics_log(self, grep=None, tail_lines=3000):
+    def _read_analytics_log(self, grep=None, tail_lines=3000, node=None,
+                            all_nodes=False):
         """
-        Lines from the Analytics logs on self.cbas_node.
+        Lines from the Analytics logs, by default on self.cbas_node.
 
         Reads analytics_info/error/debug together: the CRL verdict for a
         rejected handshake has been observed in analytics_info.log, while the
@@ -496,7 +643,29 @@ class CBASCRLBase(CBASBaseTest):
                 the node so only matching lines cross the wire.
             tail_lines: cap per file -- a validator problem can produce very
                 large logs, and an unbounded read over SSH looks like a hang.
+            node: read this node instead of self.cbas_node.
+            all_nodes: read EVERY Analytics node, plus the cluster's CC node.
+                Needed by any assertion that something is ABSENT from the
+                logs: self.cbas_node is just cbas_nodes[0], which need not be
+                the node that handled the operation, and reading the wrong
+                node makes a leak look like clean output. The same mistake
+                against the audit log once nearly produced a filed bug.
         """
+        if all_nodes:
+            targets, seen = [], set()
+            candidates = list(self.cluster.cbas_nodes or [])
+            cc_node = getattr(self.cluster, "cbas_cc_node", None)
+            if cc_node is not None:
+                candidates.append(cc_node)
+            for candidate in candidates:
+                if candidate.ip not in seen:
+                    seen.add(candidate.ip)
+                    targets.append(candidate)
+            lines = []
+            for target in targets:
+                lines.extend(self._read_analytics_log(
+                    grep=grep, tail_lines=tail_lines, node=target))
+            return lines
         pattern = grep.replace("'", "") if grep else ""
         cmd = (
             "for f in /opt/couchbase/var/lib/couchbase/logs/analytics_info.log "
@@ -507,7 +676,7 @@ class CBASCRLBase(CBASBaseTest):
         if pattern:
             cmd += f" | grep -a '{pattern}'"
         cmd += " || true"
-        shell = RemoteMachineShellConnection(self.cbas_node)
+        shell = RemoteMachineShellConnection(node or self.cbas_node)
         try:
             output, _ = shell.execute_command(cmd)
         finally:
@@ -604,7 +773,8 @@ class CBASCRLBase(CBASBaseTest):
         return resp
 
     def _wait_for_analytics_ok(self, statement="SELECT 1;", cert=None,
-                               auth=None, timeout_s=60, interval=3):
+                               auth=None, timeout_s=60, interval=3,
+                               node=None):
         """
         Poll until Analytics answers 200, absorbing the propagation delay
         between a CA-trust / CRL / clientCertAuth change landing on
@@ -616,7 +786,8 @@ class CBASCRLBase(CBASBaseTest):
         last_resp = None
         while time.time() < deadline:
             try:
-                resp = self._analytics_query(statement, cert=cert, auth=auth)
+                resp = self._analytics_query(statement, cert=cert, auth=auth,
+                                             node=node)
                 if resp.status_code == 200:
                     return resp
                 last_resp = resp
@@ -814,4 +985,842 @@ class CBASCRLBase(CBASBaseTest):
             finally:
                 shell.disconnect()
         return lines
+
+    # ── Remote Couchbase link targets (section 3) ────────────────────────────
+    #
+    # Section 3 covers a SECOND, independent certificate trust relationship:
+    # an Analytics Link authenticating OUTBOUND to a remote Couchbase cluster
+    # over mTLS, versus the inbound client access every other section tests.
+    # The revocation policy that governs it is the REMOTE cluster's, because
+    # the remote is the TLS server that validates the presented certificate.
+    #
+    # The link property shape used here (encryption=full plus certificate,
+    # clientCertificate and clientKey, with username/password deliberately
+    # absent) mirrors the `encryption=full2` case already proven by
+    # cbas_external_links_CB_cluster.py's CBASExternalLinks suite. That suite
+    # builds its certificates with x509main's on-disk CA hierarchy; this one
+    # keeps generating them in memory through CRLUtils instead, because a CRL
+    # test needs the issuing CA's private key and the leaf's serial number in
+    # hand to sign and publish a revocation, and reading those back out of
+    # x509main's directory layout would buy nothing.
+
+    # Omitting username/password from a full-encryption link is what makes the
+    # revocation result unambiguous: there is no alternate credential left for
+    # the remote to fall back to, so a link that stops working after its
+    # serial is published can only have stopped for the certificate.
+    LINK_ENCRYPTION_FULL = "full"
+
+    # The bucket a section-3 dataset ingests from on the link target. Created
+    # by cluster_kv_infra=default on that cluster (see the conf), which is
+    # bucket_util.create_default_bucket's fixed name.
+    REMOTE_BUCKET = "default"
+
+    # How a link failure names each of the three causes section 3 requires to
+    # be distinguishable. Matched case-insensitively against the whole error
+    # body. Asserted asymmetrically -- see _assert_link_error_kind -- because
+    # a revocation failure surfacing as a timeout is the actual risk, while
+    # some overlap in generic transport words is not worth failing over.
+    LINK_REVOKED_MARKERS = (
+        "revoked", "revocation", "crl", "certificate_revoked",
+        "bad certificate", "certificate unknown", "unknown ca",
+    )
+    LINK_UNREACHABLE_MARKERS = (
+        "connection refused", "no route to host", "timed out", "timeout",
+        "unreachable", "unknownhost", "unknown host", "failed to connect",
+        "connect timed out",
+    )
+    LINK_CREDENTIAL_MARKERS = (
+        "unauthorized", "invalid credentials", "authentication failed",
+        "401", "forbidden", "403", "invalid username",
+    )
+
+    # Substrings that must never appear in a log line, audit record or REST
+    # response describing a link failure. PRIVATE KEY armour only -- see
+    # CERT_MATERIAL_MARKERS below for why a certificate is not on this list.
+    KEY_MATERIAL_MARKERS = (
+        "-----begin private key-----",
+        "-----begin rsa private key-----",
+        "-----begin ec private key-----",
+        "-----begin encrypted private key-----",
+    )
+
+    # A certificate is deliberately NOT treated as a leak.
+    #
+    # Section 3's last bullet says "link certificate/key material is not
+    # exposed in logs, audit events, or diagnostic output", but a certificate
+    # is public by construction -- it is sent in the clear during every TLS
+    # handshake, so anyone who can reach the endpoint already has it. The
+    # security property that matters is the PRIVATE key, and on 8.5.0-1073
+    # Analytics redacts exactly that:
+    #     clientKey='<redacted 1704 chars>', password='<redacted>'
+    # while logging certificates=[-----BEGIN CERTIFICATE-----...] in full.
+    # Zero private-key PEM markers appear anywhere in analytics_*.log.
+    #
+    # An earlier version of this suite listed certificate armour alongside
+    # the key markers and failed the test on that line. That was the test
+    # being wrong, not the product: it also meant a certificate appearing
+    # first would mask the private-key question, which is the one worth
+    # asking. Certificate presence is now recorded as an observation.
+    CERT_MATERIAL_MARKERS = (
+        "-----begin certificate-----",
+    )
+
+    def _remote_cluster(self, index=1):
+        """
+        One of the extra clusters CBASBaseTest built from `num_of_clusters`.
+
+        Ordered by cluster name, so index 0 is the local Analytics cluster
+        (self.cluster) and index 1 upwards are the link targets. Fails with
+        the conf that would fix it rather than raising IndexError, because
+        every section-3 test is unrunnable without this and a bare KeyError
+        several frames down is not a useful diagnosis.
+        """
+        names = sorted(self.cb_clusters)
+        if len(names) <= index:
+            self.fail(
+                f"This test needs at least {index + 1} clusters, got "
+                f"{names}. Section-3 conf lines must carry "
+                f"num_of_clusters={index + 1} with pipe-separated nodes_init "
+                f"and services_init, e.g. num_of_clusters=2,nodes_init=2|1,"
+                f"services_init=kv:n1ql:index-kv:cbas|kv -- CBASBaseTest "
+                f"builds its clusters from those params and ignores the "
+                f"ini's own [clusterN] sections."
+            )
+        return self.cb_clusters[names[index]]
+
+    def _served_certificate(self, server, port=None):
+        """
+        The certificate a node actually serves on a TLS port.
+
+        Reads the wire rather than the REST API's view: after a
+        reloadCertificate the two can disagree if the reload quietly did
+        nothing, and this suite's teardown depends on knowing which is true.
+        """
+        pem = ssl.get_server_certificate((server.ip, port or 18091))
+        return x509.load_pem_x509_certificate(pem.encode())
+
+    def _install_node_certificate(self, server, ca_cert, ca_key,
+                                  record_into=None):
+        """
+        Reissue `server`'s own node certificate from the given CA and reload
+        it. Returns the new certificate's serial.
+
+        Needed on the link TARGET, not for its own sake: a link with
+        encryption=full verifies the remote's node certificate against the
+        `certificate` bundle it was configured with, so the remote has to be
+        serving something that bundle actually chains to. Without this the
+        link fails on chain verification and the failure is indistinguishable
+        from the revocation the test is trying to observe.
+
+        Two details are load bearing. SERVER_AUTH must be present alongside
+        CLIENT_AUTH -- a node certificate is presented on inbound TLS and
+        also used outbound between nodes -- and the SANs must cover every
+        address used to reach the node, or peers reject it on name mismatch
+        long before revocation is ever consulted.
+
+        The CA must already be trusted on that cluster (_trust_ca_on_cluster
+        against the same cluster's REST endpoint) or the reload is refused.
+        """
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            ca_cert, ca_key, server.ip,
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH,
+                                ExtendedKeyUsageOID.CLIENT_AUTH],
+            dns_names=[server.ip, "127.0.0.1", "localhost"],
+        )
+        chain_pem = self.crl_utils.cert_to_pem(cert)
+        key_pem = self.crl_utils.key_to_pem(key)
+
+        inbox = "/opt/couchbase/var/lib/couchbase/inbox"
+        shell = RemoteMachineShellConnection(server)
+        try:
+            shell.execute_command(f"mkdir -p {inbox}")
+            # base64 through a single echo rather than a heredoc: PEM is
+            # multi-line and full of characters the remote shell mangles.
+            for payload, name in ((chain_pem, "chain.pem"),
+                                  (key_pem, "pkey.key")):
+                encoded = base64.b64encode(payload).decode()
+                shell.execute_command(
+                    f"echo {encoded} | base64 -d > {inbox}/{name}")
+            shell.execute_command(f"chown -R couchbase:couchbase {inbox}")
+            shell.execute_command(f"chmod 600 {inbox}/pkey.key")
+        finally:
+            shell.disconnect()
+
+        rest = RestConnection(server)
+        status, content, _ = rest._http_request(
+            rest.baseUrl + "node/controller/reloadCertificate", "POST")
+        if not status:
+            self.fail(
+                f"reloadCertificate failed on {server.ip}: {content}. The "
+                f"test CA has to be trusted on that node's own cluster before "
+                f"a certificate issued by it can be loaded."
+            )
+        if record_into is not None:
+            record_into.append(server.ip)
+        self.log.info(
+            f"Node {server.ip} now serves a test-CA certificate, "
+            f"serial={serial}"
+        )
+        return serial
+
+    def _restore_self_signed_node_certs(self, target):
+        """
+        Put a link target's nodes back on built-in self-signed certificates.
+
+        Cluster-wide in one call, and it WAITS for the swap to be observable
+        on the wire before returning. Dropping the trust anchor while a node
+        still presents a test-CA certificate leaves that cluster unable to
+        verify its own peers, which surfaces later as "x509: certificate
+        signed by unknown authority" and fails the NEXT test's rebalance
+        rather than this one's teardown.
+        """
+        if not target["cert_nodes"]:
+            return
+        cluster = target["cluster"]
+        self.log.info(
+            f"Restoring self-signed node certs on {target['name']} "
+            f"(test certs were installed on {target['cert_nodes']})"
+        )
+        RestConnection(cluster.master).regenerate_cluster_certificate()
+
+        ca_cn = target["ca_cert"].subject.rfc4514_string().split(
+            "CN=")[-1].split(",")[0]
+        deadline = time.time() + 120
+        for server in cluster.servers:
+            if server.ip not in target["cert_nodes"]:
+                continue
+            while time.time() < deadline:
+                try:
+                    issuer = self._served_certificate(server).issuer
+                    if ca_cn not in issuer.rfc4514_string():
+                        break
+                except Exception as exc:
+                    self.log.warning(
+                        f"Could not read {server.ip}'s served cert while "
+                        f"waiting for the self-signed swap: {exc}")
+                time.sleep(5)
+            else:
+                self.log.error(
+                    f"Node {server.ip} still presents a {ca_cn} certificate "
+                    f"after 120s. Leaving its CA trusted rather than "
+                    f"stranding the cluster without a trust anchor."
+                )
+                target["ca_ids"] = []
+                return
+
+        # Regenerating swaps the ACTIVE certificate but leaves whatever was
+        # staged in the inbox on disk, where the next test would start from
+        # this test's chain and key.
+        inbox = "/opt/couchbase/var/lib/couchbase/inbox"
+        for server in cluster.servers:
+            if server.ip not in target["cert_nodes"]:
+                continue
+            shell = RemoteMachineShellConnection(server)
+            try:
+                shell.execute_command(
+                    f"rm -f {inbox}/chain.pem {inbox}/pkey.key")
+            finally:
+                shell.disconnect()
+        target["cert_nodes"] = []
+
+    def _setup_remote_link_target(self, remote_cluster=None, label=None,
+                                  policy="Require", ca_cert=None, ca_key=None):
+        """
+        Make a remote cluster usable as an mTLS Analytics Link target whose
+        certificates this suite can revoke.
+
+        Does five things on the REMOTE cluster, in the order they depend on
+        each other:
+          1. trusts a CA (this test's own by default),
+          2. reissues the remote's node certificate from that CA, so a
+             full-encryption link can verify what the remote serves,
+          3. enables clientCertAuth so a presented certificate maps to a user,
+          4. publishes a benign CRL from that CA. Under Require with no
+             applicable CRL, cbauth answers `status undetermined` and fails
+             closed -- so without this every link would fail for the wrong
+             reason and the test would prove nothing,
+          5. sets the remote's clientAuth policy.
+
+        clientCertAuth is left at "enable" rather than "mandatory" on purpose.
+        A link configured with certificates carries no username or password at
+        all, so there is nothing for the remote to fall back to either way,
+        and "enable" keeps the remote's own admin REST reachable for the CRL
+        publishing this suite does throughout the test.
+
+        Returns a target dict carrying its own teardown state; register it in
+        self._remote_targets and _cleanup_remote_targets unwinds it.
+        """
+        remote_cluster = remote_cluster or self._remote_cluster()
+        ca_cert = ca_cert or self.ca_cert
+        ca_key = ca_key or self.ca_key
+        label = label or remote_cluster.name
+
+        target = {
+            "name": label,
+            "cluster": remote_cluster,
+            "rest": RestConnection(remote_cluster.master),
+            "ca_cert": ca_cert,
+            "ca_key": ca_key,
+            "ca_pem": self.crl_utils.cert_to_pem(ca_cert),
+            "crl_filename": f"cbas_crl_link_{label.lower()}.pem",
+            "crl_number": 0,
+            # teardown state, unwound by _cleanup_remote_targets
+            "files": [],
+            "users": [],
+            "ca_ids": [],
+            "cert_nodes": [],
+            "cert_auth": False,
+            "crl_policy": False,
+            "bucket": None,
+        }
+        self._remote_targets.append(target)
+
+        # Bucket first: it is plain REST against the remote and has
+        # nothing to do with certificates, so a failure here is
+        # unambiguous rather than tangled up with mTLS setup.
+        self._ensure_remote_bucket(target)
+
+        self._trust_ca_on_cluster(
+            ca_cert, server=remote_cluster.master, rest=target["rest"],
+            record_into=target["ca_ids"],
+        )
+        self._install_node_certificate(
+            remote_cluster.master, ca_cert, ca_key,
+            record_into=target["cert_nodes"],
+        )
+        self._enable_client_cert_auth(
+            state="enable", master=remote_cluster.master)
+        target["cert_auth"] = True
+
+        # Benign CRL first, policy second: the other order leaves a window in
+        # which Require is live with no applicable CRL, and anything
+        # connecting in that window fails closed for a reason unrelated to
+        # the test.
+        self._publish_remote_crl(target, [])
+        status, content = self.crl_utils.set_settings(
+            target["rest"],
+            policyPerScope={"clientAuth": policy, "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(
+            status,
+            f"Could not set clientAuth={policy} on link target "
+            f"{label}: {content}"
+        )
+        target["crl_policy"] = True
+        self.log.info(
+            f"Link target {label} ({remote_cluster.master.ip}) ready: test CA "
+            f"trusted, node cert reissued, clientCertAuth enabled, "
+            f"clientAuth={policy}"
+        )
+        return target
+
+    def _ensure_remote_bucket(self, target, ram_quota_mb=256):
+        """Section-3 entry point: ensure the bucket on a link target."""
+        self._ensure_bucket(target["cluster"].master, self.REMOTE_BUCKET,
+                            ram_quota_mb=ram_quota_mb)
+        target["bucket"] = self.REMOTE_BUCKET
+
+    def _ensure_bucket(self, server, name, ram_quota_mb=256):
+        """
+        Make sure the link target has the bucket a section-3 dataset ingests
+        from, creating it if absent, and wait until it is actually servable.
+
+        Deliberately direct REST rather than cluster_kv_infra / bucket_util.
+
+        cluster_kv_infra=...|default asks CBASBaseTest to build the bucket on
+        the secondary cluster, and on a param-built secondary cluster that
+        path fails: bucket_util.get_updated_bucket_server_list exhausts its
+        15 x 2s retry resolving the bucket's vBucketServerMap against
+        cluster.nodes_in_cluster and setUp then raises "Create bucket default
+        failed: Bucket not warmed up" -- while the bucket is in fact healthy
+        and serving (verified against a live 8.5.0-1073 node whose bucket had
+        a one-entry serverList at the moment the retry gave up). That is a
+        framework bug in the multi-cluster path, and the tests here do not
+        need any of the bookkeeping it exists to maintain: nothing in section
+        3 touches cluster.buckets, loads documents, or asks bucket_util
+        anything. All the dataset needs is for the bucket to exist.
+
+        Waits on the two conditions that actually matter for an Analytics
+        dataset to ingest -- the bucket is healthy and has a non-empty
+        vBucketServerMap.serverList -- rather than on a node-object match.
+        """
+        auth = (server.rest_username, server.rest_password)
+        base = f"http://{server.ip}:8091"
+
+        resp = requests.get(f"{base}/pools/default/buckets/{name}",
+                            auth=auth, timeout=30)
+        if resp.status_code == 404:
+            created = requests.post(
+                f"{base}/pools/default/buckets", auth=auth, timeout=60,
+                data={
+                    "name": name,
+                    "bucketType": "membase",
+                    "ramQuotaMB": ram_quota_mb,
+                    # replicaNumber=0 because the link target is a single
+                    # node; a replica it cannot place leaves the bucket
+                    # permanently degraded.
+                    "replicaNumber": 0,
+                    "storageBackend": "couchstore",
+                    "flushEnabled": 1,
+                },
+            )
+            self.assertIn(
+                created.status_code, (200, 202),
+                f"Could not create bucket {name} on {server.ip}: "
+                f"{created.status_code} "
+                f"{created.text[:300]}"
+            )
+            self._buckets_created.append((server, name))
+            self.log.info(
+                f"Created bucket {name} on {server.ip}")
+        elif resp.status_code != 200:
+            self.fail(
+                f"Could not read bucket {name} on {server.ip}: "
+                f"{resp.status_code} {resp.text[:300]}"
+            )
+
+        deadline = time.time() + 180
+        last = None
+        while time.time() < deadline:
+            info = requests.get(f"{base}/pools/default/buckets/{name}",
+                                auth=auth, timeout=30)
+            if info.status_code == 200:
+                body = info.json()
+                nodes = body.get("nodes") or []
+                server_list = (body.get("vBucketServerMap") or {}).get(
+                    "serverList") or []
+                healthy = nodes and all(
+                    n.get("status") == "healthy" for n in nodes)
+                if healthy and server_list:
+                    self.log.info(
+                        f"Bucket {name} on {server.ip} is servable "
+                        f"(serverList={server_list})"
+                    )
+                    return
+                last = (f"healthy={bool(healthy)} "
+                        f"serverList={server_list} nodes={len(nodes)}")
+            else:
+                last = f"{info.status_code} {info.text[:200]}"
+            time.sleep(3)
+        self.fail(
+            f"Bucket {name} on {server.ip} did not become "
+            f"servable within 180s (last: {last}). A dataset cannot ingest "
+            f"from it, so the section-3 connect would not be a remote "
+            f"operation."
+        )
+
+    def _delete_remote_bucket(self, target):
+        """Drop the bucket this suite created on a link target."""
+        if not target.get("bucket"):
+            return
+        server = target["cluster"].master
+        try:
+            requests.delete(
+                f"http://{server.ip}:8091/pools/default/buckets/"
+                f"{target['bucket']}",
+                auth=(server.rest_username, server.rest_password), timeout=60,
+            )
+        except requests.exceptions.RequestException as exc:
+            self.log.warning(
+                f"{target['name']} bucket {target['bucket']} delete: {exc}")
+        target["bucket"] = None
+
+    def _report_topology_changes(self):
+        """Log any topology this test moved, for the next test's triage."""
+        for label, nodes in (("rebalanced in", self._rebalanced_in),
+                             ("rebalanced out", self._rebalanced_out),
+                             ("failed over", self._failed_over)):
+            if nodes:
+                self.log.info(
+                    f"This test {label}: {[n.ip for n in nodes]}. The cluster "
+                    f"is rebuilt by the next test's setUp.")
+        self._rebalanced_in = []
+        self._rebalanced_out = []
+        self._failed_over = []
+
+    def _cleanup_buckets(self):
+        """Drop every bucket this suite created, on whichever cluster."""
+        for server, name in getattr(self, "_buckets_created", []):
+            try:
+                requests.delete(
+                    f"http://{server.ip}:8091/pools/default/buckets/{name}",
+                    auth=(server.rest_username, server.rest_password),
+                    timeout=60)
+            except requests.exceptions.RequestException as exc:
+                self.log.warning(f"Bucket {name} on {server.ip} delete: {exc}")
+        self._buckets_created = []
+
+    def _query_node(self):
+        """
+        A node running the query service, or a clear failure saying which
+        conf param would fix it.
+        """
+        nodes = list(getattr(self.cluster, "query_nodes", []) or [])
+        if not nodes:
+            nodes = [s for s in self.cluster.servers
+                     if "n1ql" in (getattr(s, "services", "") or "")]
+        if not nodes:
+            self.fail(
+                "This test loads documents through the query service, but no "
+                "node in the cluster runs n1ql. Add it to services_init, e.g. "
+                "services_init=kv:n1ql:index-kv:cbas."
+            )
+        return nodes[0]
+
+    def _n1ql_insert_docs(self, bucket, count, key_prefix, node=None,
+                          scope="_default", collection="_default"):
+        """
+        Insert `count` trivial documents through the Query service.
+
+        N1QL rather than the SDK on purpose: an INSERT with explicit keys
+        needs no index and no SDK bootstrap, so a section-5 ingestion test
+        does not acquire an SDK dependency just to put rows in a bucket.
+
+        The node is chosen from the cluster's QUERY nodes, not from
+        cluster.master. In an Analytics topology the master is frequently the
+        kv:cbas node, which runs no query service, and posting there fails
+        with a bare "Connection refused" on 8093 that looks like a cluster
+        problem rather than a wrong-node mistake.
+        """
+        node = node or self._query_node()
+        rows = ", ".join(
+            f'("{key_prefix}{i}", {{"id": {i}, "src": "{key_prefix}"}})'
+            for i in range(count)
+        )
+        stmt = (f"INSERT INTO `{bucket}`.`{scope}`.`{collection}` "
+                f"(KEY, VALUE) VALUES {rows}")
+        resp = requests.post(
+            f"http://{node.ip}:8093/query/service",
+            auth=(node.rest_username, node.rest_password),
+            data={"statement": stmt}, timeout=180,
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"N1QL insert of {count} docs into {bucket} failed: "
+            f"{resp.status_code} {resp.text[:400]}"
+        )
+        self.log.info(f"Inserted {count} docs into {bucket} as {key_prefix}*")
+
+    def _publish_remote_crl(self, target, serials):
+        """
+        Publish a CRL on the link target revoking exactly `serials`.
+
+        Every call bumps crlNumber, and `serials` is the COMPLETE set that
+        must remain revoked -- a CRL with a higher crlNumber from the same
+        issuer supersedes the previous one wholesale, so re-listing is not
+        redundant. Omitting a serial here un-revokes it, which is how this
+        suite restores connectivity for the "removed from the CRL" bullet and
+        also how it has previously produced a silent false pass.
+        """
+        target["crl_number"] += 1
+        status, content = self.crl_utils.revoke_and_upload(
+            target["rest"], target["ca_cert"], target["ca_key"],
+            list(serials), target["crl_filename"],
+            crl_number=target["crl_number"],
+        )
+        self.assertTrue(
+            status,
+            f"CRL upload to link target {target['name']} failed "
+            f"(crlNumber={target['crl_number']}, serials={list(serials)}): "
+            f"{content}"
+        )
+        if target["crl_filename"] not in target["files"]:
+            target["files"].append(target["crl_filename"])
+        self.log.info(
+            f"Published CRL on {target['name']}: crlNumber="
+            f"{target['crl_number']}, revoked={list(serials)}"
+        )
+
+    def _mint_link_client_cert(self, target, username, role="admin"):
+        """
+        An RBAC user on the link target plus a client certificate whose CN
+        maps to it, for use as a link's clientCertificate/clientKey.
+
+        Returns:
+            dict: {"cert_pem", "key_pem", "serial", "username"}
+
+        `admin` by default, and deliberately: revocation is enforced before
+        identity mapping and RBAC, so the role cannot change the revoked
+        outcome, while an under-privileged user could easily break the
+        positive baseline and make the test look like a revocation failure.
+        Section 10's own bullet on non-admin users is a separate scenario.
+        """
+        self._create_rbac_test_user(
+            username, role, master=target["cluster"].master,
+            record_into=target["users"],
+        )
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            target["ca_cert"], target["ca_key"], username
+        )
+        return {
+            "cert_pem": self.crl_utils.cert_to_pem(cert),
+            "key_pem": self.crl_utils.key_to_pem(key),
+            "serial": serial,
+            "username": username,
+        }
+
+    def _couchbase_link_props(self, name, target, client=None, hostname=None,
+                              dataverse="Default", username=None,
+                              password=None, encryption=None):
+        """
+        Link properties for a remote Couchbase link.
+
+        With `client` (from _mint_link_client_cert) this is the mTLS form
+        section 3 is about: encryption=full, the target's CA as `certificate`,
+        and the client key pair, with no username or password. With
+        `username`/`password` instead it is the credential form, used only as
+        a contrast case for the error-distinguishability bullet.
+        """
+        props = {
+            "name": name,
+            "dataverse": dataverse,
+            "scope": dataverse,
+            "type": "couchbase",
+            "hostname": hostname or target["cluster"].master.ip,
+            "encryption": encryption or self.LINK_ENCRYPTION_FULL,
+        }
+        if client:
+            props["certificate"] = target["ca_pem"].decode()
+            props["clientCertificate"] = client["cert_pem"].decode()
+            props["clientKey"] = client["key_pem"].decode()
+        if username:
+            props["username"] = username
+            props["password"] = password
+            if props["encryption"] == self.LINK_ENCRYPTION_FULL:
+                props["certificate"] = target["ca_pem"].decode()
+        return props
+
+    def _link_url(self, dataverse, name, node=None):
+        node = node or self.cluster.cbas_cc_node
+        if CbServer.use_https:
+            base = f"https://{node.ip}:{self.ANALYTICS_SSL_PORT}"
+        else:
+            base = f"http://{node.ip}:{self.ANALYTICS_PORT}"
+        return (f"{base}/analytics/link/{quote_plus(dataverse)}"
+                f"/{quote_plus(name)}")
+
+    def _link_rest(self, method, props, timeout=180):
+        """
+        Create (POST) or alter (PUT) a link, returning the raw outcome.
+
+        Bypasses CbasUtil deliberately. create_link returns a bare boolean and
+        update_external_link_properties swallows the body, but three of
+        section 3's bullets are assertions ABOUT the error text -- that it
+        names revocation rather than a timeout, that creation is refused
+        rather than silently deferred, that no key material appears in it --
+        so the body has to survive the call.
+
+        Returns:
+            tuple: (ok: bool, status_code: int|None, body: str)
+        """
+        body = dict(props)
+        dataverse = body.pop("dataverse", "Default")
+        name = body.pop("name")
+        payload = {k: v for k, v in body.items() if v}
+        try:
+            resp = requests.request(
+                method,
+                self._link_url(dataverse, name),
+                data=urlencode(payload),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                auth=(self.cluster.master.rest_username,
+                      self.cluster.master.rest_password),
+                verify=False, timeout=timeout,
+            )
+        except requests.exceptions.RequestException as exc:
+            return False, None, str(exc)
+        return resp.status_code in (200, 201, 202), resp.status_code, resp.text
+
+    def _connect_link(self, name, dataverse="Default", timeout=180):
+        """
+        CONNECT LINK, returning (ok, error_text).
+
+        Uses the statement path rather than cbas_util.connect_link because the
+        latter reduces the outcome to a boolean, and the error text is the
+        assertion for half of section 3.
+        """
+        statement = f"connect link {dataverse}.`{name}`;"
+        status, _, errors, _, _ = (
+            self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement, timeout=timeout,
+                analytics_timeout=timeout)
+        )
+        text = json.dumps(errors) if errors else ""
+        return status == "success", text
+
+    def _disconnect_link(self, name, dataverse="Default", timeout=180):
+        """DISCONNECT LINK, tolerating an already-disconnected link."""
+        statement = f"disconnect link {dataverse}.`{name}`;"
+        status, _, errors, _, _ = (
+            self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement, timeout=timeout,
+                analytics_timeout=timeout)
+        )
+        return status == "success", json.dumps(errors) if errors else ""
+
+    def _assert_link_error_kind(self, text, kind, msg, redact=()):
+        """
+        Assert a link error names `kind` ("revoked", "unreachable" or
+        "credentials") and, for the two non-revocation kinds, that it does NOT
+        read as a revocation.
+
+        Asymmetric on purpose. What section 3 is protecting against is a
+        revocation failure that reports as a network or credential problem,
+        and vice versa -- an operator who cannot tell those apart will chase
+        the wrong cause. Requiring the revocation markers to be absent from
+        every other failure is the sharp half of that; requiring generic
+        transport words to be absent from a revocation failure is not, since
+        a refused handshake legitimately mentions the connection.
+
+        Matching is on WORD BOUNDARIES, not substrings, and the caller's own
+        identifiers are redacted first. Both guard the same trap: every
+        object this suite creates is named `crl_link_...`, so a substring
+        search for "crl" matches the link's own name in any error that quotes
+        it. That produced a false failure here -- a perfectly clear
+        "Connect timed out" for an unroutable host was reported as reading
+        like a revocation, purely because the link was called
+        crl_link_err_unreachable. The same shape of bug (a marker matching
+        the test's own generated string rather than the server's message)
+        has now bitten this work twice, once as a false PASS.
+        """
+        redacted = text or ""
+        for token in (redact or ()):
+            if token:
+                redacted = re.sub(re.escape(str(token)), " ", redacted,
+                                  flags=re.IGNORECASE)
+        lowered = redacted.lower()
+
+        def names(marker):
+            # \b against an underscore does not fire, so a marker cannot
+            # match a fragment of a snake_case identifier.
+            return re.search(rf"\b{re.escape(marker)}\b", lowered) is not None
+
+        expected = {
+            "revoked": self.LINK_REVOKED_MARKERS,
+            "unreachable": self.LINK_UNREACHABLE_MARKERS,
+            "credentials": self.LINK_CREDENTIAL_MARKERS,
+        }[kind]
+        hit = [marker for marker in expected if names(marker)]
+        self.assertTrue(
+            hit,
+            f"{msg}. The error names none of the {kind} markers "
+            f"{list(expected)}; it read: {text[:600]}"
+        )
+        if kind != "revoked":
+            revoked_hit = [m for m in self.LINK_REVOKED_MARKERS if names(m)]
+            self.assertFalse(
+                revoked_hit,
+                f"{msg}. A {kind} failure must not read as a revocation, but "
+                f"the error carries {revoked_hit}: {text[:600]}"
+            )
+        self.log.info(f"Link error correctly reads as {kind} (matched {hit})")
+
+    def _assert_no_key_material(self, blobs, client, where):
+        """
+        Assert the link's PRIVATE KEY does not appear in `blobs` (an iterable
+        of strings), and record whether its certificate does.
+
+        Checks a slice of the actual base64 body as well as the armour: a
+        service that strips the BEGIN/END lines while still logging the
+        payload would pass an armour-only check while having leaked the key.
+
+        The private key is the assertion; the certificate is an observation.
+        See CERT_MATERIAL_MARKERS for why.
+        """
+        # A middle slice, not the head: the first base64 line of a PKCS#8 key
+        # is largely a fixed algorithm prefix shared by every RSA key, so
+        # matching on it would risk a false positive against unrelated PEM.
+        def body_slice(pem_bytes):
+            lines = [ln for ln in pem_bytes.decode().splitlines()
+                     if ln and not ln.startswith("-----")]
+            joined = "".join(lines)
+            return joined[len(joined) // 3:][:48] if len(joined) > 96 else None
+
+        needles = [m for m in self.KEY_MATERIAL_MARKERS]
+        key_chunk = body_slice(client["key_pem"])
+        if key_chunk:
+            needles.append(key_chunk.lower())
+
+        # Observation only, so a public certificate in the logs is reported
+        # rather than failed on.
+        cert_chunk = body_slice(client["cert_pem"])
+        for blob in blobs:
+            lowered = (blob or "").lower()
+            cert_hit = [m for m in self.CERT_MATERIAL_MARKERS
+                        if m in lowered]
+            if cert_chunk and cert_chunk.lower() in lowered:
+                cert_hit.append("certificate body")
+            if cert_hit:
+                self.log.info(
+                    f"{where}: contains the link's CERTIFICATE "
+                    f"({cert_hit}). Not treated as a leak -- a certificate "
+                    f"is public and is sent in the clear on every handshake. "
+                    f"The private-key assertion below is the one that counts."
+                )
+                break
+
+        for blob in blobs:
+            lowered = (blob or "").lower()
+            for needle in needles:
+                self.assertNotIn(
+                    needle, lowered,
+                    f"{where} exposes the link's PRIVATE KEY "
+                    f"(matched {needle[:24]!r}...). Section 3 requires link "
+                    f"key material to stay out of logs, audit events and "
+                    f"diagnostic output even when a revocation failure is "
+                    f"being reported. Note this is the private key, not the "
+                    f"certificate -- a certificate in the logs is expected "
+                    f"and is not what this asserts."
+                )
+        self.log.info(f"{where}: no link private-key material present")
+
+    def _cleanup_remote_targets(self):
+        """
+        Unwind every remote link target, in the reverse of the order
+        _setup_remote_link_target built it.
+
+        Node certificates go back BEFORE the CA is untrusted -- see
+        _restore_self_signed_node_certs for what happens otherwise -- and the
+        CRL policy is relaxed before either, so a target left in Require with
+        its CRL already deleted cannot wall out its own cleanup.
+        """
+        for target in self._remote_targets:
+            label = target["name"]
+            if target["crl_policy"]:
+                try:
+                    self._reset_crl_settings(rest=target["rest"])
+                except Exception as exc:
+                    self.log.warning(f"{label} CRL settings reset: {exc}")
+            for filename in target["files"]:
+                try:
+                    self.crl_utils.delete_file(target["rest"], filename)
+                except Exception as exc:
+                    self.log.warning(f"{label} CRL file {filename}: {exc}")
+            target["files"] = []
+            if target["cert_auth"]:
+                try:
+                    self._disable_client_cert_auth(
+                        master=target["cluster"].master)
+                except Exception as exc:
+                    self.log.warning(f"{label} clientCertAuth disable: {exc}")
+                target["cert_auth"] = False
+            try:
+                self._restore_self_signed_node_certs(target)
+            except Exception as exc:
+                self.log.warning(f"{label} node cert restore: {exc}")
+            for username in target["users"]:
+                try:
+                    target["rest"].delete_builtin_user(username)
+                except Exception as exc:
+                    self.log.warning(f"{label} user {username}: {exc}")
+            target["users"] = []
+            self._delete_remote_bucket(target)
+            if target["ca_ids"]:
+                try:
+                    self._untrust_ca_ids(
+                        target["cluster"].master, target["ca_ids"])
+                except Exception as exc:
+                    self.log.warning(f"{label} trusted CA cleanup: {exc}")
+                target["ca_ids"] = []
+        self._remote_targets = []
 
