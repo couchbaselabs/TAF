@@ -15,6 +15,15 @@ class KvOsoBackfillTests(CollectionBase):
         self.shell_conns = dict()
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         self.rest = RestConnection(self.cluster.master)
+        # The GSI storage mode passed via /clusterInit is only honoured when
+        # the master node itself runs the index service. This suite provisions
+        # a KV-only master (e.g. services_init=kv-kv-kv-index-index-index), so
+        # the mode never reaches the index nodes and the first CREATE INDEX
+        # fails with "Please Set Indexer Storage Mode Before Create Index".
+        # Set it explicitly here, once index nodes are known, before the test
+        # creates any GSI index.
+        if self.cluster.index_nodes:
+            self.rest.set_indexer_storage_mode(self.gsi_type)
         for node in self.cluster.nodes_in_cluster:
             self.shell_conns[node.ip] = RemoteMachineShellConnection(node)
 

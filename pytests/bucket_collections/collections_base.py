@@ -762,6 +762,10 @@ class CollectionBase(ClusterSetup, FusionBase):
                                            validate_item_count=False):
         b_util = test_obj.bucket_util
         test_obj.log.critical("Testing oso_backfill by creating indexes")
+        test_obj.cluster_util.update_cluster_nodes_service_list(test_obj.cluster)
+        if test_obj.cluster.index_nodes:
+            RestConnection(test_obj.cluster.master).set_indexer_storage_mode(
+                test_obj.gsi_type)
         for bucket in test_obj.cluster.buckets:
             test_obj.log.info("Creating indexes for collections in bucket {}"
                               .format(bucket.name))

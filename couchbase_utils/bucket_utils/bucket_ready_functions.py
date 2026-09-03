@@ -681,6 +681,22 @@ class DocLoaderUtils(object):
                     crud_spec[b_name] = dict()
                     crud_spec[b_name]["scopes"] = dict()
                 bucket = BucketUtils.get_bucket_obj(buckets, b_name)
+                
+                # Ephemeral buckets have no disk and reject persist-based
+                # durability levels with DurabilityInvalidLevelException
+                effective_durability_level = durability_level
+                if bucket.bucketType == Bucket.Type.EPHEMERAL \
+                        and durability_level in [
+                            SDKConstants.DurabilityLevel
+                            .MAJORITY_AND_PERSIST_TO_ACTIVE,
+                            SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]:
+                    DocLoaderUtils.log.warning(
+                        "Bucket '%s' is ephemeral; downgrading durability "
+                        "level '%s' to '%s' for doc loading"
+                        % (b_name, durability_level,
+                           SDKConstants.DurabilityLevel.MAJORITY))
+                    effective_durability_level = \
+                        SDKConstants.DurabilityLevel.MAJORITY
                 for s_name, c_dict in s_dict.items():
                     if s_name not in crud_spec[b_name]["scopes"]:
                         crud_spec[b_name]["scopes"][s_name] = dict()
@@ -730,7 +746,7 @@ class DocLoaderUtils(object):
                             c_crud_data[op_type]["sdk_timeout_unit"] = \
                                 sdk_timeout_unit
                             c_crud_data[op_type]["durability_level"] = \
-                                durability_level
+                                effective_durability_level
                             c_crud_data[op_type]["skip_read_on_error"] = \
                                 skip_read_on_error
                             c_crud_data[op_type]["suppress_error_table"] = \
