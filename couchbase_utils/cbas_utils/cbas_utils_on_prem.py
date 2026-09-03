@@ -12,7 +12,7 @@ remove this hard coded value.
 """
 import json
 import re
-import urllib
+import urllib.parse
 import time
 import threading
 import string
@@ -797,11 +797,11 @@ class Link_Util(Dataverse_Util):
             params = dict()
             uri = ""
             if "dataverse" in link_prop:
-                uri += "/{0}".format(urllib.quote_plus(CBASHelper.metadata_format(
+                uri += "/{0}".format(urllib.parse.quote_plus(CBASHelper.metadata_format(
                     link_prop["dataverse"]), safe=""))
                 del link_prop["dataverse"]
             if "name" in link_prop:
-                uri += "/{0}".format(urllib.quote_plus(
+                uri += "/{0}".format(urllib.parse.quote_plus(
                     CBASHelper.unformat_name(link_prop["name"]), safe=""))
                 del link_prop["name"]
 
@@ -811,7 +811,7 @@ class Link_Util(Dataverse_Util):
                         params[key] = str(value)
                     else:
                         params[key] = value
-            params = urllib.urlencode(params)
+            params = urllib.parse.urlencode(params)
             status, status_code, content, errors = cbas_helper.analytics_link_operations(
                 method="POST", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)
@@ -918,11 +918,11 @@ class Link_Util(Dataverse_Util):
         params = dict()
         uri = ""
         if "dataverse" in link_prop:
-            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
+            uri += "/{0}".format(urllib.parse.quote(CBASHelper.metadata_format(
                 link_prop["dataverse"]), safe=""))
             del link_prop["dataverse"]
         if "name" in link_prop:
-            uri += "/{0}".format(urllib.quote(
+            uri += "/{0}".format(urllib.parse.quote(
                 CBASHelper.unformat_name(link_prop["name"]), safe=""))
             del link_prop["name"]
 
@@ -932,7 +932,7 @@ class Link_Util(Dataverse_Util):
                     params[key] = str(value)
                 else:
                     params[key] = value
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, status_code, content, errors = cbas_helper.analytics_link_operations(
             method="PUT", uri=uri, params=params, timeout=timeout, username=username,
             password=password)
@@ -4878,7 +4878,7 @@ class CbasUtil(CBOUtil):
         settings page.
         """
         params = {"numReplicas": replica_num}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         return self.get_replica_number_from_settings(
             node, "POST", params, username, password, validate_error_msg,
             expected_error, expected_error_code)
@@ -4959,9 +4959,9 @@ class CbasUtil(CBOUtil):
             url = "http://{0}:8095/analytics/connector?".format(
                 cbas_node.ip)
         for dv_part in dataverse_name.split("."):
-            url += "dataverseName={0}&".format(urllib.quote_plus(
+            url += "dataverseName={0}&".format(urllib.parse.quote_plus(
                 CBASHelper.unformat_name(dv_part), safe=""))
-        url += "datasetName={0}".format(urllib.quote_plus(
+        url += "datasetName={0}".format(urllib.parse.quote_plus(
             CBASHelper.unformat_name(dataset_name), safe=""))
 
         if not username:

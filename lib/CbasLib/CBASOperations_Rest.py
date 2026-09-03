@@ -9,6 +9,7 @@ import urllib
 import requests
 
 from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
+from membase.api.rest_client import RestConnection
 from py_constants import CbServer
 
 
