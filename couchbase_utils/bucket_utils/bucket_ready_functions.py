@@ -1871,7 +1871,7 @@ class CollectionUtils(DocLoaderUtils):
     @staticmethod
     def drop_collection(node, bucket, scope_name=CbServer.default_scope,
                         collection_name=CbServer.default_collection,
-                        session=None):
+                        session=None, if_exists=False):
         """
         Function to drop collection under the given scope_name
 
@@ -1880,6 +1880,10 @@ class CollectionUtils(DocLoaderUtils):
         :param scope_name: Scope_name under which the collection to be dropped
         :param collection_name: Collection name which has to dropped
         :param session: session to be used instead of httplib2 _http request
+        :param if_exists: when True, a collection the server reports as
+            missing is treated as already dropped rather than as a failure.
+            Off by default so a test that means to drop a collection it
+            expects to exist still fails loudly.
         """
         CollectionUtils.log.debug("Dropping Collection %s:%s:%s"
                                   % (bucket.name, scope_name, collection_name))
@@ -1900,7 +1904,19 @@ class CollectionUtils(DocLoaderUtils):
             status, content = BucketHelper(node).delete_collection(
                 bucket.name, scope_name, collection_name, session=session)
             retries -= 1
-        if status is False:
+        if status is False and if_exists \
+                and "not found" in str(content).lower():
+            # Already gone on the server. The local bucket model can still
+            # list it -- get_active_collections() reads that model, not the
+            # cluster -- so an idempotent caller such as
+            # remove_scope_collections_for_bucket() asks for a collection
+            # that no longer exists and would otherwise fail its whole
+            # teardown on a collection it was only trying to clean up.
+            CollectionUtils.log.debug(
+                "Collection '%s:%s:%s' is already absent, treating as "
+                "dropped: %s"
+                % (bucket.name, scope_name, collection_name, content))
+        elif status is False:
             CollectionUtils.log.error(
                 "Collection '%s:%s:%s' delete failed: %s"
                 % (bucket, scope_name, collection_name, content))
@@ -6654,10 +6670,13 @@ class BucketUtils(ScopeUtils):
                 continue
 
             for collection in self.get_active_collections(bucket, scope.name):
+                # if_exists: this is idempotent cleanup driven off the local
+                # bucket model, which can disagree with the cluster.
                 self.drop_collection(cluster.master,
                                      bucket,
                                      scope_name=scope.name,
-                                     collection_name=collection.name)
+                                     collection_name=collection.name,
+                                     if_exists=True)
 
             # _default scope can never be dropped
             if scope.name != CbServer.default_scope:
