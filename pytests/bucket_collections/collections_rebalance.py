@@ -1108,7 +1108,14 @@ class CollectionsRebalance(CollectionBase):
 
     def add_nodes_to_new_zone(self):
         zone_name = "Group " + str(self.num_zone)
-        self.rest.add_zone(zone_name)
+        if self.cluster_util.is_zone_exists(self.cluster.master, zone_name):
+            self.log.info("Server group '%s' already exists" % zone_name)
+        else:
+            server_group_rest = ServerGroupsAPI(self.cluster.master)
+            status, content = server_group_rest.create_server_group(zone_name)
+            if not status:
+                self.fail("Failed to create server group %s: %s"
+                          % (zone_name, content))
         nodes_in_cluster = self.cluster_util.get_nodes_in_cluster(self.cluster)
         nodes_in = self.cluster.servers[len(nodes_in_cluster):len(nodes_in_cluster) + self.nodes_in]
         for node in nodes_in:
@@ -1502,20 +1509,35 @@ class CollectionsRebalance(CollectionBase):
         5. Rebalance the cluster => should pass
         """
 
-        bucket_name = self.cluster.buckets[0]
-        status, content = self.rest.fail_bucket_rebalance_at_bucket(bucket_name)
-        self.assertEquals("ok", content, msg="Error occurred while adding the test condition")
+        test_condition = "fail_bucket_rebalance_at_bucket"
+        bucket_name = self.cluster.buckets[0].name
 
-        add_nodes = self.cluster.servers[self.nodes_init:self.nodes_init + 1]
-        operation = self.task.rebalance(self.cluster, add_nodes, [],
-                                        retry_get_process_num=self.retry_get_process_num)
-        if operation:
-            self.fail("Rebalance should have failed because of the test condition")
-        else:
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        status, content = self.rest.testconditions_set(
+            '{{{0},"{1}"}}, fail'.format(test_condition, bucket_name))
+        self.assertTrue(status,
+                        "Error occurred while adding the test condition: %s"
+                        % content)
+
+        try:
+            add_nodes = self.cluster.servers[
+                self.nodes_init:self.nodes_init + 1]
+            operation = self.task.rebalance(
+                self.cluster, add_nodes, [],
+                retry_get_process_num=self.retry_get_process_num)
+            if operation:
+                self.fail("Rebalance should have failed "
+                          "because of the test condition")
             self.log.info("Rebalance failed as expected")
-
-        status, content = self.rest.remove_fail_bucket_rebalance_at_bucket()
-        self.assertEquals("ok", content, msg="Error occurred while removing the test condition")
+        finally:
+            status, content = self.rest.testconditions_delete(test_condition)
+            self.assertTrue(
+                status,
+                "Error occurred while removing the test condition: %s"
+                % content)
 
         operation = self.task.rebalance(self.cluster, [], [],
                                         retry_get_process_num=self.retry_get_process_num)
