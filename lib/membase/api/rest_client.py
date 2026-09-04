@@ -3563,6 +3563,30 @@ class RestConnection(newRC):
             raise Exception(content)
         return status, content, header
 
+    '''
+    Get external user
+    '''
+
+    def get_external_user(self, user_id):
+        url = "settings/rbac/users/external/" + user_id
+        api = self.baseUrl + url
+        status, content, _ = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    '''
+    Delete external user
+    '''
+
+    def delete_external_user(self, user_id):
+        url = "settings/rbac/users/external/" + user_id
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'DELETE')
+        if not status:
+            self.log.error("%s - %s" % (user_id, content))
+            raise Exception(content)
+        return json.loads(content)
 
     '''
     Return list of permission with True/False if user has permission or not
@@ -3574,11 +3598,34 @@ class RestConnection(newRC):
     def check_user_permission(self, user_id, password, permission_set):
         url = "pools/default/checkPermissions/"
         api = self.baseUrl + url
-        authorization = base64.encodestring('%s:%s' % (user_id, password))
+        authorization = base64.b64encode(
+            ('%s:%s' % (user_id, password)).encode()).decode()
         header = {'Content-Type': 'application/x-www-form-urlencoded',
                   'Authorization': 'Basic %s' % authorization,
                   'Accept': '*/*'}
         status, content, header = self._http_request(api, 'POST', params=permission_set, headers=header)
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    '''
+    Return backup of current RBAC user/role assignments
+    '''
+
+    def backup_users(self):
+        url = "settings/rbac/backup"
+        api = self.baseUrl + url
+        status, content, headers = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    def restore_users(self, backup_data):
+        url = "settings/rbac/backup"
+        api = self.baseUrl + url
+        json_data = json.dumps(backup_data)
+        payload = urllib.parse.urlencode({"backup": json_data})
+        status, content, header = self._http_request(api, 'PUT', payload)
         if not status:
             raise Exception(content)
         return json.loads(content)
@@ -3645,6 +3692,23 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'DELETE')
         if not status:
             self.log.error("%s - %s" % (group_name, content))
+        return json.loads(content)
+
+    def get_builtin_group(self, group_name):
+        url = "settings/rbac/groups/" + group_name
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        if not status:
+            self.log.error("%s - %s" % (group_name, content))
+            raise Exception(content)
+        return json.loads(content)
+
+    def list_groups(self):
+        url = "settings/rbac/groups"
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
         return json.loads(content)
 
     def change_password_policy(self, min_length, enforce_uppercase="false",
