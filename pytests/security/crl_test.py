@@ -74,6 +74,30 @@ class CRLTest(CRLBase):
             f"Handshake did not reach expect_ok={expect_ok} before deadline {deadline}"
         )
 
+    def _n2n_node_healthy_active(self, master, ip):
+        """True if `ip` currently shows status=healthy under an active
+        clusterMembership per /pools/default (queried against `master`).
+        Used for nodeToNode enforcement checks -- the internal cb_dist
+        channel isn't reachable via an mTLS handshake probe the way
+        clientAuth-scoped listeners are, so node reachability is asserted
+        via cluster membership instead."""
+        try:
+            nodes = self.cluster_util.get_nodes(master, active=True)
+        except Exception as exc:
+            self.log.warning(f"get_nodes failed while polling {ip}: {exc}")
+            return False
+        return any(n.ip == ip and n.status == "healthy" for n in nodes)
+
+    def _n2n_wait_for_healthy_active(self, master, ip, timeout):
+        """Poll _n2n_node_healthy_active every 2s until it's True or
+        `timeout` seconds pass. Returns bool (does not fail the test)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._n2n_node_healthy_active(master, ip):
+                return True
+            time.sleep(2)
+        return False
+
     def _assert_audit_event_shape(self, event, event_id):
         """
         Common actor/timestamp/network-envelope assertions shared by every
@@ -4197,4 +4221,237 @@ class CRLTest(CRLBase):
             "Both newly-added nodes correctly enforce CRL once the "
             "unequal add-2/remove-1 rebalance completes -- consistent "
             "enforcement through a single unequal rebalance operation"
+        )
+
+    def test_crl_n2n_dual_certificate_enforcement(self):
+        """
+        nodeToNode CRL Require policy fences a node out of the cluster's
+        cb_dist (Erlang distribution) mesh correctly -- but only once BOTH
+        of that node's two independent certificates are revoked. cb_dist
+        uses a node cert (chain.pem/pkey.key, presented by the TLS *server*
+        role of a connection) and a separate client cert
+        (client_chain.pem/client_pkey.key, presented by the TLS *client*
+        role, reloaded via reloadClientCertificate) -- confirmed via
+        MB-73726. Revoking only the node cert lets the node keep rejoining
+        via its still-valid client cert (whichever side of net_kernel's
+        simultaneous-connect race ends up validating that cert wins), which
+        looks exactly like an unchecked accept-side bypass without being
+        one -- dev-confirmed Not a Bug / Expected, independently
+        re-verified live (a node with both certs revoked stayed
+        unhealthy for a full 64s window and never reached nodeup, versus
+        recovering within 1-35s with only the node cert revoked).
+
+        This is the direct baseline enforcement test for the nodeToNode
+        scope -- distinct from settings-independence
+        (test_crl_settings_scope_independence_and_ingestion), cross-scope
+        leak prevention (test_crl_bypass_hardening), and dry-run analysis
+        (none of which exercise real nodeToNode-scoped mTLS traffic).
+        Deliberately pins BOTH outcomes in one pass, not just the "obviously
+        safer" one, so neither the underlying enforcement nor the
+        two-certificate nuance regresses silently:
+          (A) revoking only the node cert -> node still recovers healthy
+          (B) revoking both certs -> node never recovers, stays excluded
+        """
+        servers = self.cluster.servers[:self.nodes_init]
+        master, node_b, node_c = servers[0], servers[1], servers[2]
+
+        self.log.info(
+            "Enabling n2n encryption + mutual-TLS client cert verification "
+            "on all 3 nodes"
+        )
+        self._enable_n2n_encryption(servers, level="all")
+        filename = "n2n_dual_cert_enforcement.pem"
+        try:
+            self._test_crl_n2n_dual_certificate_enforcement_body(
+                servers, master, node_b, node_c, filename,
+            )
+        finally:
+            # Always attempt these, even if an assertion above failed
+            # partway through -- confirmed live this session that a
+            # mid-test failure here left a custom CA-signed cert deployed
+            # on a node while CRLBase.tearDown()'s own cleanup untrusted
+            # that same CA, corrupting the pool for the *next* test run
+            # ("Unknown CA" on its own cluster rebuild). Each step is
+            # independently best-effort so one failing doesn't block the
+            # rest, matching CRLBase.tearDown()'s own established pattern.
+            try:
+                self.crl_utils.revoke_and_upload(
+                    self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=99,
+                )
+                self.crl_utils.reload_crl(self.rest)
+            except Exception as exc:
+                self.log.warning(f"Best-effort final CRL restore failed: {exc}")
+            for server in servers:
+                try:
+                    self.crl_utils.set_client_cert_verification(server, False)
+                except Exception as exc:
+                    self.log.warning(
+                        f"Best-effort clientCertVerification disable failed "
+                        f"on {server.ip}: {exc}"
+                    )
+            try:
+                # Cluster-wide reset back to fresh self-signed node certs,
+                # independent of self.ca_cert -- so CRLBase.tearDown()'s
+                # cleanup_trusted_cas() untrusting that CA afterward can
+                # never again strand a node on a cert signed by it.
+                self.rest.regenerate_cluster_certificate()
+            except Exception as exc:
+                self.log.warning(f"Best-effort certificate regeneration failed: {exc}")
+            try:
+                self._disable_n2n_encryption(servers)
+            except Exception as exc:
+                self.log.warning(f"Best-effort n2n encryption disable failed: {exc}")
+
+    def _test_crl_n2n_dual_certificate_enforcement_body(
+        self, servers, master, node_b, node_c, filename,
+    ):
+        """The actual test flow, factored out of
+        test_crl_n2n_dual_certificate_enforcement so that method's
+        try/finally can guarantee cleanup runs regardless of where an
+        assertion here fails."""
+        # CA trust is genuinely cluster-wide (chronicle-replicated) -- one
+        # call against master reaches every existing member, no per-node
+        # loop needed (all 3 are already cluster members via nodes_init=3).
+        self._trust_ca_on_cluster(self.ca_cert)
+
+        node_serials = {}
+        client_serials = {}
+        for server in servers:
+            node_cert, node_key, node_serial = self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, cn=server.ip, dns_names=[server.ip],
+                extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH],
+            )
+            self._deploy_node_cert(server, node_cert, node_key)
+            node_serials[server.ip] = node_serial
+
+            client_cert, client_key, client_serial = self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, cn=f"ns_1@{server.ip}",
+                extended_key_usage=[ExtendedKeyUsageOID.CLIENT_AUTH],
+                email_names=[f"{server.ip.replace('.', '-')}@internal.couchbase.com"],
+            )
+            self._deploy_client_cert(server, client_cert, client_key)
+            client_serials[server.ip] = client_serial
+        self.log.info(
+            f"Deployed node+client certs on all 3 nodes: "
+            f"node_serials={node_serials}, client_serials={client_serials}"
+        )
+
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Baseline (non-revoking) CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        # nodeToNode=Require must only be set *after* a covering CRL exists
+        # -- setting it first correctly fails closed on every inter-node
+        # connection (no applicable CRL yet for the just-deployed certs)
+        # and self-locks the cluster (chronicle loses quorum). Confirmed
+        # the hard way manually this session.
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Require", "clientAuth": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to set nodeToNode=Require: {content}")
+
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=30),
+            "Baseline: node C should be healthy/active before any revocation",
+        )
+        self.log.info("Baseline confirmed: all 3 nodes healthy under nodeToNode=Require")
+
+        # -- Sub-case A: revoke ONLY node C's node cert. --
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key,
+            [node_serials[node_c.ip]], filename, crl_number=2,
+        )
+        self.assertTrue(status, f"Node-cert-only revocation upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=40),
+            "Sub-case A: node C should still recover to healthy/active with "
+            "only its node cert revoked (client cert still valid) -- if "
+            "this now fails, MB-73726's resolution may need re-checking",
+        )
+        self.assertTrue(
+            self._n2n_node_healthy_active(master, node_b.ip),
+            "Node B (never revoked) should have stayed healthy throughout sub-case A",
+        )
+        self.log.info(
+            "Sub-case A confirmed: node-cert-only revocation does not "
+            "fence the node out (client cert still valid)"
+        )
+
+        # -- Sub-case B: revoke node C's client cert too -- both now
+        # revoked. This is the real "Require correctly fences a
+        # fully-revoked node" contract. --
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key,
+            [node_serials[node_c.ip], client_serials[node_c.ip]], filename, crl_number=3,
+        )
+        self.assertTrue(status, f"Both-certs revocation upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline:
+            if self._n2n_node_healthy_active(master, node_c.ip):
+                self.fail(
+                    "Sub-case B: node C reached healthy/active despite BOTH "
+                    "certs being revoked -- nodeToNode=Require failed to "
+                    "fence it out (this would be a real regression of "
+                    "MB-73726's resolution)"
+                )
+            time.sleep(2)
+        self.assertTrue(
+            self._n2n_node_healthy_active(master, node_b.ip),
+            "Node B (never revoked) should have stayed healthy throughout sub-case B too",
+        )
+        self.log.info(
+            "Sub-case B confirmed: node C never recovered with both certs "
+            "revoked -- Require correctly fenced it out"
+        )
+
+        # -- Teardown: restore node C so the pool is left clean for later
+        # tests in the same run. --
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=4,
+        )
+        self.assertTrue(status, f"Restoration (non-revoking) CRL upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        # Generous timeout here specifically -- by this point node C has
+        # already gone through 3 prior restart cycles in the same test
+        # (baseline join, sub-case A, sub-case B), and live testing this
+        # session observed rejoin taking up to ~64s in a comparable
+        # multi-restart scenario, well past the ~40s that's plenty for an
+        # earlier, "fresher" restart.
+        # The outer test method's `finally` block (not here) is responsible
+        # for disabling clientCertVerification/n2n encryption and
+        # regenerating fresh node certs unconditionally -- this assertion
+        # only confirms the *restore path itself* (revoke -> un-revoke ->
+        # restart -> rejoin) genuinely works, it isn't the last line of
+        # defense for pool cleanliness.
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=90),
+            "Teardown: node C failed to rejoin after restoring its certs "
+            "-- pool may be left in a bad state for later tests",
         )

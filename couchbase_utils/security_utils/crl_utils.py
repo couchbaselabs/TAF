@@ -257,7 +257,7 @@ class CRLUtils:
     def generate_leaf_cert(ca_cert, ca_key, cn, key_algorithm="rsa2048",
                             valid_days=825, extended_key_usage=None,
                             crl_distribution_url=None, dns_names=None,
-                            serial=None, not_valid_before=None,
+                            email_names=None, serial=None, not_valid_before=None,
                             not_valid_after=None):
         """
         Generate a leaf cert signed by ca_cert/ca_key, in memory.
@@ -272,7 +272,15 @@ class CRLUtils:
                 CRLDistributionPoints extension (informational only — Couchbase
                 does not auto-fetch from this per the PRD; useful only for
                 tests that assert the extension is present/ignored)
-            dns_names: optional list of SAN DNS names (needed for node certs)
+            dns_names: optional list of SAN DNS/IP names (needed for node
+                certs -- IP-looking strings become an IPAddress SAN entry,
+                everything else a DNSName entry)
+            email_names: optional list of SAN RFC822Name (email) strings --
+                needed for a cb_dist *client* certificate
+                (deploy_client_cert), per MB-73726's resolution (e.g.
+                "name@internal.couchbase.com"). Combined into the same
+                SubjectAlternativeName extension as dns_names if both are
+                given -- a cert can only carry one.
             serial: optional int to force a specific serial number (e.g. to
                 deliberately collide two leaf certs from different CAs, for
                 cross-CA scope-isolation tests) — defaults to a random serial
@@ -308,13 +316,15 @@ class CRLUtils:
             )
             .add_extension(x509.ExtendedKeyUsage(extended_key_usage), critical=False)
         )
-        if dns_names:
+        if dns_names or email_names:
             names = []
-            for name in dns_names:
+            for name in dns_names or []:
                 try:
                     names.append(x509.IPAddress(ipaddress.ip_address(name)))
                 except ValueError:
                     names.append(x509.DNSName(name))
+            for email in email_names or []:
+                names.append(x509.RFC822Name(email))
             builder = builder.add_extension(x509.SubjectAlternativeName(names), critical=False)
         if crl_distribution_url:
             dp = x509.DistributionPoint(
@@ -862,6 +872,138 @@ class CRLUtils:
                     f"Failed to untrust CA id={ca_id} in teardown: {content}"
                 )
         self.trusted_ca_ids = []
+
+    @staticmethod
+    def _inbox_dir(shell):
+        """Returns the OS-appropriate inbox path (no /CA suffix) for the
+        connected shell's host -- same per-OS switch as _ca_dir, minus the
+        CA-specific subfolder, shared by deploy_node_cert/deploy_client_cert."""
+        os_type = shell.extract_remote_info().distribution_type
+        if os_type == "windows":
+            install_path = x509main.WININSTALLPATH
+        elif os_type == "Mac":
+            install_path = x509main.MACINSTALLPATH
+        else:
+            install_path = x509main.LININSTALLPATH
+        return f"{install_path}{x509main.CHAINFILEPATH}"
+
+    def deploy_node_cert(self, rest, server, cert, key):
+        """
+        Write cert/key (in-memory cryptography objects, e.g. from
+        generate_leaf_cert) into server's inbox as the node certificate
+        (chain.pem/pkey.key) and activate it via reload_certificate().
+
+        This is node-to-node distribution's *server*-role identity for a
+        cb_dist connection -- distinct from deploy_client_cert's
+        *client*-role identity. Both must be deployed (and, to fence a
+        node out via CRL, both revoked) -- see MB-73726.
+
+        `rest` must already be bound to `server` (mirrors
+        trust_ca_on_cluster's rest/server split).
+        """
+        shell = RemoteMachineShellConnection(server)
+        try:
+            inbox_dir = self._inbox_dir(shell)
+            shell.execute_command(f"mkdir -p {inbox_dir}")
+            for filename, pem_bytes in (
+                (x509main.CHAINCERTFILE, self.cert_to_pem(cert)),
+                (x509main.NODECAKEYFILE, self.key_to_pem(key)),
+            ):
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".pem", mode="wb"
+                ) as tmp_file:
+                    tmp_file.write(pem_bytes)
+                    local_path = tmp_file.name
+                try:
+                    shell.copy_file_local_to_remote(
+                        local_path, f"{inbox_dir}/{filename}"
+                    )
+                finally:
+                    os.remove(local_path)
+        finally:
+            shell.disconnect()
+
+        status, content = rest.reload_certificate()
+        if not status:
+            raise AssertionError(
+                f"Failed to reload node certificate on {server.ip}: {content}"
+            )
+
+    def deploy_client_cert(self, server, cert, key):
+        """
+        Write cert/key into server's inbox as the node-to-node *client*
+        certificate (client_chain.pem/client_pkey.key) and activate it via
+        POST /node/controller/reloadClientCertificate.
+
+        No RestConnection wrapper exists for this endpoint (confirmed --
+        it's specific to cb_dist's client-role identity, unlike the node
+        cert's reload_certificate()), so this calls it directly, matching
+        enable_client_cert_auth/disable_client_cert_auth's existing
+        raw-requests style in this module.
+        """
+        shell = RemoteMachineShellConnection(server)
+        try:
+            inbox_dir = self._inbox_dir(shell)
+            shell.execute_command(f"mkdir -p {inbox_dir}")
+            for filename, pem_bytes in (
+                ("client_chain.pem", self.cert_to_pem(cert)),
+                ("client_pkey.key", self.key_to_pem(key)),
+            ):
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".pem", mode="wb"
+                ) as tmp_file:
+                    tmp_file.write(pem_bytes)
+                    local_path = tmp_file.name
+                try:
+                    shell.copy_file_local_to_remote(
+                        local_path, f"{inbox_dir}/{filename}"
+                    )
+                finally:
+                    os.remove(local_path)
+        finally:
+            shell.disconnect()
+
+        response = requests.post(
+            f"https://{server.ip}:18091/node/controller/reloadClientCertificate",
+            auth=(server.rest_username, server.rest_password),
+            verify=False,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise AssertionError(
+                f"Failed to reload client certificate on {server.ip}: "
+                f"{response.status_code} {response.text}"
+            )
+
+    @staticmethod
+    def set_client_cert_verification(server, enabled):
+        """
+        Toggles n2n mutual-TLS client cert verification (REST field
+        clientCertVerification, config key n2n_client_cert_auth) via
+        POST /node/controller/setupNetConfig. No RestConnection wrapper
+        exists for this field.
+
+        This is *separate* from nodeEncryption/cluster-encryption-level --
+        when off (the default), the accept side of a cb_dist connection
+        never requests a peer cert at all, so nodeToNode CRL policy has no
+        effect on that path. Required on for MB-73726-style enforcement
+        testing.
+        """
+        response = requests.post(
+            f"https://{server.ip}:18091/node/controller/setupNetConfig",
+            auth=(server.rest_username, server.rest_password),
+            data={
+                "clientCertVerification": "true" if enabled else "false",
+                "nodeEncryption": "on",
+            },
+            verify=False,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise AssertionError(
+                f"Failed to set clientCertVerification={enabled} on "
+                f"{server.ip}: {response.status_code} {response.text}"
+            )
 
     # ── mTLS handshake helpers ───────────────────────────────────────────────
 

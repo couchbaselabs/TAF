@@ -5,6 +5,7 @@ import requests
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
+from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from couchbase_utils.security_utils.crl_utils import CRLUtils
 from pytests.onPrem_basetestcase import ClusterSetup
@@ -228,6 +229,61 @@ class CRLBase(ClusterSetup):
 
     def _cleanup_trusted_cas(self):
         self.crl_utils.cleanup_trusted_cas(self.rest)
+
+    def _deploy_node_cert(self, server, cert, key):
+        self.crl_utils.deploy_node_cert(RestConnection(server), server, cert, key)
+
+    def _deploy_client_cert(self, server, cert, key):
+        self.crl_utils.deploy_client_cert(server, cert, key)
+
+    def _set_client_cert_verification(self, server, enabled):
+        self.crl_utils.set_client_cert_verification(server, enabled)
+
+    # ── Node-to-node encryption helpers (opt-in -- only needed by tests that
+    # exercise real nodeToNode CRL enforcement; nothing else in this suite,
+    # or in CRLUpgradeTests, needs n2n encryption today, so this logic just
+    # lives here rather than in CRLUtils). ──────────────────────────────────
+
+    def _enable_n2n_encryption(self, servers, level="all"):
+        """
+        Enables node-to-node encryption + sets the cluster encryption level
+        on each of `servers`, disabling auto-failover first and restoring it
+        after -- toggling n2n briefly bounces every node's inter-node
+        listener, matching cb_n2n_encryption.py's proven call order.
+        """
+        prior_autofailover = self.rest.get_autofailover_settings()
+        self.rest.update_autofailover_settings(False, prior_autofailover.timeout)
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            try:
+                cb_cli = CbCli(shell, no_ssl_verify=True)
+                cb_cli.enable_n2n_encryption()
+                cb_cli.set_n2n_encryption_level(level=level)
+            finally:
+                shell.disconnect()
+        if prior_autofailover.enabled:
+            self.rest.update_autofailover_settings(
+                True, prior_autofailover.timeout, maxCount=prior_autofailover.maxCount
+            )
+
+    def _disable_n2n_encryption(self, servers):
+        """Reverses _enable_n2n_encryption: drop the encryption level to
+        'control' first, then disable -- same order as
+        cb_n2n_encryption.py's disable_n2n_cluster()."""
+        prior_autofailover = self.rest.get_autofailover_settings()
+        self.rest.update_autofailover_settings(False, prior_autofailover.timeout)
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            try:
+                cb_cli = CbCli(shell, no_ssl_verify=True)
+                cb_cli.set_n2n_encryption_level(level="control")
+                cb_cli.disable_n2n_encryption()
+            finally:
+                shell.disconnect()
+        if prior_autofailover.enabled:
+            self.rest.update_autofailover_settings(
+                True, prior_autofailover.timeout, maxCount=prior_autofailover.maxCount
+            )
 
     # ── RBAC helpers ─────────────────────────────────────────────────────────
 
