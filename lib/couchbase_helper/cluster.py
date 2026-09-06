@@ -486,7 +486,7 @@ class ServerTasks(object):
             transaction_timeout = 2
         transaction_options = TransactionLoader.get_transaction_options(
             durability=durability,
-            expiration_time=transaction_timeout,
+            timeout=transaction_timeout,
             scan_consistency=None,
             metadata_scope=None,
             metadata_collection=None)

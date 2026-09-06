@@ -128,7 +128,11 @@ class basic_ops(ClusterSetup):
             key = "test_docs-" + str(i)
             result = client.read(key)
             actual_val = result['value']
-            self.assertEquals(self.content, actual_val)
+            self.assertEquals(self.content, actual_val,
+                              "Value mismatch for '%s': %s != %s, read "
+                              "status=%s error=%s"
+                              % (key, self.content, actual_val,
+                                 result['status'], result['error']))
 
     def test_MultiThreadTxnLoad(self):
         """
@@ -263,7 +267,7 @@ class basic_ops(ClusterSetup):
             binary_transactions=self.binary_transactions)
         self.task.jython_task_manager.get_task_result(task)
         self.log.info("get all the keys in the cluster")
-        keys = ["test_docs-0"]*2
+        keys = [self.gen_create.get_key(0)]*2
 
         exception = self.run_transaction(
             self.client.cluster, [self.client.collection], [], keys, [],
@@ -339,19 +343,28 @@ class basic_ops(ClusterSetup):
         for thread in threads:
             thread.start()
 
-        self.client.cluster.disconnect()
+        self.client.close()
         self.client1 = SDKClient(self.cluster, self.def_bucket[0])
         self.sleep(self.transaction_timeout+60,
                    "Wait for transaction cleanup to happen")
 
         self.log.info("going to start the load")
         for doc in docs:
-            exception = self.run_transaction(
-                self.client1.cluster, [self.client1.collection], doc, [], [],
-                self.transaction_commit, self.sync, self.update_count,
-                self.transaction_options, self.binary_transactions)
-            if exception:
+            exception = None
+            for _ in range(2):
+                exception = self.run_transaction(
+                    self.client1.cluster, [self.client1.collection],
+                    doc, [], [],
+                    self.transaction_commit, self.sync, self.update_count,
+                    self.transaction_options, self.binary_transactions)
+                if not exception or not self.transaction_commit:
+                    break
+                self.log.warning("Transaction to create docs failed: %s"
+                                 % exception)
                 self.sleep(60, "Wait for transaction cleanup to happen")
+            if self.transaction_commit and exception:
+                self.fail("Transaction to create docs failed after waiting "
+                          "for the transaction cleanup: %s" % exception)
 
         self.verify_doc(self.num_items, self.client1)
         self.client1.close()
@@ -375,11 +388,46 @@ class basic_ops(ClusterSetup):
                                                      subdoc_key,
                                                      xattr=True)
             self.assertFalse(failed_items, "Xattr read failed")
+            actual_val = success[doc_id]["value"][subdoc_key]
             self.assertEqual(expected_val,
-                             type(expected_val)(success[doc_id]["value"][0]),
+                             type(expected_val)(actual_val),
                              "Sub_doc value mismatch: %s != %s"
-                             % (success[doc_id]["value"][0],
-                                expected_val))
+                             % (actual_val, expected_val))
+
+    def __run_docs_through_txn(self, op_type, docs, errors):
+        """
+        Run 'create' / 'update' for the given docs through transactions,
+        in batches.
+
+        A single transaction holding all 'num_items' docs (10000 for the
+        xattr tests) runs past the transaction timeout, so nothing gets
+        committed. The failure used to be invisible when this ran on a
+        thread, and the test failed later with a misleading
+        DocumentNotFoundException on the very first key. Errors are recorded
+        in 'errors' instead of being raised, so a failure on a thread is
+        still visible to the test.
+        """
+        batch_size = self.input.param("txn_batch_size", 100)
+        for batch in self.__chunks(docs, batch_size):
+            exception = self.run_transaction(
+                self.client.cluster, [self.client.collection],
+                batch if op_type == "create" else [],
+                batch if op_type == "update" else [],
+                [],
+                self.transaction_commit, self.sync, self.update_count,
+                self.transaction_options, self.binary_transactions)
+            if exception:
+                errors.append(exception)
+                return
+
+    def __fail_on_txn_errors(self, op_type, errors):
+        """
+        Rollback is expected when transaction_commit=False, so the recorded
+        errors matter only when the transactions were meant to commit
+        """
+        if self.transaction_commit and errors:
+            self.fail("Transaction to %s docs failed: %s"
+                      % (op_type, errors[0]))
 
     def test_TxnWithXattr(self):
         self.system_xattr = self.input.param("system_xattr", False)
@@ -390,25 +438,23 @@ class basic_ops(ClusterSetup):
         val = "v" * self.doc_size
 
         self.doc_gen(self.num_items)
-        thread = threading.Thread(target=self.__thread_to_transaction,
-                                  args=(self.transaction_options, "create",
-                                        self.docs, self.transaction_commit,
-                                        self.update_count))
-        thread.start()
-        thread.join()
+        txn_errors = list()
+        self.__run_docs_through_txn("create", self.docs, txn_errors)
+        self.__fail_on_txn_errors("create", txn_errors)
 
         self.doc_gen(self.num_items, op_type="update",
                      value={"mutated": 1, "value": "value1"})
+        txn_errors = list()
         thread = threading.Thread(
-            target=self.__thread_to_transaction,
-            args=(self.transaction_options, "update", self.docs,
-                  self.transaction_commit, self.update_count))
+            target=self.__run_docs_through_txn,
+            args=("update", self.docs, txn_errors))
         thread.start()
         self.sleep(1)
         self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
                                            xattr_key, val)
 
         thread.join()
+        self.__fail_on_txn_errors("update", txn_errors)
 
         if self.transaction_commit:
             self.__read_doc_and_validate("test_docs-0", val, xattr_key)
@@ -420,19 +466,16 @@ class basic_ops(ClusterSetup):
                             ["new_my.attr", "new_value"]]
 
         self.doc_gen(self.num_items)
-        thread = threading.Thread(target=self.__thread_to_transaction,
-                                  args=(self.transaction_options, "create",
-                                        self.docs, self.transaction_commit,
-                                        self.update_count))
-        thread.start()
-        thread.join()
+        txn_errors = list()
+        self.__run_docs_through_txn("create", self.docs, txn_errors)
+        self.__fail_on_txn_errors("create", txn_errors)
 
         self.doc_gen(self.num_items, op_type="update",
                      value={"mutated": 1, "value": "value1"})
+        txn_errors = list()
         thread = threading.Thread(
-            target=self.__thread_to_transaction,
-            args=(self.transaction_options, "update", self.docs,
-                  self.transaction_commit, self.update_count))
+            target=self.__run_docs_through_txn,
+            args=("update", self.docs, txn_errors))
 
         thread.start()
         self.sleep(1, "Wait for transx-thread to start")
@@ -440,6 +483,7 @@ class basic_ops(ClusterSetup):
             self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
                                                key, val)
         thread.join()
+        self.__fail_on_txn_errors("update", txn_errors)
 
         if self.transaction_commit:
             for key, val in xattrs_to_insert:

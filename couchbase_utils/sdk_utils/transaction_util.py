@@ -27,24 +27,26 @@ class TransactionLoader(object):
 
     @staticmethod
     def get_transaction_options(durability=None,
-                                expiration_time=None, scan_consistency=None,
+                                timeout=None, scan_consistency=None,
                                 metadata_scope=None,
                                 metadata_collection=None):
+        """
+        Build TransactionOptions passing only the options that are set.
+        'timeout' is the current SDK name for the deprecated
+        'expiration_time' option.
+        """
+        options = dict()
         if durability is not None:
-            durability = SDKOptions.get_durability_level(durability)
-        if expiration_time is not None:
-            expiration_time = SDKOptions.get_duration(expiration_time,
-                                                      time_unit="seconds")
+            options["durability"] = SDKOptions.get_durability_level(durability)
+        if timeout is not None:
+            options["timeout"] = SDKOptions.get_duration(timeout,
+                                                         time_unit="seconds")
         if scan_consistency is not None:
-            scan_consistency = QueryScanConsistency(scan_consistency)
+            options["scan_consistency"] = QueryScanConsistency(scan_consistency)
         if metadata_collection is not None:
-            metadata_collection = Collection(metadata_scope,
-                                             metadata_collection)
-        return TransactionOptions(
-            durability=durability,
-            timeout=expiration_time,
-            scan_consistency=scan_consistency,
-            metadata_collection=metadata_collection)
+            options["metadata_collection"] = Collection(metadata_scope,
+                                                        metadata_collection)
+        return TransactionOptions(**options)
 
     def run_transaction(self, context):
         # Create operation
