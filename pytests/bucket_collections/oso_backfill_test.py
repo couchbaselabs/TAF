@@ -43,6 +43,14 @@ class KvOsoBackfillTests(CollectionBase):
                 err_pattern[index] = (t_node, cb_err)
 
         sdk_client = SDKClient(self.cluster, self.cluster.buckets[0])
+
+        # Index nodes that join an already initialised cluster inherit no GSI
+        # storage mode, and CREATE INDEX then fails with
+        # "Please Set Indexer Storage Mode Before Create Index"
+        self.log.info("Setting indexer storage mode to '%s'" % self.gsi_type)
+        if not self.rest.set_indexer_storage_mode(self.gsi_type):
+            self.log.warning("Failed to set indexer storage mode")
+
         self.log.info("Creating deferred indexes on collections")
         for bucket in self.cluster.buckets:
             for s_name, scope in bucket.scopes.items():
