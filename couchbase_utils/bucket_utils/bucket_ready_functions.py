@@ -490,7 +490,7 @@ class DocLoaderUtils(object):
                           target_vbuckets="all", type="default",
                           doc_size=256, randomize_value=False,
                           randomize_doc_size=False, key_size=None,
-                          load_using="default_loader"):
+                          load_using="default_loader", vbuckets=None):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -501,9 +501,15 @@ class DocLoaderUtils(object):
         :param target_vbuckets: Target_vbuckets for which doc loading
                                 should be done. Type: list / range()
         :param doc_size: Doc size to use for doc_generator
+        :param vbuckets: Total vbucket count of the target bucket. Needed so
+                         the key->vbucket hashing matches the server (and the
+                         target_vbuckets numbers). Falls back to the framework
+                         default when not provided.
         :return: doc_generator object based on given inputs
         :param randomize_value: Randomize the data
         """
+        if not vbuckets:
+            vbuckets = CbServer.total_vbuckets
         if op_type == "create":
             start = collection_obj.doc_index[1]
             end = start + num_items
@@ -544,6 +550,7 @@ class DocLoaderUtils(object):
             gen_docs = doc_generator(generic_key, start, end,
                                      doc_size=doc_size,
                                      target_vbucket=target_vbuckets,
+                                     vbuckets=vbuckets,
                                      mutation_type=op_type,
                                      mutate=mutation_num,
                                      randomize_value=randomize_value,
@@ -772,6 +779,7 @@ class DocLoaderUtils(object):
                                         doc_key,
                                         doc_size=doc_size,
                                         target_vbuckets=target_vbs,
+                                        vbuckets=bucket.numVBuckets,
                                         mutation_num=mutation_num,
                                         type=c_crud_data[op_type]["doc_gen_type"],
                                         randomize_value=randomize_value,
