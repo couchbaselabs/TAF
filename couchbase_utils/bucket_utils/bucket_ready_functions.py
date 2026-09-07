@@ -7346,7 +7346,8 @@ class BucketUtils(ScopeUtils):
             self, prev_stat, curr_stats,
             comparison="==", no_history_preserved=False):
         """
-        - no_history_preserved is True, expected curr::hist_start_seqno == 0
+        - no_history_preserved is True, expected hist_start_seqno == 0 on
+          both active and replica vbuckets
         - comparison '==', Fail if vb_hist_start_seqno :: prev != curr
         - comparison '>', Fail if vb_hist_start_seqno :: prev > curr
         - comparison '>=', Fail if vb_hist_start_seqno :: prev >= curr
@@ -7361,6 +7362,18 @@ class BucketUtils(ScopeUtils):
         for index, stat in enumerate([prev_stat, curr_stats]):
             for vb_num, stats in stat.items():
                 for r_stat in stats[replica]:
+                    if no_history_preserved:
+                        # Nothing retained yet - replicas carry the same
+                        # expectation as the active check below. Comparing
+                        # high_seqno/purge_seqno vs a zero window says nothing.
+                        if r_stat[hist_start_seqno] != 0:
+                            result = False
+                            self.log.critical(
+                                "{0} - vb_{1}, replica history_start_seqno "
+                                "{2} != 0"
+                                .format(index, vb_num,
+                                        r_stat[hist_start_seqno]))
+                        continue
                     if r_stat[high_seqno] < r_stat[hist_start_seqno]:
                         result = False
                         self.log.critical(

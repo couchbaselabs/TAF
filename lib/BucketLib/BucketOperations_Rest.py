@@ -125,8 +125,6 @@ class BucketHelper(BucketRestApi):
             if 'vBucketServerMap' in parsed:
                 vBucketServerMap = parsed['vBucketServerMap']
                 serverList = vBucketServerMap['serverList']
-                bucket.servers.extend(serverList)
-                bucket.servers = list(set(bucket.servers))
                 if "numReplicas" in vBucketServerMap:
                     bucket.replicaNumber = vBucketServerMap["numReplicas"]
                 # vBucketMapForward
