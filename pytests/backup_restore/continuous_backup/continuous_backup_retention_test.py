@@ -4,6 +4,7 @@ import time
 from backup_restore.continuous_backup.continuous_backup_base import ContinuousBackupBase
 from StatsLib.StatsOperations import StatsHelper
 from pytests.bucket_collections.collections_base import CollectionBase
+from py_constants import CbServer
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 class ContinuousBackupRetentionTest(ContinuousBackupBase):
@@ -18,7 +19,6 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         # self.cluster.set_env_variable(self.cluster.master, "CB_CONTBK_RETENTION_CHECK", "5m")
 
     def tearDown(self):
-        super(ContinuousBackupRetentionTest, self).tearDown()
         # onPrem_basetestcase only resets CB_CONTBK_RETENTION_* env vars when
         # cluster.vbuckets != 1024, which is never true for these on-prem
         # clusters -- so the unsafe retention window this class sets on the
@@ -26,11 +26,15 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         # every later test that reuses the same nodes without going through
         # initialize_cluster() again (e.g. ContinuousBackupTest, which runs
         # right after this class and defaults skip_cluster_reset=True).
-        # Reset unconditionally here so no test outside this class can ever
-        # inherit it.
+        # Reset unconditionally here, before super().tearDown(), so a failure
+        # anywhere in the inherited teardown chain (e.g. bucket/scope cleanup
+        # after a failed retention-window restore) can never skip it.
         if self.retention_test:
             for cluster in self.cb_clusters.values():
                 self.cluster_util.reset_env_variables(cluster)
+            self.sleep(30, "Wait for couchbase-server to come back up "
+                           "after resetting env vars")
+        super(ContinuousBackupRetentionTest, self).tearDown()
 
     def _load_data_and_get_task(self, data_spec_name):
         self.log.info("Load docs using spec file %s" % data_spec_name)
@@ -167,6 +171,19 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         """Delete and recreate self.bucket using its original bucket object."""
         self.log.info(f"Deleting bucket: {self.bucket.name}")
         self.bucket_util.delete_bucket(self.cluster, self.bucket)
+        # delete_bucket() destroys every scope/collection on the server, but
+        # never touches self.bucket's local scope bookkeeping -- scope-0
+        # (created from the original CollectionBase spec in setUp) stays
+        # marked active in the Python model. If the PITR restore below ever
+        # fails to recreate it server-side (e.g. the retention-check bug),
+        # tearDown's generic remove_scope_collections_for_bucket() later
+        # tries to drop a scope that no longer exists and raises
+        # "delete_scope failed", masking the real failure. Mark every
+        # non-default scope dropped now so the local model matches the
+        # fresh, scope-less bucket the recreate below actually produces.
+        for scope in self.bucket_util.get_active_scopes(self.bucket):
+            if scope.name != CbServer.default_scope:
+                self.bucket_util.mark_scope_as_dropped(self.bucket, scope.name)
         self.log.info(f"Recreating bucket: {self.bucket.name}")
         self.bucket_util.create_bucket(self.cluster, self.bucket)
 
