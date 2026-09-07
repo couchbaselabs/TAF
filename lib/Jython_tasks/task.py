@@ -6007,9 +6007,18 @@ class AutoFailoverNodesFailureTask(Task):
         self.start_time = 0
         self.timeout_buffer = timeout_buffer
         self.current_failure_node = self.servers_to_fail[0]
-        self.max_time_to_wait_for_failover = self.timeout + \
-                                             self.timeout_buffer
         self.disk_timeout = disk_timeout
+        # A disk failure is only reported to ns_server after disk_timeout
+        # seconds of continuous errors, and only then does the
+        # autofailover timer start. Waiting timeout+buffer stopped
+        # watching before the failover could legitimately happen, while
+        # check() went on to judge the result against
+        # timeout+buffer+disk_timeout - so a failover that did occur, and
+        # that check() would have accepted, was reported as
+        # "not initiated".
+        self.max_time_to_wait_for_failover = self.timeout + \
+                                             self.timeout_buffer + \
+                                             self.disk_timeout
         self.disk_location = disk_location
         self.disk_size = disk_size
         if failure_timers is None:
@@ -6272,37 +6281,36 @@ class AutoFailoverNodesFailureTask(Task):
 
     def _fail_disk(self, node):
         shell = RemoteMachineShellConnection(node)
-        output, error = shell.unmount_partition(self.disk_location)
-        success = True
-        if output:
-            for line in output:
-                if self.disk_location in line:
-                    success = False
-        if success:
-            self.test_log.debug("Unmounted disk at location : {0} on {1}"
-                                .format(self.disk_location, node.ip))
+        if shell.inject_disk_error(self.disk_location):
+            self.test_log.info(
+                "Mapped {0} to an error target on {1}; its I/O now fails "
+                "with EIO".format(self.disk_location, node.ip))
             self.start_time = time.time()
         else:
-            exception_str = "Could not fail the disk at {0} on {1}" \
-                .format(self.disk_location, node.ip)
+            exception_str = \
+                "Could not fail the disk at {0} on {1}: the mapping is {2}" \
+                .format(self.disk_location, node.ip,
+                        shell.get_dm_table_type(self.disk_location))
             self.test_log.error(exception_str)
             self.set_exception(Exception(exception_str))
         shell.disconnect()
 
     def _recover_disk(self, node):
         shell = RemoteMachineShellConnection(node)
-        # we need to stop couchbase server before mounting partition to avoid inconsistencies
+        # we need to stop couchbase server before remounting the partition
+        # to avoid inconsistencies
         shell.stop_couchbase()
-        o, r = shell.mount_partition(self.disk_location)
-        for line in o:
-            if self.disk_location in line:
-                self.test_log.debug("Mounted disk at location : {0} on {1}"
-                                    .format(self.disk_location, node.ip))
-                shell.start_couchbase()
-                shell.disconnect()
-                return
-        self.set_exception(Exception("Failed mount disk at location {0} on {1}"
-                                     .format(self.disk_location, node.ip)))
+        if shell.recover_disk_error(self.disk_location):
+            self.test_log.info(
+                "Mapped {0} back to its loop device on {1}"
+                .format(self.disk_location, node.ip))
+            shell.start_couchbase()
+            shell.disconnect()
+            return
+        self.set_exception(Exception(
+            "Failed to recover the disk at {0} on {1}: the mapping is {2}"
+            .format(self.disk_location, node.ip,
+                    shell.get_dm_table_type(self.disk_location))))
         shell.start_couchbase()
         shell.disconnect()
         raise Exception()
@@ -6338,18 +6346,109 @@ class AutoFailoverNodesFailureTask(Task):
         shell.disconnect()
 
     def _check_for_autofailover_initiation(self, failed_over_node):
-        ui_logs = global_vars.cluster_util.get_ui_logs(self.master, lines=20)
-        ui_logs_text = [t["text"] for t in ui_logs]
-        ui_logs_time = [t["serverTime"] for t in ui_logs]
+        """
+        Report whether 'failed_over_node' has been failed over.
+
+        Detection is on cluster state rather than on a log message.
+        clusterMembership flips to 'inactiveFailed' and stays there, so it
+        can be neither scrolled out of a ring buffer nor reworded by a
+        server release. The previous check read the newest 20 of the 250
+        entries /logs holds and compared ns_server's exact wording by
+        string equality, which could miss a failover that did happen in
+        two independent ways.
+
+        The failover task at /pools/default/tasks is no use here: a
+        measured run ran it in 229ms, so a poll loop would step over it.
+
+        :param failed_over_node: Node expected to have been failed over
+        :return: (initiated, server_time). server_time is the precise
+                 time of the failover when the log still carries it, and
+                 None otherwise - the caller then times the failover from
+                 its own poll.
+        """
         if self.auto_reprovision:
-            expected_log = "has been reprovisioned on following nodes: ['ns_1@{}']".format(
-                failed_over_node.ip)
-        else:
-            expected_log = "Starting failing over ['ns_1@{}']".format(
-                failed_over_node.ip)
-        if expected_log in ui_logs_text:
-            failed_over_time = ui_logs_time[ui_logs_text.index(expected_log)]
-            return True, failed_over_time
+            # Reprovisioning does not fail the node over, so there is no
+            # membership change to observe and the log is the only signal.
+            return self._find_ui_log_entry(
+                "has been reprovisioned on following nodes: ['ns_1@{}']"
+                .format(failed_over_node.ip))
+
+        try:
+            status, content = ClusterRestAPI(self.master).cluster_details()
+        except Exception as e:
+            self.test_log.debug("Could not read cluster membership from "
+                                "{0}: {1}".format(self.master.ip, e))
+            return False, None
+        if not status:
+            return False, None
+        for node in content.get("nodes", []):
+            hostname = node.get("hostname", "")
+            if hostname.split(":")[0] != failed_over_node.ip:
+                continue
+            if node.get("clusterMembership") == "inactiveFailed":
+                _, server_time = self._find_ui_log_entry(
+                    "Starting failing over ['ns_1@{}']"
+                    .format(failed_over_node.ip))
+                self._log_failover_reason(failed_over_node)
+                return True, server_time
+            break
+        return False, None
+
+    def _log_failover_reason(self, failed_over_node):
+        """
+        Report why the node was failed over.
+
+        This suite is meant to exercise failoverOnDataDiskIssues, but a
+        node whose data path is merely unreachable gets failed over for
+        being unhealthy instead - observed as 'The cluster manager did not
+        respond' and 'All monitors report node is unhealthy'. Cluster
+        state cannot tell those apart, so the reason is logged to keep the
+        mechanism visible in the run rather than silently assumed.
+        :param failed_over_node: Node that has just been failed over
+        :return: Nothing
+        """
+        marker = ("Node ('ns_1@{}') was automatically failed over"
+                  .format(failed_over_node.ip))
+        try:
+            ui_logs = global_vars.cluster_util.get_ui_logs(self.master,
+                                                           lines=200)
+        except Exception as e:
+            self.test_log.debug("Could not read the UI logs from {0}: {1}"
+                                .format(self.master.ip, e))
+            return
+        for entry in ui_logs:
+            if marker in entry.get("text", ""):
+                self.test_log.critical(
+                    "Failover reason for {0}: {1}"
+                    .format(failed_over_node.ip,
+                            entry.get("text", "").strip()))
+                return
+        self.test_log.critical(
+            "Failover of {0} seen in cluster state; no reason found in the "
+            "UI log window".format(failed_over_node.ip))
+
+    def _find_ui_log_entry(self, expected_text):
+        """
+        Best-effort lookup of a UI log entry, for its server time.
+
+        Used only to date an event that has already been established by
+        other means, so a miss is not a failure - it costs precision in
+        the reported time, not correctness of the verdict. Substring
+        matched over a wide window, because the old equality match over
+        20 entries is exactly what made the log unreliable as a signal.
+        :param expected_text: Text the entry is expected to contain
+        :return: (found, server_time)
+        """
+        try:
+            ui_logs = global_vars.cluster_util.get_ui_logs(self.master,
+                                                           lines=200)
+        except Exception as e:
+            self.test_log.debug("Could not read the UI logs from {0}: {1}"
+                                .format(self.master.ip, e))
+            return False, None
+        for entry in ui_logs:
+            if expected_text in entry.get("text", ""):
+                return True, entry.get("serverTime")
         return False, None
 
     def get_failover_count(self):
@@ -6370,9 +6469,21 @@ class AutoFailoverNodesFailureTask(Task):
                 self._check_for_autofailover_initiation(
                     self.current_failure_node)
             if autofailover_initated:
-                end_time = self._get_mktime_from_server_time(failed_over_time)
+                if failed_over_time:
+                    end_time = self._get_mktime_from_server_time(
+                        failed_over_time)
+                else:
+                    # The entry was not in the log window; time the
+                    # failover from this poll instead of discarding a
+                    # detection that cluster state has already confirmed.
+                    end_time = time.time()
                 time_taken = end_time - self.start_time
                 return autofailover_initated, time_taken
+            # The loop used to poll with no delay at all, hammering REST
+            # on the very node coordinating the failover being measured.
+            sleep(2, "Waiting for autofailover of {0}"
+                     .format(self.current_failure_node.ip),
+                  log_type="infra")
         return autofailover_initated, -1
 
     def _get_mktime_from_server_time(self, server_time):

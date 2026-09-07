@@ -1,4 +1,5 @@
 import os
+import socket
 import time
 from subprocess import PIPE, Popen
 from typing import re
@@ -719,8 +720,18 @@ class CommonShellAPIs(object):
             channel.close()
             stdin.close()
         elif self.remote:
-            stdin, stdout, stderro = self._ssh_client.exec_command(
-                command, timeout=timeout)
+            try:
+                stdin, stdout, stderro = self._ssh_client.exec_command(
+                    command, timeout=timeout)
+            except socket.timeout:
+                # paramiko raises a bare socket.timeout whose str() is '',
+                # so without this the caller reports the node and nothing
+                # else - "172.23.219.120: " - and there is no way to tell
+                # which command hung or for how long. Every disk-partition
+                # timeout in this suite has surfaced that way.
+                raise socket.timeout(
+                    "{0}: timed out after {1}s starting command: {2}"
+                    .format(self.ip, timeout, command))
             stdin.close()
 
         if not self.remote:
@@ -734,9 +745,18 @@ class CommonShellAPIs(object):
                 exit_code = p.returncode
 
         if self.remote:
-            for line in stdout.read().splitlines():
+            try:
+                out_data = stdout.read()
+                err_data = stderro.read()
+            except socket.timeout:
+                # The usual shape: the command started but produced no
+                # output within 'timeout', so the read is what expires.
+                raise socket.timeout(
+                    "{0}: command did not finish within {1}s: {2}"
+                    .format(self.ip, timeout, command))
+            for line in out_data.splitlines():
                 output.append(line.decode('utf-8', errors='replace'))
-            for line in stderro.read().splitlines():
+            for line in err_data.splitlines():
                 error.append(line.decode('utf-8', errors='replace'))
             if temp:
                 line = temp.splitlines()
@@ -1066,6 +1086,22 @@ class CommonShellAPIs(object):
         output, error = self.execute_command(command)
         command = "chmod 777 {0}".format(location)
         output, error = self.execute_command(command)
+
+    def get_mount_mode(self, location):
+        """
+        Return how 'location' is currently mounted.
+
+        Used to verify the state a mount ended up in, rather than trusting
+        the output of a command that prints nothing on success.
+        :param location: Mountpoint to inspect
+        :return: "rw", "ro", or None when it is not a mountpoint
+        """
+        command = ("findmnt -no OPTIONS {0} 2>/dev/null | cut -d, -f1"
+                   .format(location))
+        output, error = self.execute_command(command)
+        if output and output[0].strip() in ("rw", "ro"):
+            return output[0].strip()
+        return None
 
     def unmount_partition(self, location):
         """

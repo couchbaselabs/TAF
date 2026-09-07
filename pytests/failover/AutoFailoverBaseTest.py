@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import time
+from threading import Thread
 
 from BucketLib.bucket import Bucket
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
@@ -130,6 +131,7 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
                 replica=self.num_replicas,
                 bucket_type=self.bucket_type,
                 ram_quota=self.bucket_size,
+                storage=self.bucket_storage,
                 vbuckets=self.bucket_num_vb)
             self.sleep(5, "Wait for bucket to accept SDK connections")
 
@@ -238,12 +240,42 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
                 and self.range_scan_collections > 0:
             CollectionBase.range_scan_load_setup(self)
 
+    def stop_continuous_loadgen(self):
+        """
+        End the indefinite load tasks _loadgen() started.
+
+        They never finish on their own, so waiting on one blocks for ever.
+        Safe to call more than once, and safe when the load was a fixed
+        batch instead.
+        :return: Nothing
+        """
+        for task in getattr(self, "loadgen_tasks", None) or []:
+            if hasattr(task, "end_task"):
+                task.end_task()
+
     def _loadgen(self):
         tasks = []
         if self.atomicity:
-            # tasks.append(self.async_load_all_buckets_atomicity(
-            #     self.run_time_create_load_gen, "create", 0))
-            pass
+            # A continuous update load rather than a fixed batch, because
+            # the disk failure has to be injected into a node that is
+            # actively writing. failoverOnDataDiskIssues fires on disk
+            # errors KV reports, and KV only reports errors on I/O it
+            # actually issues. This branch previously did nothing at all -
+            # it referenced a run_time_create_load_gen that exists nowhere
+            # in the tree - so the suite injected a disk failure into an
+            # idle node: on 172.23.104.173 the kernel logged 246 I/O
+            # errors while memcached logged none, and no disk failover
+            # ever fired.
+            update_gen = doc_generator(self.key, 0, self.num_items,
+                                       key_size=self.key_size,
+                                       doc_size=self.doc_size,
+                                       doc_type=self.doc_type)
+            for bucket in self.cluster.buckets:
+                tasks.append(self.task.async_continuous_doc_ops(
+                    self.cluster, bucket, update_gen, op_type="update",
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using))
         else:
             subsequent_load_gen = doc_generator(self.key,
                                                 self.num_items,
@@ -705,6 +737,18 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
         self.remove_after_failover = self.input.param(
             "remove_after_failover", False)
         self.timeout_buffer = 120 if self.failover_orchestrator else 10
+        # A disk failure is not observed the way the other actions are.
+        # The injection unmounts with 'umount -l', which is lazy, so
+        # memcached keeps writing through its open file descriptors and
+        # ns_server is told of no disk errors at all; what eventually
+        # fails the node over is ns_server wedging on the missing data
+        # path, reported as 'The cluster manager did not respond' and
+        # measured at ~57s from injection on 172.23.104.173 - against a
+        # 20s window with disk_timeout=5. The other failure actions take
+        # the node down at once and keep their tighter budget, so this is
+        # deliberately a separate value rather than a wider one for all.
+        self.disk_failover_buffer = self.input.param(
+            "disk_failover_buffer", self.timeout_buffer + 180)
         failover_not_expected = (self.max_count == 1
                                  and self.num_node_failures > 1
                                  and self.pause_between_failover_action < self.timeout
@@ -940,19 +984,24 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.log.info("Cleanup the cluster and set the data location "
                       "to the one specified by the test.")
         self.original_data_devices = {}
+        # list.append is atomic under the GIL, so the worker threads can
+        # record into this without further locking.
+        self.node_setup_errors = list()
+        threads = list()
         for server in self.cluster.servers:
-            self._create_data_locations(server)
-            if server == self.cluster.master:
-                master_services = self.cluster_util.get_services(
-                    self.cluster.servers[:1], self.services_init, start_node=0)
-            else:
-                master_services = None
-            if master_services:
-                master_services = master_services[0].split(",")
-            self._initialize_node_with_new_data_location(
-                server, self.data_location, master_services)
-            if self.use_https:
-                self.set_ports_for_server(server, "ssl")
+            threads.append(Thread(target=self.__per_node_new_mount_partition,
+                                  args=(server,)))
+            threads[-1].start()
+
+        for t in threads:
+            t.join()
+
+        # Every node is joined before failing, so one bad node does not
+        # hide the state of the others.
+        if self.node_setup_errors:
+            self.fail(f"Failed to set the data location to "
+                      f"{self.data_location} on: "
+                      f"{'; '.join(self.node_setup_errors)}")
 
         self.services = self.cluster_util.get_services(
             self.cluster.servers[:self.nodes_init], None)
@@ -1013,9 +1062,13 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         if self.spec_name is None:
             if self.read_loadgen:
                 self.bucket_size = self.input.param("bucket_size", 256)
+            # create_default_bucket() defaults storage to magma, so
+            # bucket_storage was parsed and then silently dropped: the
+            # bucket came up magma however the test was invoked.
             self.bucket_util.create_default_bucket(self.cluster,
                                                    ram_quota=self.bucket_size,
-                                                   replica=self.num_replicas)
+                                                   replica=self.num_replicas,
+                                                   storage=self.bucket_storage)
             self.load_all_buckets(self.initial_load_gen, "create", 0)
         else:
             try:
@@ -1030,17 +1083,112 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.loadgen_tasks = []
         self.log.info("=========Finished Diskautofailover base setup=========")
 
+    def wait_for_ns_server_reachable(self, server, wait_time=300):
+        """
+        Wait until ns_server on 'server' answers REST.
+
+        node-init only needs the node to be reachable; it does not need it
+        to be healthy. is_ns_server_running() returns True only for status
+        'healthy', but a node whose data directory has just been restored
+        comes back in 'warmup' while it reloads its buckets - so waiting
+        for 'healthy' fails on exactly the node the test wiped, while
+        ns_server is up and serving REST perfectly well. Measured on
+        172.23.104.173, which sat in 'warmup' through a 30s and then a
+        120s wait and was answering /pools/default with 200 throughout.
+        :param server: Node to wait for
+        :param wait_time: Seconds to wait before giving up
+        :return: True once ns_server answers, False if it never does
+        """
+        end_time = time.time() + wait_time
+        while time.time() < end_time:
+            try:
+                status, content = ClusterRestAPI(server).node_details()
+                if status:
+                    self.log.debug(
+                        f"{server.ip}: ns_server reachable, node status="
+                        f"{content.get('status')}")
+                    return True
+            except Exception as e:
+                # Building the REST client probes the node, so an
+                # unreachable one raises here rather than returning.
+                self.log.debug(f"{server.ip}: ns_server not reachable "
+                               f"yet: {e}")
+            self.sleep(5, f"Waiting for ns_server on {server.ip}")
+        return False
+
+    def prepare_data_location(self, shell, original_device, data_paths):
+        """
+        Give couchbase back the directories a restore has just uncovered.
+
+        restore_partition() unmounts the loopback and, when there was no
+        dedicated device to put back, leaves disk_location as the bare
+        directory 'mkdir -p' created in create_new_partition(): root
+        owned and empty. ns_server cannot start on a data path that does
+        not exist, so the node never comes back and every later
+        node-init gets connection-refused. Waiting longer for ns_server
+        is not a substitute - it simply never comes up.
+
+        A shell 'mkdir -p' is used rather than create_directory(): that
+        one stats over sftp and raises EACCES on a root-owned mountpoint.
+        :param shell: Open connection to the node
+        :param original_device: Device restore_partition() put back, or
+                                None when there was none. Recorded for the
+                                log; the paths are recreated either way.
+        :param data_paths: Paths couchbase must find on restart
+        :return: Nothing
+        """
+        if original_device:
+            # A real device is back, but not necessarily with the data
+            # directories on it: create_new_partition() unmounts that
+            # device and then removes and recreates disk_location, so the
+            # paths couchbase is configured with are gone from the real
+            # volume too. mkdir -p and the chown below are idempotent, so
+            # doing this unconditionally costs nothing when they do exist.
+            self.log.debug(f"{original_device} is back at the data location; "
+                           f"ensuring {data_paths} exist on it")
+        # An immutable flag on any component fails the mkdir below even as
+        # root, which leaves the node with no data path at all.
+        shell.clear_immutable(*data_paths)
+        for path in data_paths:
+            if not path:
+                continue
+            try:
+                output, error = shell.execute_command(f"mkdir -p {path}")
+                shell.log_command_output(output, error)
+                shell.give_directory_permissions_to_couchbase(path)
+            except Exception as e:
+                self.log.error(f"Failed to recreate {path} on {shell.ip}: "
+                               f"{e}")
+
     def tearDown(self):
         self.log.info("=========Starting Diskautofailover teardown ==========")
+        # The test body stops these itself, but it may have failed before
+        # reaching that point, and an indefinite task blocks the task
+        # manager from shutting down.
+        self.stop_continuous_loadgen()
         self.bucket_util.print_bucket_stats(self.cluster)
         self.targetMaster = True
         restore_errors = []
         if hasattr(self, "original_data_path"):
             self.bring_back_failed_nodes_up()
+            # Before the restore removes the data directory, not after.
+            # A node's configuration lives in
+            # /opt/couchbase/var/lib/couchbase/config, not under
+            # disk_location, so wiping the data directory of a node that
+            # still owns a bucket leaves it believing it has vbucket files
+            # that no longer exist: it comes back in 'warmup' and stays
+            # there. super().tearDown() deletes the buckets far too late
+            # to prevent that. Measured on 172.23.104.173.
+            try:
+                self.bucket_util.delete_all_buckets(self.cluster)
+            except Exception as e:
+                restore_errors.append(f"delete_all_buckets: {e}")
+                self.log.error(f"Failed to delete buckets before restoring "
+                               f"{self.disk_location}: {e}")
             for server in self.cluster.servers:
                 shell = RemoteMachineShellConnection(server)
+                shell.stop_couchbase()
                 try:
-                    shell.stop_couchbase()
                     shell.restore_partition(
                         self.disk_location,
                         self.original_data_devices.get(server.ip))
@@ -1050,6 +1198,12 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                         "Failed to restore {0} on {1}: {2}"
                         .format(self.disk_location, server.ip, e))
                 finally:
+                    # Before couchbase restarts, not after: it cannot
+                    # start at all on a data path the restore removed.
+                    self.prepare_data_location(
+                        shell, self.original_data_devices.get(server.ip),
+                        (self.disk_location, self.data_location,
+                         self.original_data_path))
                     shell.start_couchbase()
                     shell.disconnect()
                 self._initialize_node_with_new_data_location(
@@ -1059,6 +1213,35 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.fail(
                 "Failed to restore original data partition on: {0}"
                 .format("; ".join(restore_errors)))
+
+    def __per_node_new_mount_partition(self, server):
+        # Nothing may escape this method. An exception raised in a thread
+        # never reaches the code that started it - Thread.join() returns
+        # normally and the test goes on to pass - so self.fail() and
+        # assertTrue() in here are silent unless the failure is carried
+        # back to the caller by hand. Record it and let setUp raise it on
+        # the main thread once every node has been joined.
+        try:
+            self._create_data_locations(server)
+            if server == self.cluster.master:
+                master_services = self.cluster_util.get_services(
+                    self.cluster.servers[:1], self.services_init,
+                    start_node=0)
+            else:
+                master_services = None
+            if master_services:
+                master_services = master_services[0].split(",")
+            self._initialize_node_with_new_data_location(
+                server, self.data_location, master_services)
+            if self.use_https:
+                self.set_ports_for_server(server, "ssl")
+        except Exception as e:
+            # AssertionError is an Exception, so this catches self.fail()
+            # and assertTrue() from the helpers as well as a raised
+            # ServerUnavailableException from a node that is still down.
+            self.node_setup_errors.append(f"{server.ip}: {e}")
+            self.log.error(f"Failed to set up the data location on "
+                           f"{server.ip}: {e}")
 
     def enable_disk_autofailover(self):
         if self.disk_timeout < 5:
@@ -1119,11 +1302,52 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
     def _create_data_locations(self, server):
         shell = RemoteMachineShellConnection(server)
-        self.original_data_devices[server.ip] = shell.get_mount_source(
-            self.disk_location)
-        shell.create_new_partition(self.disk_location, self.disk_location_size)
-        shell.create_directory(self.data_location)
-        shell.give_directory_permissions_to_couchbase(self.data_location)
+        current_device = shell.get_mount_source(self.disk_location)
+        # A '/dev/loop*' here is this suite's own leftover from a run that
+        # did not restore itself, not a real data disk. Recording it makes
+        # the teardown try to mount back a loop device it has just
+        # detached and whose backing file it has deleted, which fails on
+        # every node with "expected device '/dev/loopN', found 'None'".
+        # There is nothing pristine behind it, so there is nothing to
+        # restore.
+        if shell.is_suite_device(current_device, self.disk_location):
+            self.log.warning(
+                f"{server.ip}: {self.disk_location} is already on "
+                f"{current_device}, a leftover loopback from an earlier "
+                f"run. Treating it as having no dedicated device.")
+            current_device = None
+        # Provisional only. create_new_partition() re-samples after it has
+        # drained this suite's leftovers, so on a node an interrupted run
+        # left dirty it sees the real device where this sees the leftover
+        # loopback and records None. Whatever it actually unmounts is what
+        # has to be put back, so its return value replaces this below.
+        self.original_data_devices[server.ip] = current_device
+        # Couchbase has to be down first. create_new_partition() unmounts
+        # disk_location and detaches the loop device behind it, and while
+        # memcached still holds files open on that filesystem the unmount
+        # is only lazy and the detach fails with EBUSY however often it is
+        # retried - 'losetup -d' merely arms autoclear, so the device frees
+        # itself minutes later once couchbase lets go, long after setUp has
+        # given up. restore_partition() documents the same requirement for
+        # the reverse direction.
+        shell.stop_couchbase()
+        try:
+            unmounted = shell.create_new_partition(self.disk_location,
+                                                   self.disk_location_size)
+            if unmounted:
+                # It took a real device out of the way; that is the device
+                # teardown must remount, whatever was recorded above.
+                if unmounted != current_device:
+                    self.log.info(
+                        f"{server.ip}: {unmounted} was mounted at "
+                        f"{self.disk_location} underneath a leftover from "
+                        f"an earlier run; recording it as the device to "
+                        f"restore instead of {current_device}")
+                self.original_data_devices[server.ip] = unmounted
+            shell.create_directory(self.data_location)
+            shell.give_directory_permissions_to_couchbase(self.data_location)
+        finally:
+            shell.start_couchbase()
         shell.disconnect()
 
     def _initialize_node_with_new_data_location(self, server, data_location,
@@ -1133,7 +1357,19 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         init_port = server.port or CbServer.port
         if init_port == CbServer.ssl_port:
             init_port = CbServer.port
+
         shell_conn = RemoteMachineShellConnection(server)
+        if not self.wait_for_ns_server_reachable(server, wait_time=30):
+            shell_conn.start_couchbase()
+            self.assertTrue(
+                self.wait_for_ns_server_reachable(server, wait_time=300),
+                f"{server.ip}: ns_server not reachable, cannot set the "
+                f"data location to {data_location}")
+
+        ClusterRestAPI(server).reset_node()
+        self.assertTrue(
+            self.wait_for_ns_server_reachable(server, wait_time=300),
+            f"{server.ip}: ns_server not reachable after resetting the node")
         cb_cli = CbCli(shell_conn)
         output, error = cb_cli.node_init(node_init_data_path=data_location)
         cb_cli.disconnect()
@@ -1159,7 +1395,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.task_manager, self.orchestrator, self.server_to_fail,
             "disk_failure", self.timeout,
             self.pause_between_failover_action, self.failover_expected,
-            self.timeout_buffer, failure_timers=node_down_timer_tasks,
+            self.disk_failover_buffer, failure_timers=node_down_timer_tasks,
             disk_timeout=self.disk_timeout, disk_location=self.disk_location,
             disk_size=self.disk_location_size)
         self.task_manager.add_new_task(task)
@@ -1167,6 +1403,23 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.task_manager.get_task_result(task)
         except Exception as e:
             self.fail("Exception: {}".format(e))
+        # The load exists to make the failure observable, and the verdict
+        # is now in, so it is ended here rather than in each caller: seven
+        # tests in this suite start it through _loadgen() and then wait on
+        # it, and get_task_result() on an indefinite task never returns.
+        # Ended before any self.fail() below, so a failing verdict stops
+        # the load too.
+        self.stop_continuous_loadgen()
+        # AutoFailoverNodesFailureTask reports a missed failover through
+        # set_warn(), which records task.exception but - unlike
+        # set_exception() - does not raise, so get_task_result() returns
+        # normally and a run where the failover never happened was
+        # reported as a pass. The recorded exception is the whole verdict
+        # of the task, so it has to be acted on here.
+        if task.exception:
+            self.fail(f"disk_failure injection on "
+                      f"{[node.ip for node in self.server_to_fail]}: "
+                      f"{task.exception}")
 
     def fail_disk_via_disk_full(self):
         node_down_timer_tasks = []
@@ -1176,7 +1429,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         task = AutoFailoverNodesFailureTask(
             self.task_manager, self.orchestrator, self.server_to_fail,
             "disk_full", self.timeout, self.pause_between_failover_action,
-            self.failover_expected, self.timeout_buffer,
+            self.failover_expected, self.disk_failover_buffer,
             failure_timers=node_down_timer_tasks,
             disk_timeout=self.disk_timeout, disk_location=self.disk_location,
             disk_size=self.disk_location_size)
@@ -1185,6 +1438,19 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.task_manager.get_task_result(task)
         except Exception as e:
             self.fail("Exception: {}".format(e))
+        # The load exists to make the failure observable, and the verdict
+        # is now in, so it is ended here rather than in each caller: seven
+        # tests in this suite start it through _loadgen() and then wait on
+        # it, and get_task_result() on an indefinite task never returns.
+        # Ended before any self.fail() below, so a failing verdict stops
+        # the load too.
+        self.stop_continuous_loadgen()
+        # See fail_disk_via_disk_failure(): set_warn() records the verdict
+        # without raising, so it has to be acted on explicitly.
+        if task.exception:
+            self.fail(f"disk_full injection on "
+                      f"{[node.ip for node in self.server_to_fail]}: "
+                      f"{task.exception}")
 
     def bring_back_failed_nodes_up(self):
         if self.failover_action == "disk_failure":
