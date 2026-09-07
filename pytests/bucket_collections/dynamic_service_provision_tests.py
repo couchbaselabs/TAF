@@ -25,7 +25,7 @@ class DynamicServiceProvisionTests(CollectionBase):
         num_cbas_nodes = len(self.cluster.cbas_nodes)
         num_eventing_nodes = len(self.cluster.eventing_nodes)
         num_backup_nodes = len(self.cluster.backup_nodes)
-        num_dummy_nodes = 0
+        num_dummy_nodes = len(self.cluster.serviceless_nodes)
 
         expected_kv_nodes = expected_node_config[CbServer.Services.KV]
         expected_index_nodes = expected_node_config[CbServer.Services.INDEX]
@@ -97,15 +97,41 @@ class DynamicServiceProvisionTests(CollectionBase):
         reb_util = RebalanceUtil(self.cluster)
         known_nodes = [node.id for node in nodes]
 
+        # Shrink service memory quotas so index/fts/eventing/cbas (added
+        # later, one at a time, onto a single node) fit within that node's
+        # overall quota ceiling alongside kv. The node's install-time kv
+        # quota reserves the bulk of available memory, leaving no headroom.
+        cb_rest = ClusterRestAPI(self.cluster.master)
+        buckets_quota = sum(bucket.ramQuotaMB
+                            for bucket in self.cluster.buckets)
+        kv_quota = max(buckets_quota + 50,
+                       CbServer.Settings.MinRAMQuota.KV)
+        status, content = cb_rest.configure_memory({
+            CbServer.Settings.KV_MEM_QUOTA: kv_quota,
+            CbServer.Settings.INDEX_MEM_QUOTA:
+                CbServer.Settings.MinRAMQuota.INDEX,
+            CbServer.Settings.FTS_MEM_QUOTA:
+                CbServer.Settings.MinRAMQuota.FTS,
+            CbServer.Settings.EVENTING_MEM_QUOTA:
+                CbServer.Settings.MinRAMQuota.EVENTING,
+            CbServer.Settings.CBAS_MEM_QUOTA:
+                CbServer.Settings.MinRAMQuota.CBAS,
+        })
+        self.assertTrue(status, f"Failed to shrink service quotas: {content}")
+
+        # KV service topology cannot be changed dynamically (see the
+        # topology[kv] rejection tested below), so every node that starts
+        # with kv keeps it for the life of the test, and none of them can
+        # ever become serviceless.
         expected_service_config = {
-            CbServer.Services.KV: 1,
+            CbServer.Services.KV: num_nodes,
             CbServer.Services.N1QL: 0,
             CbServer.Services.INDEX: 0,
             CbServer.Services.EVENTING: 0,
             CbServer.Services.FTS: 0,
             CbServer.Services.CBAS: 0,
             CbServer.Services.BACKUP: 0,
-            CbServer.Services.SERVICELESS: self.nodes_init-1
+            CbServer.Services.SERVICELESS: 0
         }
 
         rest = CBRestConnection()
@@ -114,7 +140,7 @@ class DynamicServiceProvisionTests(CollectionBase):
         api = rest.base_url + "/controller/rebalance"
 
         self.log.info("Test topology[kv]")
-        expected_err = "Cannot change topology for data service"
+        expected_err = b"Cannot change topology for data service"
         t_known_nodes = ",".join(known_nodes)
         param_str = f"knownNodes={t_known_nodes}&topology[kv]={known_nodes[0]}"
         status, content, _ = rest.request(api, rest.POST, param_str)
@@ -171,15 +197,13 @@ class DynamicServiceProvisionTests(CollectionBase):
             self.assertTrue(reb_util.monitor_rebalance(), "Rebalance failed")
             self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         else:
-            if content != f"Unknown service {topology_key}":
+            if content != f'Unknown service "{topology_key}"'.encode():
                 exception = f"Invalid message: {content}"
                 self.log.critical(exception)
         self.__validate_service_map_against_cluster(
             expected_service_config)
 
         # Add services to the node
-        if num_nodes != 1:
-            expected_service_config[CbServer.Services.SERVICELESS] -= 1
         for service_name in valid_services:
             self.log.info(f"Adding service key {service_name}")
             if num_nodes == 1:
@@ -221,8 +245,6 @@ class DynamicServiceProvisionTests(CollectionBase):
                 exception = f"Service update rebalance failed: {content}"
                 self.log.critical(exception)
 
-        if num_nodes != 1:
-            expected_service_config[CbServer.Services.SERVICELESS] += 1
         self.__validate_service_map_against_cluster(
             expected_service_config)
 
