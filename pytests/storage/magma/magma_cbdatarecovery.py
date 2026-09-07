@@ -171,6 +171,23 @@ class MagmaRecovery(BaseTestCase):
                           "a few vbuckets state to dead = {}".format(bucket_item_count))
             items_to_transfer = self.item_count - bucket_item_count
 
+        vbucket_filter = None
+        if self.include_vbucket_filter:
+            # --vbucket-filter takes absolute vbucket ids, so the range has to
+            # track the bucket's real vbucket count. Magma buckets default to
+            # CbServer.magma_default_vbuckets (128), not 1024, so a hardcoded
+            # 0-511 selects every vbucket that exists and recovers the whole
+            # dataset - which never matches the "half the items" check below.
+            source_bucket = self.first_cluster.buckets[0]
+            num_vbuckets = source_bucket.numVBuckets
+            self.assertIsNotNone(
+                num_vbuckets,
+                "Unable to determine vbucket count for bucket:{}".format(
+                    source_bucket.name))
+            vbucket_filter = "0-{}".format(num_vbuckets // 2 - 1)
+            self.log.info("Recovering vbuckets {0} out of {1} vbuckets".format(
+                vbucket_filter, num_vbuckets))
+
         for server in self.first_cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(server)
             if self.encryption_level == "strict":
@@ -184,7 +201,7 @@ class MagmaRecovery(BaseTestCase):
             if self.include_single_bucket:
                 recovery_cmd += ' --include-data {}'.format(self.bucket_to_include)
             if self.include_vbucket_filter:
-                recovery_cmd += ' --vbucket-filter 0-511'
+                recovery_cmd += ' --vbucket-filter {}'.format(vbucket_filter)
             if self.test_auto_create_collections:
                 recovery_cmd += ' --auto-create-collections'
             if self.transfer_replica_vbuckets:
@@ -210,6 +227,7 @@ class MagmaRecovery(BaseTestCase):
                 self.second_cluster, bucket.name)
             expected_count = initial_bucket_count[bucket.name]
             if self.include_vbucket_filter:
+                # vbucket_filter selects exactly half of the bucket's vbuckets
                 expected_count = initial_bucket_count[bucket.name] // 2
             if self.transfer_dead_vbuckets:
                 expected_count = items_to_transfer
