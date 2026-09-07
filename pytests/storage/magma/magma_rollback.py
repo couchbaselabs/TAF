@@ -65,7 +65,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         ops_len = len(self.doc_ops.split(":"))
         if "create" in self.doc_ops:
             self.create_start = start
-            self.create_end = mem_only_items
+            self.create_end = start + mem_only_items
         if ops_len == 1:
             if "update" in self.doc_ops:
                 self.update_start = 0
@@ -75,24 +75,24 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.delete_end = mem_only_items
             if "expiry" in self.doc_ops:
                 self.expiry_start = 0
-                self.expiry_end =  mem_only_items
+                self.expiry_end = mem_only_items
         elif ops_len == 2:
             self.expiry_start = 0
             self.expiry_end = mem_only_items
             self.delete_start = start // 2
-            self.delete_end = mem_only_items
+            self.delete_end = start // 2 + mem_only_items
             if "update" in self.doc_ops:
                 self.delete_start = 0
                 self.delete_end = mem_only_items
                 self.update_start = start // 2
-                self.update_end = mem_only_items
+                self.update_end = start // 2 + mem_only_items
         else:
             self.expiry_start = 0
             self.expiry_end = mem_only_items
             self.delete_start = start // 3
-            self.delete_end = mem_only_items
+            self.delete_end = start // 3 + mem_only_items
             self.update_start = (2 * start) // 3
-            self.update_end = mem_only_items
+            self.update_end = (2 * start) // 3 + mem_only_items
 
     def test_magma_rollback_with_CDC(self):
         '''
