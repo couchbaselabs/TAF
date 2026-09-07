@@ -3123,6 +3123,12 @@ class basic_ops(ClusterSetup):
         doc_size = 1024
         load_batch = 50000       # docs per incremental round (node1 VBs only)
         max_load_batches = 100   # safety cap to avoid infinite loop
+        # Wall-clock cap on the incremental-load loop. The batch cap alone is
+        # not a bound: when the loads themselves fail (every op timing out at
+        # timeout_secs=3 x batch_size=100) a single batch costs ~25min, so
+        # 100 batches is ~42h - enough to blow past the Jenkins job timeout
+        # and starve every test queued behind this one.
+        load_timeout = self.input.param("pager_load_timeout", 2700)
 
         try:
             # ---- Read default watermarks from cbstats (no forced overrides) ----
@@ -3153,8 +3159,16 @@ class basic_ops(ClusterSetup):
             a_stats = cbstat1.all_stats(bucket.name)
             mem_used = int(a_stats["mem_used"])
             itrs_after_low_wm_hit = 5
+            load_deadline = time.time() + load_timeout
             for batch_num in range(1, max_load_batches + 1):
                 if itrs_after_low_wm_hit == 0:
+                    break
+                if time.time() > load_deadline:
+                    self.log_failure(
+                        "Pager did not activate within %ss (%d batches "
+                        "done) - mem_used=%dMB low_wm=%dMB"
+                        % (load_timeout, batch_num - 1,
+                           mem_used >> 20, low_wm >> 20))
                     break
                 self.key = uuid.uuid4().hex[:6]
                 doc_gen = doc_generator(
