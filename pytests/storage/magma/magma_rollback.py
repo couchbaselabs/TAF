@@ -94,6 +94,33 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.update_start = (2 * start) // 3
             self.update_end = (2 * start) // 3 + mem_only_items
 
+    def advance_doc_ranges(self, mem_only_items):
+        """
+        Slide every op's index window forward by one block of
+        'mem_only_items', for the ops that compute_docs()/generate_docs()
+        actually built a generator for.
+
+        Callers used to do '<op>_start = self.gen_<op>.itr' here. That only
+        ever worked with the in-built python loader, which iterates the
+        generator so itr lands on the generator's end. The sirius loaders are
+        range based - they are handed (start, end) over REST and never
+        iterate the generator - so itr is not a cursor: it stays at 0 for a
+        SiriusJavaDocGen and at 'start' for a DocumentGenerator carrying
+        pre-generated target-vbucket keys. Reading it back collapsed the next
+        iteration's window to 0 (or left it unmoved) instead of advancing it.
+
+        Each iteration of the callers' loops accounts for exactly one more
+        block per op ('mem_item_count += mem_only_items * ops_len'), which is
+        what the ep_queue_size assertion after the loop compares against, so
+        the window has to move by exactly that much.
+        """
+        for op in ("create", "update", "delete", "expiry"):
+            if getattr(self, "gen_" + op) is None:
+                continue
+            new_start = getattr(self, op + "_end")
+            setattr(self, op + "_start", new_start)
+            setattr(self, op + "_end", new_start + mem_only_items)
+
     def test_magma_rollback_with_CDC(self):
         '''
          -- Multiple upsert ops so that some historical data
@@ -267,7 +294,10 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             self.loadgen_docs(_sync=True,
                               retry_exceptions=self.retry_exceptions)
-            start = self.gen_create.itr
+            # gen_create.itr is not a cursor on the sirius (range based)
+            # loaders - see advance_doc_ranges(). Move the window on by the
+            # block that was just loaded.
+            start += mem_only_items
 
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                  mem_only_items}
@@ -405,14 +435,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=self.retry_exceptions)
 
-                if self.gen_create is not None:
-                    self.create_start = self.gen_create.itr
-                if self.gen_update is not None:
-                    self.update_start = self.gen_update.itr
-                if self.gen_delete is not None:
-                    self.delete_start = self.gen_delete.itr
-                if self.gen_expiry is not None:
-                    self.expiry_start = self.gen_expiry.itr
+                self.advance_doc_ranges(mem_only_items)
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
@@ -568,14 +591,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                    target_vbucket=self.target_vbucket)
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=self.retry_exceptions)
-                if self.gen_create is not None:
-                    self.create_start = self.gen_create.itr
-                if self.gen_update is not None:
-                    self.update_start = self.gen_update.itr
-                if self.gen_delete is not None:
-                    self.delete_start = self.gen_delete.itr
-                if self.gen_expiry is not None:
-                    self.expiry_start = self.gen_expiry.itr
+                self.advance_doc_ranges(mem_only_items)
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
@@ -758,7 +774,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=self.retry_exceptions)
 
-                start = self.gen_create.itr
+                # see advance_doc_ranges() - gen_create.itr never advances
+                # on the sirius loaders
+                start += mem_only_items
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
@@ -849,7 +867,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-                start_2 = self.gen_create.itr
+                # see advance_doc_ranges() - gen_create.itr never advances
+                # on the sirius loaders
+                start_2 += mem_only_items
 
                 self.log.debug("slave_itr == {}, Loading docs on master".format(slave_itr))
                 self.gen_create = self.genrate_docs_basic(start_2, mem_only_items,
@@ -858,7 +878,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-                start_2 = self.gen_create.itr
+                # see advance_doc_ranges() - gen_create.itr never advances
+                # on the sirius loaders
+                start_2 += mem_only_items
 
                 ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                      0}
@@ -1003,14 +1025,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                     self.loadgen_docs(_sync=True,
                                       retry_exceptions=self.retry_exceptions)
-                    if self.gen_create is not None:
-                        self.create_start = self.gen_create.itr
-                    if self.gen_update is not None:
-                        self.update_start = self.gen_update.itr
-                    if self.gen_delete is not None:
-                        self.delete_start = self.gen_delete.itr
-                    if self.gen_expiry is not None:
-                        self.expiry_start = self.gen_expiry.itr
+                    self.advance_doc_ranges(mem_only_items)
 
                     if time.time() < time_start + 60:
                         self.log.info("Rollback Iteration== {}, itr== {}, Active-Node== {}, Node=={}".format(i, itr, x+1, node))
@@ -1183,14 +1198,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                        target_vbucket=self.target_vbucket)
                     self.loadgen_docs(_sync=True,
                                       retry_exceptions=self.retry_exceptions)
-                    if self.gen_create is not None:
-                        self.create_start = self.gen_create.itr
-                    if self.gen_update is not None:
-                        self.update_start = self.gen_update.itr
-                    if self.gen_delete is not None:
-                        self.delete_start = self.gen_delete.itr
-                    if self.gen_expiry is not None:
-                        self.expiry_start = self.gen_expiry.itr
+                    self.advance_doc_ranges(mem_only_items)
 
                     if time.time() < time_start + 60:
                         self.log.info("Rollback Iteration== {}, itr== {}, Active-Node=={}, Node=={}".format(i, itr, x+1, node))
@@ -1431,14 +1439,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                         load_using=self.load_docs_using)
                     self.bucket_util.log_doc_ops_task_failures(tasks_in)
 
-                    if self.gen_create is not None:
-                        self.create_start = self.gen_create.itr
-                    if self.gen_update is not None:
-                        self.update_start = self.gen_update.itr
-                    if self.gen_delete is not None:
-                        self.delete_start = self.gen_delete.itr
-                    if self.gen_expiry is not None:
-                        self.expiry_start = self.gen_expiry.itr
+                    self.advance_doc_ranges(mem_only_items)
                     self.log.info("Rollback Iteration== {}, itr== {}, Active-Node== {}, Node=={}".
                                   format(i, itr, x+1, node))
                     if time.time() < time_start + 60:
