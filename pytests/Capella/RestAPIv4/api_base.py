@@ -552,6 +552,20 @@ class APIBase(CouchbaseBaseTest):
         }
 
     def tearDown(self):
+        # Delete security keys after every TC to prevent accumulation
+        # against the org-level API key limit. This must run before the
+        # organizationOwner keys are deleted below (on the last TC) -
+        # deleting the key currently authenticating this session
+        # immediately invalidates it, so any cleanup attempted afterwards
+        # (like this one) would fail with 401 on every call.
+        if (self.input.param("GROUP", "functional") == "security" and
+                self.api_keys):
+            self.log.info("Deleting {} security API keys after TC".format(
+                len(self.api_keys)))
+            self.delete_api_keys(self.api_keys)
+            self.capella["tenant_id"]["apiKeys"] = {}
+            self.api_keys = {}
+
         # Delete the WRAPPER resources, IF, the current test is the last
         # testcase being run.
         if (TestInputSingleton.input.test_params["case_number"] ==
@@ -658,15 +672,6 @@ class APIBase(CouchbaseBaseTest):
                 if response.status_code != 204:
                     self.log.error("Error while deleting V2 control plane key")
                     self.log.error(response.content)
-        # Delete security keys after every TC to prevent accumulation
-        # against the org-level API key limit.
-        if (self.input.param("GROUP", "functional") == "security" and
-                self.api_keys):
-            self.log.info("Deleting {} security API keys after TC".format(
-                len(self.api_keys)))
-            self.delete_api_keys(self.api_keys)
-            self.capella["tenant_id"]["apiKeys"] = {}
-            self.api_keys = {}
         if "multi_project_1" in self.api_keys:
             del self.api_keys["multi_project_1"]
         if "multi_project_2" in self.api_keys:
