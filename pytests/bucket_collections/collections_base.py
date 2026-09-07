@@ -1060,6 +1060,18 @@ class CollectionBase(ClusterSetup, FusionBase):
             for s_name, collection_dict in scope_dict["scopes"].items():
                 for c_name, crud_spec in collection_dict["collections"].items():
                     for crud_name, crud_info in list(crud_spec.items()):
+                        # SiriusCouchbaseLoader.create_doc_load_task() rewrites
+                        # key_type to 'CircularKey' for any load with
+                        # iterations != 1, so the docs that load created are in
+                        # the RandomKey namespace ('<rand>-<idx>'), not
+                        # SimpleKey's '<prefix><padding><idx>'. The delete below
+                        # runs with iterations=1 and so does not take that
+                        # branch - it has to name the namespace explicitly, or
+                        # every remove targets keys that were never written and
+                        # the docs stay on disk forever.
+                        if test_obj.load_docs_using == "sirius_java_sdk" \
+                                and crud_info.get("iterations", 1) != 1:
+                            crud_info["doc_gen"].key_type = "CircularKey"
                         crud_spec[DocLoading.Bucket.DocOps.DELETE] = crud_info
                         crud_info["iterations"] = 1
                         crud_spec.pop(crud_name)
@@ -1090,6 +1102,18 @@ class CollectionBase(ClusterSetup, FusionBase):
             load_using=test_obj.load_docs_using,
             validate_task=True)
         test_obj.assertTrue(cont_doc_load.result, "Hist retention load failed")
+        if test_obj.load_docs_using == "sirius_java_sdk" and update_itrs != 1:
+            # With iterations != 1 the Sirius loader rewrites key_type to
+            # 'CircularKey', so this load did NOT re-mutate the existing
+            # '<doc_key>...' docs it was pointed at - it created a fresh doc
+            # set in the RandomKey namespace. collection.num_items does not
+            # track those, so leaving them behind makes every later
+            # per-collection count check fail by update_percent. Remove them
+            # here. Callers passing update_itrs=1 keep SimpleKey and really do
+            # mutate the base docs in place, so they must NOT run this - the
+            # removal would delete their base data.
+            CollectionBase.remove_docs_created_for_dedupe_load(
+                test_obj, cont_doc_load)
         return cont_doc_load
 
     @staticmethod
