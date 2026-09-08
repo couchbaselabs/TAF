@@ -171,6 +171,9 @@ class FusionLease(MagmaBaseTest, FusionBase):
         try:
             self.sleep(5, "Wait for rebalance_start delay to take effect")
             ssh = RemoteMachineShellConnection(self.cluster.master)
+            nodes_in_cluster = self.cluster.nodes_in_cluster
+            kv_nodes = self.cluster.kv_nodes
+            self.log.info(f"Nodes in cluster = {nodes_in_cluster}, KV nodes = {kv_nodes}")
             try:
                 rebalance_thread = threading.Thread(
                     target=self.run_rebalance,
@@ -203,6 +206,8 @@ class FusionLease(MagmaBaseTest, FusionBase):
         finally:
             self.retry_rebalance_util.delete_rebalance_test_condition(
                 self.servers, test_failure_condition)
+            self.cluster.nodes_in_cluster = nodes_in_cluster
+            self.cluster.kv_nodes = kv_nodes
 
     def test_lease_expiry_before_rebalance_completion(self):
         self.initial_load()
@@ -219,7 +224,7 @@ class FusionLease(MagmaBaseTest, FusionBase):
         try:
             rebalance_thread = threading.Thread(
                 target=self.run_rebalance,
-                kwargs={"output_dir": self.fusion_output_dir, "rebalance_count": 1, 
+                kwargs={"output_dir": self.fusion_output_dir, "rebalance_count": 1,
                         "rebalance_sleep_time": 900, "force_sync_during_sleep": True}
             )
             rebalance_thread.start()
@@ -250,7 +255,7 @@ class FusionLease(MagmaBaseTest, FusionBase):
             except Exception as ex:
                 self.log.info(f"Rebalance failed as expected: {ex}")
                 rebalance_result = False
-            
+
             self.assertFalse(rebalance_result,
                            "Rebalance should have failed due to deleted snapshot")
         finally:
