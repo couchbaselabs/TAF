@@ -1305,6 +1305,16 @@ class CollectionBase(ClusterSetup, FusionBase):
             elif key == "num_items":
                 bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
                     test_obj.num_items
+            elif key == "num_items_deep_override":
+                # num_items above only patches the top-level bucket_spec.
+                # Templates that hardcode NUM_ITEMS_PER_COLLECTION inside a
+                # nested bucket/scope/collection dict silently ignore that,
+                # since collection creation reads from the nested value when
+                # present. This walks those nested dicts and overrides any
+                # NUM_ITEMS_PER_COLLECTION already set there, without
+                # introducing the key where a spec didn't already have it.
+                CollectionBase._deep_override_num_items(
+                    bucket_spec, int(val))
             elif key == "remove_default_collection":
                 bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
                     test_obj.input.param(key)
@@ -1342,6 +1352,33 @@ class CollectionBase(ClusterSetup, FusionBase):
                     = test_obj.load_collections_exponentially
             elif key == "create_collections_using_manifest_import":
                 bucket_spec[MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT] = str(val).lower() == 'true'
+
+    @staticmethod
+    def _deep_override_num_items(bucket_spec, num_items):
+        buckets = bucket_spec.get("buckets")
+        if not isinstance(buckets, dict):
+            return
+        for b_spec in buckets.values():
+            if not isinstance(b_spec, dict):
+                continue
+            if MetaConstants.NUM_ITEMS_PER_COLLECTION in b_spec:
+                b_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = num_items
+            scopes = b_spec.get("scopes")
+            if not isinstance(scopes, dict):
+                continue
+            for s_spec in scopes.values():
+                if not isinstance(s_spec, dict):
+                    continue
+                if MetaConstants.NUM_ITEMS_PER_COLLECTION in s_spec:
+                    s_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = num_items
+                collections = s_spec.get("collections")
+                if not isinstance(collections, dict):
+                    continue
+                for c_spec in collections.values():
+                    if isinstance(c_spec, dict) and \
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION in c_spec:
+                        c_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                            num_items
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):

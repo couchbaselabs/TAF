@@ -23,6 +23,7 @@ class CollectionsNetworkSplit(CollectionBase):
         self.set_master_node()
         self.recovery_type = self.input.param("recovery_type", "delta")
         self.allow_unsafe = self.input.param("allow_unsafe", False)
+        self.skip_validations = self.input.param("skip_validations", False)
 
         self.known_nodes = self.cluster.servers[:self.nodes_init]
         # Verify FBR (File-Based Rebalance) setting and configure if needed
@@ -292,9 +293,10 @@ class CollectionsNetworkSplit(CollectionBase):
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(self.cluster, task)
-        if task.result is False:
-            self.fail("Doc_loading failed")
+        if not self.skip_validations:
+            self.bucket_util.validate_doc_loading_results(self.cluster, task)
+            if task.result is False:
+                self.fail("Doc_loading failed")
 
     def data_validation_collection(self):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
