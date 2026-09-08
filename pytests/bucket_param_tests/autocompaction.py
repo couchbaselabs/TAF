@@ -184,10 +184,20 @@ class AutoCompactionTests(CollectionBase):
 
             self.sleep(10, "Wait before next run")
 
+            # update_item_size can fall below the JSON scaffolding that
+            # doc_generator needs for a non-empty doc, in which case it
+            # raises. Fall back to an empty body (doc_size=0), the smallest
+            # doc, which still shrinks the value enough to fragment the DB.
+            update_doc_size = int(update_item_size)
+            try:
+                generator_update = doc_generator(self.key, 0, (items*1000),
+                                                 doc_size=update_doc_size)
+            except ValueError:
+                update_doc_size = 0
+                generator_update = doc_generator(self.key, 0, (items*1000),
+                                                 doc_size=update_doc_size)
             self.log.info("Update {0}K keys with smaller value {1} bytes/key"
-                          .format(items, int(update_item_size)))
-            generator_update = doc_generator(self.key, 0, (items*1000),
-                                             doc_size=max(0, int(update_item_size)))
+                          .format(items, update_doc_size))
             if self.during_ops:
                 if self.during_ops == "change_port":
                     self.cluster_util.change_port(self.cluster,
@@ -308,6 +318,7 @@ class AutoCompactionTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(monitor_fragm)
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
+        self._remove_sirius_cont_update_orphans(scope_name, collection_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
 
@@ -443,6 +454,7 @@ class AutoCompactionTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(monitor_fragm)
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
+        self._remove_sirius_cont_update_orphans(scope_name, collection_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
@@ -720,6 +732,38 @@ class AutoCompactionTests(CollectionBase):
             if compact_run:
                 self.log.info("auto compaction run successfully")
 
+    def _remove_sirius_cont_update_orphans(self, scope_name, collection_name):
+        """
+        A Sirius continuous doc-op runs with iterations=-1, which the loader
+        forces onto its 'CircularKey' generator ('<rand>-<idx>'). Pointed at
+        the existing SimpleKey docs ('<key><padding><idx>'), it therefore does
+        NOT re-mutate them - it creates a fresh doc set in the RandomKey
+        namespace that collection.num_items never tracks. Left behind, those
+        docs make validate_docs_per_collections_all_buckets fail by the update
+        range (server count exceeds the tracked count). Delete them here,
+        naming the namespace explicitly since a one-shot delete keeps
+        SimpleKey, so the only docs removed are the untracked CircularKey ones
+        and never the SimpleKey base data. The in-built loader re-mutates the
+        base docs in place and creates no orphans, so this is a no-op there.
+        """
+        if self.load_docs_using != "sirius_java_sdk":
+            return
+        delete_gen = doc_generator(self.key, 0, int(self.num_items / 2),
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   load_using=self.load_docs_using,
+                                   key_type="CircularKey")
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, delete_gen,
+            DocLoading.Bucket.DocOps.DELETE, 0,
+            timeout_secs=self.sdk_timeout,
+            batch_size=200, process_concurrency=4,
+            scope=scope_name, collection=collection_name,
+            load_using=self.load_docs_using)
+        self.task_manager.get_task_result(task)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
     def _monitor_DB_fragmentation(self, bucket):
         monitor_fragm = self.task.async_monitor_db_fragmentation(
             self.cluster.master,
@@ -753,6 +797,7 @@ class AutoCompactionTests(CollectionBase):
                 break
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
+        self._remove_sirius_cont_update_orphans(scope_name, collection_name)
 
         if failure_msg is not None:
             self.task_manager.stop_task(monitor_fragm)
