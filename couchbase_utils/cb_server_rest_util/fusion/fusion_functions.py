@@ -70,12 +70,14 @@ class FusionFunctions(CBRestConnection):
         status, content, _ = self.request(api, CBRestConnection.POST)
         return status, content
 
-    def prepare_rebalance(self, keep_nodes):
+    def prepare_rebalance(self, keep_nodes, snapshot_lifetime_sec=None):
         """
         POST :: /controller/fusion/prepareRebalance
         """
         keepNodes = ','.join(keep_nodes)
         params = {'keepNodes': keepNodes}
+        if snapshot_lifetime_sec is not None:
+            params["snapshotLifetimeSec"] = snapshot_lifetime_sec
 
         api = self.base_url + "/controller/fusion/prepareRebalance"
         status, content, _ = self.request(api, CBRestConnection.POST, params=params)

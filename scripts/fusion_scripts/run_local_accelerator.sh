@@ -18,6 +18,7 @@ fi
 HOST_ID="$1"
 REBALANCE_ID="$2"
 SKIP_FLAG=""
+RATE_LIMIT_FLAG=""
 
 if [ "$3" == "nfs" ]; then
     BASE_URI="/mnt/nfs/share/buckets"
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --log-store-uri)
             BASE_URI="$2"
+            shift 2
+            ;;
+        --rate-limit)
+            RATE_LIMIT_FLAG="-rate-limit $2"
             shift 2
             ;;
         *)
@@ -100,7 +105,8 @@ process_manifest_part() {
             -manifest "$manifest_file" \
             -dest "$dest_path" \
             -base-uri "$BASE_URI" \
-            $SKIP_FLAG
+            $SKIP_FLAG \
+            $RATE_LIMIT_FLAG
         chown -R couchbase:couchbase "$dest_path"
     ) &
 }

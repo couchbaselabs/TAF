@@ -744,6 +744,7 @@ class FusionBase(BaseTestCase):
                       min_storage_size=None, skip_add_nodes=False, manifest_parts = 20,
                       add_nodes=[], remove_nodes=[], log_store="nfs",
                       guest_storage_dest_path=None, log_store_uri=None,
+                      rate_limit=None, snapshot_lifetime_sec=None,
                       expect_rebalance_failure=False):
 
         # Populate spare nodes list
@@ -929,6 +930,10 @@ class FusionBase(BaseTestCase):
             effective_log_store_uri = self.fusion_log_store_uri
         if effective_log_store_uri is not None:
             commands = commands.rstrip() + f" --log-store-uri {effective_log_store_uri}"
+        if rate_limit is not None:
+            commands = commands.rstrip() + f" --rate-limit {rate_limit}"
+        if snapshot_lifetime_sec is not None:
+            commands = commands.rstrip() + f" --snapshot-lifetime-sec {snapshot_lifetime_sec}"
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
