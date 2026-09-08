@@ -89,12 +89,15 @@ class LocalstackProvider(CloudProviderInterface):
 
     def cleanup_for_bkrs(self, s3_path):
         """
-        Leave the bucket present and empty of this archive's objects.
+        Leave the bucket present and this archive's prefix empty.
 
-        Not a true "delete this one directory" cleanup - Localstack buckets
-        are cheap/local, so every object in the bucket is removed rather than
-        just the given prefix. The bucket itself is always created if absent
-        and always kept if present.
+        The bucket itself is always created if absent and always kept if
+        present. Deletion is scoped to the given prefix, not the whole
+        bucket, the way aws_provider.py's cleanup_for_bkrs() already does --
+        CollectionBase now points all providers, localstack included, at one
+        shared "test-backup-taf" bucket with a per-test prefix, so wiping the
+        whole bucket here would destroy other concurrently-running tests'
+        backup data.
 
         It previously DELETED the whole bucket when one already existed, which
         made the outcome depend on prior state: BackupMgrUtil.configure_backup()
@@ -109,6 +112,13 @@ class LocalstackProvider(CloudProviderInterface):
         parsed = urlparse(s3_path)
         bucket_name = parsed.netloc
         folder_path = parsed.path.strip("/")
+        if not folder_path:
+            # With a shared bucket, an empty prefix would delete every object
+            # from every test using it -- refuse instead of falling through
+            # to a bucket-wide delete.
+            raise CloudOperationError(
+                "cleanup_for_bkrs: refusing to clean bucket '%s' with no "
+                "prefix in '%s'" % (bucket_name, s3_path))
 
         s3_resource = boto3.resource(
             "s3",
@@ -127,9 +137,9 @@ class LocalstackProvider(CloudProviderInterface):
                     "LocationConstraint": self.localstack_region}
             bucket.create(**create_kwargs)
         else:
-            bucket.objects.all().delete()
-        if folder_path:
-            bucket.put_object(Key="{0}/".format(folder_path))
+            bucket.objects.filter(
+                Prefix="{0}/".format(folder_path)).delete()
+        bucket.put_object(Key="{0}/".format(folder_path))
 
     def create_credential_store(self, rest, cred_id, username=None,
                                  password=None, description=None,

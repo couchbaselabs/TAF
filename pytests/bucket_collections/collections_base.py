@@ -33,22 +33,24 @@ from TestInput import TestInputSingleton
 
 
 class CollectionBase(ClusterSetup, FusionBase):
-    # Object-store destinations for cbbackup_test/cont_bkp_test. AWS/Azure/GCP
-    # share one pre-provisioned bucket ("test-backup-taf") and rely on
-    # cleanup_for_bkrs() to prefix-delete a unique subdir per test.
-    # localstack's cleanup_for_bkrs() instead creates/deletes the whole
-    # bucket, so it needs a unique bucket name per test, not a shared one.
+    # Object-store destinations for cbbackup_test/cont_bkp_test. All four
+    # providers share one pre-provisioned bucket ("test-backup-taf") and rely
+    # on cleanup_for_bkrs() to prefix-delete a unique subdir per test.
+    # localstack used to get its own bucket named after {uid} instead of a
+    # prefix in a shared one -- that bucket was never deleted (see
+    # LocalstackProvider.cleanup_for_bkrs()), so every test run leaked a new
+    # bucket on the shared MinIO endpoint. Do not go back to that shape.
     BACKUP_URL_TEMPLATES = {
         "AWS": "s3://test-backup-taf/backups/{uid}",
         "Azure": "az://test-backup-taf/backups/{uid}",
         "GCP": "gs://test-backup-taf/backups/{uid}",
-        "localstack": "s3://{uid}",
+        "localstack": "s3://test-backup-taf/backups/{uid}",
     }
     CONT_BKP_URL_TEMPLATES = {
         "AWS": "s3://test-backup-taf/cont_bkp/{uid}",
         "Azure": "az://test-backup-taf/cont_bkp/{uid}",
         "GCP": "gs://test-backup-taf/cont_bkp/{uid}",
-        "localstack": "s3://{uid}",
+        "localstack": "s3://test-backup-taf/cont_bkp/{uid}",
     }
 
     def setUp(self):
