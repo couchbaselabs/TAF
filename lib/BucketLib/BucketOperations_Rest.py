@@ -494,6 +494,14 @@ class BucketHelper(BucketRestApi):
                   and ('{"_":"Bucket with given name still exists"}'
                        in response.text)):
                 sleep(1, "Bucket still exists, will retry..")
+            elif (int(response.status_code) == 503
+                  and ("Please retry" in response.text
+                       or "Continuous Backup" in response.text)):
+                # Transient ns_server unavailability (e.g. Continuous Backup
+                # subsystem not ready after a node restart/rebalance). The
+                # server explicitly asks to retry in a few seconds.
+                sleep(1, "Service unavailable, will retry.. ({0})"
+                      .format(response.text))
             else:
                 self.log.critical("Failed to create bucket: {0}".format(response.text))
                 return False
