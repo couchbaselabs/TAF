@@ -214,18 +214,15 @@ class FusionLease(MagmaBaseTest, FusionBase):
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Wait for data to sync to log store")
 
-        lease_timeout_ms = self.input.param("lease_timeout_ms", 30000)
-        status, content = ClusterRestAPI(self.cluster.master).diag_eval(
-            f'ns_config:set({{ns_rebalancer, fusion_snapshot_lifetime}}, {lease_timeout_ms}).'
-        )
-        self.log.info(f"Set lease timeout - Status: {status}, Content: {content}")
+        snapshot_lifetime_sec = self.input.param("snapshot_lifetime_sec", 30)
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         try:
             rebalance_thread = threading.Thread(
                 target=self.run_rebalance,
                 kwargs={"output_dir": self.fusion_output_dir, "rebalance_count": 1,
-                        "rebalance_sleep_time": 900, "force_sync_during_sleep": True}
+                        "rebalance_sleep_time": 900, "force_sync_during_sleep": True,
+                        "snapshot_lifetime_sec": snapshot_lifetime_sec}
             )
             rebalance_thread.start()
 
