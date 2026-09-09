@@ -7368,7 +7368,8 @@ class BucketUtils(ScopeUtils):
                             "high_seqno {2} < {3} hist_start_seqno"
                             .format(index, vb_num, r_stat[high_seqno],
                                     r_stat[hist_start_seqno]))
-                    if r_stat[hist_start_seqno] == 0:
+                    if not no_history_preserved \
+                            and r_stat[hist_start_seqno] == 0:
                         result = False
                         self.log.critical(
                             "{0} - vb_{1}, replica hist_start_seqno is zero"
