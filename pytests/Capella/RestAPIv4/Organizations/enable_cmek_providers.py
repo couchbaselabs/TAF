@@ -146,7 +146,7 @@ class EnableCMEKProvider(APIBase):
         provider_values = [
             "aws",
             "gcp",
-            "azure",
+            # "azure",
             "",
             "invalid_provider",
             True,

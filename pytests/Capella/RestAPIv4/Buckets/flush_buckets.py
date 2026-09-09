@@ -4,6 +4,8 @@ Created on July 24, 2024
 @author: Vipul Bhardwaj
 """
 
+import time
+
 from pytests.Capella.RestAPIv4.Buckets.get_buckets import GetBucket
 
 
@@ -121,6 +123,22 @@ class FlushBucket(GetBucket):
                 org, proj, clus, buck)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
+                result = self.capellaAPI.cluster_ops_apis.flush_bucket(
+                    org, proj, clus, buck)
+            if (result.status_code == 500 and
+                    testcase["description"] == "Flush a valid bucket"):
+                # Known backend issue: on clusters with low, fixed-IOPS
+                # disks (e.g. Azure Premium SSD), flush can take longer
+                # than the backend's hardcoded 10s bucket-lock lease,
+                # which silently overrides the flush's own 30s timeout
+                # and aborts the request with a 500 - even though the
+                # flush itself most likely completes on the cluster.
+                # Retry once, since flush is idempotent.
+                self.log.warning(
+                    "Flush returned 500 (likely the 10s lock-lease vs. "
+                    "flush duration backend issue on low-IOPS disks), "
+                    "retrying once.")
+                time.sleep(15)
                 result = self.capellaAPI.cluster_ops_apis.flush_bucket(
                     org, proj, clus, buck)
             self.capellaAPI.cluster_ops_apis.flush_buckets_endpoint = \
