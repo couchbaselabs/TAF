@@ -722,16 +722,30 @@ class N1qlBase(CollectionBase):
         for bucket_col in collections:
             self.num_insert, self.num_update, self.num_delete, self.num_merge = \
                         self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
-            self.log.info("insert, delete, update and merge %s %s %s %s"
+            # MERGE statements are not run by this test. Spread the share
+            # allotted to them over the other statement types instead of
+            # dropping it, so that num_stmt_txn statements are always
+            # generated per collection
+            self.num_insert, self.num_update, self.num_delete = \
+                self.__spread_merge_count(self.num_merge, self.num_insert,
+                                          self.num_update, self.num_delete)
+            self.num_merge = 0
+            self.log.info("insert, update, delete and merge %s %s %s %s"
                            % (self.num_insert, self.num_update,
                               self.num_delete, self.num_merge))
-            self.num_merge = 0
             stmt.extend(self.clause.get_where_clause(
                 doc_type_list[bucket_col], bucket_col,
                 self.num_insert, self.num_update, self.num_delete, self.num_merge))
             self.n1ql_helper.process_index_to_create(stmt, bucket_col)
         random.shuffle(stmt)
-        stmt_list = self.__chunks(stmt, int(len(stmt)/self.num_txn))
+        if self.num_txn < 1:
+            self.fail("num_txn=%s, at least one transaction is required"
+                      % self.num_txn)
+        if len(stmt) < self.num_txn:
+            self.fail("Generated only %s statement(s) for %s transactions, "
+                      "increase num_stmt_txn or num_collection"
+                      % (len(stmt), self.num_txn))
+        stmt_list = self.__chunks(stmt, len(stmt) // self.num_txn)
 
         for stmt in stmt_list:
             stmt = self.n1ql_helper.add_savepoints(stmt)
@@ -771,6 +785,14 @@ class N1qlBase(CollectionBase):
             return value, True
         else:
             return 0, False
+
+    @staticmethod
+    def __spread_merge_count(num_merge, num_insert, num_update, num_delete):
+        """Distribute num_merge round-robin over the other statement types."""
+        counts = [num_insert, num_update, num_delete]
+        for i in range(num_merge):
+            counts[i % len(counts)] += 1
+        return counts[0], counts[1], counts[2]
 
     @staticmethod
     def __chunks(i_list, n):
