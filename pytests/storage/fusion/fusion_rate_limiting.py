@@ -1,7 +1,9 @@
 import time
+import re
 import threading
 import subprocess
 import os
+from datetime import datetime
 from shell_util.remote_connection import RemoteMachineShellConnection
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
@@ -18,6 +20,7 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         self.monitor_interval = self.input.param("monitor_interval", 5)  # seconds
         self.upload_ops_rate = self.input.param("upload_ops_rate", 20 * 1024 * 1024)  # 20 MB/s default
         self.rate_limit = self.input.param("rate_limit", 10 * 1024 * 1024)  # 10 MB/s default
+        self.rate_limit_target = self.input.param("rate_limit_target", "migration")  # "migration" | "download"
         self.rate_limit_toggle_interval = self.input.param("rate_limit_toggle_interval", 30)
         self.enable_memcached_kill = self.input.param("enable_memcached_kill", True)
         self.kill_after_seconds = self.input.param("kill_after_seconds", 30)
@@ -26,7 +29,8 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         self.rate_limit_toggle_stop = False
         self.log.info(f"[SETUP] monitor_interval={self.monitor_interval}s, "
                       f"upload_ops_rate={self.upload_ops_rate / (1024*1024)}MB/s, "
-                      f"rate_limit={self.rate_limit / (1024*1024)}MB/s")
+                      f"rate_limit={self.rate_limit / (1024*1024)}MB/s, "
+                      f"rate_limit_target={self.rate_limit_target}")
 
     def tearDown(self):
         self.rate_limit_toggle_stop = True
@@ -89,6 +93,72 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         assert max_rate_bps <= rate_limit * 1.05, \
             f"{stat_key}: observed {max_rate_bps} > limit {rate_limit}"
         self.log.info(f"[MONITOR] Finished monitoring {stat_key}. Max observed rate={max_rate_bps / (1024*1024):.2f} MB/s")
+
+    def parse_accelerator_download_rate(self, rate_limit):
+        """
+        Parse the accelerator-cli download-files log captured in
+        self.fusion_rebalance_output (written by run_rebalance()) and assert
+        the achieved average download throughput stays within rate_limit.
+
+        There is no cbstat for this stage (log store -> guest volumes), so
+        this reads accelerator-cli's own timestamped log lines instead of
+        polling a stat like monitor_rate_dynamic() does. Assumes a single
+        accelerator-cli invocation contributed to the log (i.e. a
+        single-node rebalance-in): -rate-limit caps each invocation
+        independently, so a combined multi-node total would not need to
+        respect the same cap.
+        """
+        ts_line = re.compile(r'^(?:\[\S+\]\s*)?(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})\s+(.*)$')
+        ts_format = "%Y/%m/%d %H:%M:%S"
+
+        start_time = None
+        last_complete_time = None
+        total_downloaded_bytes = 0
+        files_completed = 0
+
+        with open(self.fusion_rebalance_output) as f:
+            for line in f:
+                match = ts_line.match(line)
+                if not match:
+                    continue
+                timestamp_str, message = match.groups()
+                try:
+                    timestamp = datetime.strptime(timestamp_str, ts_format)
+                except ValueError:
+                    continue
+
+                if start_time is None and re.search(r'Files to download: \d+ \(\d+ bytes\)', message):
+                    start_time = timestamp
+                    continue
+
+                complete_match = re.search(r'Download complete for .+ \((\d+) bytes\)', message)
+                if complete_match:
+                    total_downloaded_bytes += int(complete_match.group(1))
+                    files_completed += 1
+                    last_complete_time = timestamp
+
+        self.assertIsNotNone(start_time,
+                             "accelerator-cli 'Files to download' line not "
+                             f"found in {self.fusion_rebalance_output}")
+        self.assertGreater(files_completed, 0,
+                           "No 'Download complete' lines found in "
+                           f"{self.fusion_rebalance_output} -- accelerator-cli "
+                           "did not report downloading any files")
+
+        elapsed_seconds = (last_complete_time - start_time).total_seconds()
+        self.assertGreater(elapsed_seconds, 0,
+                           "Download completed too quickly to measure a rate "
+                           "(log timestamps have 1s resolution) -- increase "
+                           "the test's dataset size")
+
+        achieved_rate_bps = total_downloaded_bytes / elapsed_seconds
+        self.log.info(f"[DOWNLOAD RATE] {files_completed} files, "
+                      f"{total_downloaded_bytes} bytes over {elapsed_seconds:.1f}s "
+                      f"= {achieved_rate_bps / (1024*1024):.2f} MB/s "
+                      f"(limit={rate_limit / (1024*1024):.2f} MB/s)")
+        self.assertLessEqual(achieved_rate_bps, rate_limit * 1.05,
+                            f"Achieved download rate {achieved_rate_bps} bytes/sec "
+                            f"exceeded limit {rate_limit} bytes/sec")
 
     def custom_data_load(self):
         total_data_mb = (self.num_items * self.doc_size) / (1024 * 1024)
@@ -185,40 +255,59 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
     def test_fusion_extent_migration_rate_limit(self):
         """
         Test Fusion extent migration respects the configured rate limit in MiB/s.
+
+        rate_limit_target=migration (default): throttles fusion_migration_rate_limit
+        (guest volumes -> KV node), as below.
+        rate_limit_target=download: throttles accelerator-cli's own -rate-limit
+        flag (log store -> guest volumes) via run_rebalance() instead, and
+        validates the achieved rate from the accelerator's own log.
         """
         bucket = self.cluster.buckets[0]
-        self.log.info("[TEST] Starting test_fusion_extent_migration_rate_limit...")
+        self.log.info("[TEST] Starting test_fusion_extent_migration_rate_limit "
+                      f"(rate_limit_target={self.rate_limit_target})...")
 
-        # Initially gate extent migration completely
-        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
-            fusion_migration_rate_limit=0
-        )
-        self.log.info("[TEST] Set global fusion_extent_migration_rate_limit=0")
+        if self.rate_limit_target == "download":
+            # Load test data
+            self.custom_data_load()
 
-        # Load test data
-        self.custom_data_load()
+            # Run a Fusion rebalance with the accelerator's download step
+            # capped via -rate-limit
+            self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1,
+                               rate_limit=self.rate_limit)
 
-        # Run a Fusion rebalance (migration will be queued/stalled at cap=0)
-        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1)
+            # Validate the achieved rate from accelerator-cli's own log
+            self.parse_accelerator_download_rate(self.rate_limit)
+        else:
+            # Initially gate extent migration completely
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+                fusion_migration_rate_limit=0
+            )
+            self.log.info("[TEST] Set global fusion_extent_migration_rate_limit=0")
 
-        # Open the cap to the test's configured limit (bytes/sec)
-        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
-            fusion_migration_rate_limit=self.rate_limit
-        )
+            # Load test data
+            self.custom_data_load()
 
-        self.log.info(f"[TEST] Set global fusion_extent_migration_rate_limit="
-                      f"{self.rate_limit / (1024 * 1024):.2f} MB/s")
+            # Run a Fusion rebalance (migration will be queued/stalled at cap=0)
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1)
 
-        # Wait until extent migration starts on one of the nodes
-        self.wait_for_upload_start(nodes_to_monitor[0], bucket, "ep_fusion_bytes_migrated", timeout=900)
+            # Open the cap to the test's configured limit (bytes/sec)
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+                fusion_migration_rate_limit=self.rate_limit
+            )
 
-        # Monitor extent migration; assert peak rate ≤ configured limit
-        self.monitor_rate_dynamic(
-            nodes_to_monitor[0],
-            bucket,
-            stat_key="ep_fusion_bytes_migrated",
-            rate_limit=self.rate_limit
-        )
+            self.log.info(f"[TEST] Set global fusion_extent_migration_rate_limit="
+                          f"{self.rate_limit / (1024 * 1024):.2f} MB/s")
+
+            # Wait until extent migration starts on one of the nodes
+            self.wait_for_upload_start(nodes_to_monitor[0], bucket, "ep_fusion_bytes_migrated", timeout=900)
+
+            # Monitor extent migration; assert peak rate ≤ configured limit
+            self.monitor_rate_dynamic(
+                nodes_to_monitor[0],
+                bucket,
+                stat_key="ep_fusion_bytes_migrated",
+                rate_limit=self.rate_limit
+            )
 
         self.log.info("[TEST] Finished test_fusion_extent_migration_rate_limit successfully")
 
