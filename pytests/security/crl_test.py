@@ -21,6 +21,8 @@ from couchbase_utils.security_utils.crl_utils import (
     find_remote_pid,
     get_audit_event,
     grep_remote_log,
+    remove_url_crl_file,
+    set_url_crl_body,
     setup_url_poll_crl_env,
     tail_remote_log,
 )
@@ -74,6 +76,82 @@ class CRLTest(CRLBase):
             f"Handshake did not reach expect_ok={expect_ok} before deadline {deadline}"
         )
 
+    def _wait_for_url_crl_reload(self, url, expected_result, timeout=40,
+                                  expected_error=None, interval=3):
+        """
+        Poll diagnostics/status until the URL-sourced CRL entry for `url`
+        reports lastReload.result == expected_result (and, when given, an
+        entry in lastReload.errors containing `expected_error`, matched
+        case-insensitively). Returns that entry; self.fail()s on timeout,
+        quoting the last entry seen so a failure is diagnosable.
+
+        URL entries are keyed in crlFiles by the URL itself rather than by
+        the sha256-based on-disk filename (cb_crl_manager's build_status_map
+        sets `filename => iolist_to_binary(URL)`), so the URL is the lookup
+        key here.
+        """
+        node_key = f"{self.cluster.master.ip}:8091"
+        deadline = time.monotonic() + timeout
+        last_entry = None
+        while time.monotonic() < deadline:
+            status, content = self.crl_utils.diagnostics_status(self.rest)
+            if status:
+                entry = self.crl_utils.find_diagnostics_file_entry(
+                    content, node_key, url
+                )
+                if entry is not None:
+                    last_entry = entry
+                    errors = entry.get("lastReload", {}).get("errors") or []
+                    error_ok = (
+                        expected_error is None
+                        or any(expected_error.lower() in str(e).lower() for e in errors)
+                    )
+                    if entry["lastReload"].get("result") == expected_result and error_ok:
+                        return entry
+            time.sleep(interval)
+        self.fail(
+            f"URL CRL entry for {url} never reached lastReload.result="
+            f"{expected_result!r}"
+            + (f" with an error containing {expected_error!r}" if expected_error else "")
+            + f" within {timeout}s. Last entry seen: {last_entry}"
+        )
+
+    def _wait_for_node_crl_reload(self, node_key, filename, expected_result,
+                                   timeout=60, interval=3):
+        """
+        Poll diagnostics/status (scoped to node_key via the `nodes` param, so
+        the RPC targets that node specifically) until the entry for
+        `filename` reports lastReload.result == expected_result. Returns
+        (entry, observed_results) -- observed_results is every distinct
+        result value seen along the way, purely for diagnostic logging: a
+        transitional state like notYetSynced can resolve between one poll
+        and the next, so its absence from this list is not itself a failure.
+        self.fail()s only if expected_result is never reached.
+        """
+        deadline = time.monotonic() + timeout
+        observed_results = []
+        last_entry = None
+        while time.monotonic() < deadline:
+            status, content = self.crl_utils.diagnostics_status(self.rest, nodes=[node_key])
+            if status:
+                entry = self.crl_utils.find_diagnostics_file_entry(
+                    content, node_key, filename
+                )
+                if entry is not None:
+                    last_entry = entry
+                    result = entry.get("lastReload", {}).get("result")
+                    if not observed_results or observed_results[-1] != result:
+                        observed_results.append(result)
+                    if result == expected_result:
+                        return entry, observed_results
+            time.sleep(interval)
+        self.fail(
+            f"{node_key}'s entry for {filename} never reached "
+            f"lastReload.result={expected_result!r} within {timeout}s. "
+            f"Results observed along the way: {observed_results}. "
+            f"Last entry seen: {last_entry}"
+        )
+
     def _n2n_node_healthy_active(self, master, ip):
         """True if `ip` currently shows status=healthy under an active
         clusterMembership per /pools/default (queried against `master`).
@@ -97,6 +175,30 @@ class CRLTest(CRLBase):
                 return True
             time.sleep(2)
         return False
+
+    def _internal_https_reachable(self, from_rest, host, port):
+        """True if an internal ns_server HTTPS GET /pools from from_rest's
+        node to host:port succeeds. Drives menelaus_rest:json_request_hilevel
+        directly via diag_eval -- the same internal HTTP client every
+        node-to-node REST call uses -- because this path has no directly
+        callable REST endpoint of its own; it's only reachable as a side
+        effect of internal cluster operations. A genuinely different code
+        path from cb_dist's raw Erlang distribution protocol (a separate
+        listener, separate TLS option set, separate verify_fun), so a cert
+        revocation can fence one without fencing the other."""
+        code = (
+            "case menelaus_rest:json_request_hilevel("
+            "get,"
+            f" {{https, \"{host}\", {port}, \"/pools\"}},"
+            f" fun () -> {{basic_auth, \"{self.cluster.master.rest_username}\", "
+            f"\"{self.cluster.master.rest_password}\"}} end,"
+            " []) of"
+            " {ok, _} -> ok;"
+            " _ -> error"
+            " end."
+        )
+        status, content = from_rest.diag_eval(code)
+        return status and content == "ok"
 
     def _assert_audit_event_shape(self, event, event_id):
         """
@@ -271,6 +373,174 @@ class CRLTest(CRLBase):
         )
         self.assertTrue(status, "Failed to restore default CRL settings")
         self.log.info(f"Defaults restored: {restored}")
+
+        # -- The out-of-the-box (OOTB) generated CRL lifecycle. The
+        # cluster's own self-signed CA always carries a matching
+        # auto-generated CRL (source="generated", file "ootb.crl"), used to
+        # CRL-check ns_server's own internal node-to-node/REST client certs
+        # -- nothing else in this suite ever exercises that source value.
+        status, diag = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status, f"diagnostics/status failed: {diag}")
+        ootb_entry = self.crl_utils.find_diagnostics_file_entry(
+            diag, node_key, "ootb.crl"
+        )
+        self.assertIsNotNone(
+            ootb_entry, "Cluster should always have an OOTB generated CRL by default"
+        )
+        self.assertEqual(ootb_entry["source"], "generated")
+        self.assertEqual(ootb_entry["cacheStatus"], "active")
+        initial_time = ootb_entry["lastReload"]["time"]
+        self.assertIsNotNone(initial_time, "OOTB CRL should report a real lastReload.time")
+
+        # A manual reload always re-timestamps the OOTB CRL, even with
+        # content unchanged -- unlike poll-directory/URL files, which skip
+        # an unchanged checksum, reconcile_generated_crl's ForceReload=true
+        # guard falls through to a real reload regardless.
+        time.sleep(1.5)  # ISO-8601 timestamps here are second-granularity
+        status, _ = self.crl_utils.reload_crl(self.rest)
+        self.assertTrue(status, "Manual reloadCrl failed")
+        status, diag = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status)
+        ootb_entry = self.crl_utils.find_diagnostics_file_entry(
+            diag, node_key, "ootb.crl"
+        )
+        self.assertGreater(
+            ootb_entry["lastReload"]["time"], initial_time,
+            "A manual reloadCrl should re-timestamp the OOTB CRL even "
+            "though its content didn't change",
+        )
+        self.log.info(
+            "OOTB generated CRL baseline confirmed: source=generated, "
+            "cacheStatus=active, lastReload.time advances on manual reload"
+        )
+
+        try:
+            # No REST path removes the OOTB CRL (by design: it's derived
+            # from the cluster's own CA, not independently manageable) --
+            # this is also how a cluster upgraded from a pre-7.6 CA
+            # (missing the required key usage) naturally arrives with none.
+            status, content = self.rest.diag_eval(
+                "chronicle_kv:delete(kv, ootb_crl)."
+            )
+            self.assertTrue(status, f"diag_eval delete of ootb_crl failed: {content}")
+
+            status, diag = self.crl_utils.diagnostics_status(self.rest)
+            self.assertTrue(status)
+            ootb_entry = self.crl_utils.find_diagnostics_file_entry(
+                diag, node_key, "ootb.crl"
+            )
+            self.assertIsNotNone(
+                ootb_entry, "The slot should still be reported, not silently omitted"
+            )
+            self.assertEqual(ootb_entry["cacheStatus"], "notLoaded")
+            self.assertEqual(ootb_entry["lastReload"]["result"], "notAttempted")
+            self.assertIsNone(ootb_entry["lastReload"]["time"])
+            self.assertEqual(ootb_entry["entries"], [])
+            self.assertIn(
+                "regenerated",
+                " ".join(ootb_entry["lastReload"]["errors"]).lower(),
+                f"Expected the CA-needs-regenerating guidance text, got: {ootb_entry}",
+            )
+            self.log.info(f"Missing-OOTB-CRL state confirmed: {ootb_entry}")
+
+            # A manual reload of a genuinely missing OOTB CRL is not itself
+            # an error -- the whole request still succeeds; only that one
+            # slot's own status reflects the gap.
+            status, content = self.crl_utils.reload_crl(self.rest)
+            self.assertTrue(
+                status, f"reloadCrl should succeed even with no OOTB CRL: {content}"
+            )
+
+            # nodeToNode Require/Permissive are both blocked without an
+            # OOTB CRL to check ns_server's own internal certs against.
+            for policy in ("Require", "Permissive"):
+                status, content = self.crl_utils.set_settings(
+                    self.rest, policyPerScope={"nodeToNode": policy},
+                )
+                self.assertFalse(
+                    status,
+                    f"nodeToNode={policy} should be rejected with no OOTB "
+                    f"CRL, got: {content}",
+                )
+                self.assertIn(
+                    "regeneratecertificate",
+                    str(content.get("error", "")).lower(),
+                    f"Expected the error to point at regenerateCertificate, "
+                    f"got: {content}",
+                )
+            self.log.info(
+                "nodeToNode Require/Permissive both correctly blocked "
+                "without an OOTB CRL"
+            )
+
+            # nodeToNode=Disabled always stays possible -- only the
+            # *requested* change is inspected, so disabling never trips
+            # this guard whatever the current state is.
+            status, content = self.crl_utils.set_settings(
+                self.rest, policyPerScope={"nodeToNode": "Disabled"},
+            )
+            self.assertTrue(
+                status, f"nodeToNode=Disabled should always remain possible: {content}"
+            )
+
+            # clientAuth is a completely independent scope/guard and must
+            # be unaffected by a missing OOTB CRL.
+            status, content = self.crl_utils.set_settings(
+                self.rest, policyPerScope={"clientAuth": "Require"},
+            )
+            self.assertTrue(status, f"clientAuth=Require should still succeed: {content}")
+            status, content = self.crl_utils.set_settings(
+                self.rest, policyPerScope={"clientAuth": "Disabled"},
+            )
+            self.assertTrue(status, f"clientAuth=Disabled should still succeed: {content}")
+            self.log.info(
+                "clientAuth policy changes remain unaffected by a missing OOTB CRL"
+            )
+        finally:
+            # Best-effort, independent of where the block above failed:
+            # regenerating the cluster CA/cert also always (re)writes a
+            # fresh matching OOTB CRL in the same chronicle transaction
+            # (ns_server_cert:generate_cluster_CA/2's own invariant) -- the
+            # exact mechanism the product's own error message points
+            # admins at, and what test_crl_n2n_dual_certificate_enforcement's
+            # cleanup already relies on for the same reason. Left
+            # unguarded (not wrapped in try/except) deliberately: if this
+            # fails, the cluster's OWN CA/CRL state is left broken for
+            # whatever test runs next, which must not be silently
+            # swallowed the way a merely-cosmetic cleanup step would be.
+            self.crl_utils.regenerate_cluster_certificate_when_healthy(
+                self.rest, log=self.log
+            )
+
+        status, diag = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status)
+        ootb_entry = self.crl_utils.find_diagnostics_file_entry(
+            diag, node_key, "ootb.crl"
+        )
+        self.assertIsNotNone(ootb_entry)
+        self.assertEqual(
+            ootb_entry["cacheStatus"], "active",
+            f"OOTB CRL should be restored after regenerating the cluster "
+            f"certificate: {ootb_entry}",
+        )
+        self.assertIsNotNone(ootb_entry["lastReload"]["time"])
+
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Require"},
+        )
+        self.assertTrue(
+            status,
+            f"nodeToNode=Require should be settable again after "
+            f"regenerating the cluster certificate: {content}",
+        )
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to reset nodeToNode back to Disabled: {content}")
+        self.log.info(
+            "Regenerating the cluster certificate restored the OOTB CRL "
+            "and unblocked nodeToNode=Require"
+        )
 
     def test_crl_trust_and_signature_boundary(self):
         """Does a CRL's trust/signature actually apply to the cert being checked?"""
@@ -607,8 +877,160 @@ class CRLTest(CRLBase):
             self.log.info(
                 "urlPollLeaf correctly rejected — CRL was fetched via URL poll and applied"
             )
+
+            entry = self._wait_for_url_crl_reload(env["crl_url"], "loaded")
+            self.assertEqual(
+                entry["source"], "url",
+                f"A URL-fetched CRL must report source 'url', got: {entry}",
+            )
+            self.assertEqual(
+                entry["cacheStatus"], "active",
+                f"Freshly fetched valid CRL should be active, got: {entry}",
+            )
+
+            # -- Fetch-failure modes. Each asserts the same load-bearing
+            # contract: the fetch failure is reported through
+            # lastReload.result/errors, but the last-known-good CRL is
+            # RETAINED (cacheStatus stays "active") and keeps enforcing.
+            # That retention is the reason a transient URL outage can't
+            # silently un-revoke a certificate, so every case re-checks the
+            # leaf is still rejected rather than trusting the status alone.
+            for label, error_substring, serve in (
+                ("garbage body", "failed to decode",
+                 lambda: set_url_crl_body(env, "not a crl at all")),
+                ("HTTP 404", "404",
+                 lambda: remove_url_crl_file(env)),
+                ("expired CRL", "expired",
+                 lambda: set_url_crl_body(env, self.crl_utils.build_crl(
+                     self.ca_cert, self.ca_key, revoked_serials=[serial],
+                     crl_number=90, expired=True))),
+                ("untrusted issuer", "issuer not trusted",
+                 lambda: set_url_crl_body(env, self.crl_utils.build_crl(
+                     *self.crl_utils.generate_ca("UrlPollUntrustedCA"),
+                     crl_number=91))),
+            ):
+                serve()
+                entry = self._wait_for_url_crl_reload(
+                    env["crl_url"], "failed", expected_error=error_substring
+                )
+                self.assertEqual(
+                    entry["cacheStatus"], "active",
+                    f"{label}: the previously fetched good CRL must be retained "
+                    f"(cacheStatus 'active') when a later fetch fails, got: {entry}",
+                )
+                self.assertFalse(
+                    self._handshake_ok(leaf_cert_path, leaf_key_path),
+                    f"{label}: urlPollLeaf must stay rejected -- a failed URL "
+                    f"fetch must not un-revoke a certificate",
+                )
+                self.log.info(
+                    f"URL fetch failure ({label}): reported as failed with "
+                    f"'{error_substring}', last-good CRL retained and still enforcing"
+                )
+
+            # -- Recovery: serving a valid NON-revoking CRL must both flip the
+            # status back to loaded and actually restore access, with no
+            # settings re-POST and no manual reload -- purely the poller.
+            set_url_crl_body(
+                env,
+                self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=92),
+            )
+            self._wait_for_url_crl_reload(env["crl_url"], "loaded")
+            self._wait_until_handshake(
+                leaf_cert_path, leaf_key_path,
+                expect_ok=True,
+                deadline=datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=30),
+            )
+            self.log.info(
+                "URL poll recovery confirmed: a valid replacement CRL reloads "
+                "on the poller's own timer and restores access"
+            )
         finally:
             cleanup_url_poll_crl_env(env)
+
+        # -- Delta CRLs served over http://, not the poll directory: the
+        # base and delta must be combined the same way regardless of
+        # ingestion path. setup_url_poll_crl_env builds its CRL before a
+        # port is chosen, so the delta's URL isn't known yet to embed in
+        # the base's FreshestCRL -- serve the delta FIRST to learn its
+        # real URL, then drop the base alongside it on the same running
+        # server via set_url_crl_body (same directory, different filename).
+        url_delta_base_leaf, url_delta_base_key, url_delta_base_serial = (
+            self.crl_utils.generate_leaf_cert(self.ca_cert, self.ca_key, "urlDeltaBaseLeaf")
+        )
+        url_delta_base_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(url_delta_base_leaf)
+        )
+        url_delta_base_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(url_delta_base_key)
+        )
+        url_delta_only_leaf, url_delta_only_key, url_delta_only_serial = (
+            self.crl_utils.generate_leaf_cert(self.ca_cert, self.ca_key, "urlDeltaOnlyLeaf")
+        )
+        url_delta_only_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(url_delta_only_leaf)
+        )
+        url_delta_only_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(url_delta_only_key)
+        )
+
+        delta_env = setup_url_poll_crl_env(
+            crl_utils_obj=self.crl_utils,
+            cluster_master=self.cluster.master,
+            rest=self.rest,
+            ca_cert=self.ca_cert,
+            ca_key=self.ca_key,
+            revoked_serials=[url_delta_only_serial],
+            crl_kwargs={"crl_number": 21, "delta_crl_indicator": 20},
+            filename="url_delta_delta.pem",
+            http_port=18991,
+            url_poll_interval_ms=5000,
+            log_callback=self.log.info,
+        )
+        try:
+            self.assertTrue(
+                delta_env["settings_status"],
+                f"Failed to configure the delta URL: {delta_env['settings_content']}",
+            )
+            base_url = delta_env["crl_url"].rsplit("/", 1)[0] + "/url_delta_base.pem"
+            base_pem = self.crl_utils.build_crl(
+                self.ca_cert, self.ca_key, revoked_serials=[url_delta_base_serial],
+                crl_number=20, freshest_crl_url=delta_env["crl_url"],
+            )
+            set_url_crl_body(delta_env, base_pem, filename="url_delta_base.pem")
+
+            status, content = self.crl_utils.set_settings(
+                self.rest, urls=[delta_env["crl_url"], base_url],
+                urlPollIntervalMs=5000,
+            )
+            self.assertTrue(status, f"Failed to register both URLs: {content}")
+            self.log.info(
+                f"Serving base ({base_url}, naming the delta via FreshestCRL) "
+                f"and delta ({delta_env['crl_url']}) over http://"
+            )
+
+            self._wait_until_handshake(
+                url_delta_base_cert_path, url_delta_base_key_path,
+                expect_ok=False,
+                deadline=datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=20),
+            )
+            self.log.info("urlDeltaBaseLeaf correctly rejected via the base CRL")
+
+            self._wait_until_handshake(
+                url_delta_only_cert_path, url_delta_only_key_path,
+                expect_ok=False,
+                deadline=datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=20),
+            )
+            self.log.info(
+                "urlDeltaOnlyLeaf correctly rejected -- revoked only in the "
+                "URL-served delta, proving the base and delta were combined "
+                "over this ingestion path too"
+            )
+        finally:
+            cleanup_url_poll_crl_env(delta_env)
 
     def test_crl_settings_scope_independence_and_ingestion(self):
         """Per-scope policy independence, directory-poll ingestion, and the
@@ -688,6 +1110,114 @@ class CRLTest(CRLBase):
             except Exception as exc:
                 self.log.warning(f"Failed to clean up {poll_dir}: {exc}")
             poll_shell.disconnect()
+
+        # 2b. Delta CRLs: a base CRL naming where its delta lives (a
+        # FreshestCRL extension) plus a separate delta CRL that only
+        # revokes a serial the base never mentions. Both dropped into the
+        # poll directory, matching the base's FreshestCRL location. If the
+        # delta-only cert is rejected, that proves the two files were
+        # actually combined during validation -- the base alone could
+        # never explain that rejection.
+        delta_poll_dir = f"/tmp/taf_crl_delta_poll_{uuid.uuid4().hex[:8]}"
+        status, updated = self.crl_utils.set_settings(
+            self.rest, directory=delta_poll_dir, dirPollIntervalMs=5000
+        )
+        self.assertTrue(status, f"Directory update for delta test failed: {updated}")
+
+        delta_base_leaf_cert, delta_base_leaf_key, delta_base_serial = (
+            self.crl_utils.generate_leaf_cert(self.ca_cert, self.ca_key, "deltaBaseLeaf")
+        )
+        delta_base_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(delta_base_leaf_cert)
+        )
+        delta_base_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(delta_base_leaf_key)
+        )
+        delta_only_leaf_cert, delta_only_leaf_key, delta_only_serial = (
+            self.crl_utils.generate_leaf_cert(self.ca_cert, self.ca_key, "deltaOnlyLeaf")
+        )
+        delta_only_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(delta_only_leaf_cert)
+        )
+        delta_only_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(delta_only_leaf_key)
+        )
+        delta_unrevoked_leaf_cert, delta_unrevoked_leaf_key, _ = (
+            self.crl_utils.generate_leaf_cert(self.ca_cert, self.ca_key, "deltaUnrevokedLeaf")
+        )
+        delta_unrevoked_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(delta_unrevoked_leaf_cert)
+        )
+        delta_unrevoked_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(delta_unrevoked_leaf_key)
+        )
+
+        delta_filename = "delta_only.pem"
+        base_pem = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[delta_base_serial],
+            crl_number=10, freshest_crl_url=f"file://{delta_poll_dir}/{delta_filename}",
+        )
+        delta_pem = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[delta_only_serial],
+            crl_number=11, delta_crl_indicator=10,
+        )
+
+        delta_shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            delta_shell.execute_command(f"mkdir -p {delta_poll_dir}")
+            remote_write_file_b64(
+                delta_shell, f"{delta_poll_dir}/delta_base.pem", base_pem.decode("utf-8")
+            )
+            remote_write_file_b64(
+                delta_shell, f"{delta_poll_dir}/{delta_filename}", delta_pem.decode("utf-8")
+            )
+            self.log.info(
+                f"Wrote a base CRL (naming {delta_filename} as its delta via "
+                f"FreshestCRL) and that delta CRL directly to {delta_poll_dir}"
+            )
+
+            # Confirm both files are ACTUALLY loaded before checking any
+            # handshake outcome, rather than inferring it from a
+            # connect/reject side effect -- a brand-new cert with no CRL
+            # loaded for it yet is ALSO rejected under Require (undetermined
+            # -> fail-closed), the same outward result as "genuinely
+            # revoked". Checking handshakes before confirming the load
+            # would let the two "should reject" cases pass for the wrong
+            # reason, coincidentally, before the poll has even run.
+            self._wait_for_url_crl_reload("delta_base.pem", "loaded")
+            self._wait_for_url_crl_reload(delta_filename, "loaded")
+            self.log.info(
+                "Both delta_base.pem and the delta confirmed loaded from "
+                "the poll directory before checking any handshake outcome"
+            )
+
+            self.assertFalse(
+                self._handshake_ok(delta_base_cert_path, delta_base_key_path),
+                "deltaBaseLeaf should be rejected via the base CRL",
+            )
+            self.log.info("deltaBaseLeaf correctly rejected via the base CRL")
+
+            self.assertFalse(
+                self._handshake_ok(delta_only_cert_path, delta_only_key_path),
+                "deltaOnlyLeaf should be rejected -- revoked only in the delta",
+            )
+            self.log.info(
+                "deltaOnlyLeaf correctly rejected -- revoked only in the "
+                "delta, proving the base and delta were combined"
+            )
+
+            self.assertTrue(
+                self._handshake_ok(delta_unrevoked_cert_path, delta_unrevoked_key_path),
+                "A cert revoked in neither the base nor the delta should "
+                "still connect",
+            )
+            self.log.info("deltaUnrevokedLeaf unaffected, as expected")
+        finally:
+            try:
+                delta_shell.execute_command(f"rm -rf {delta_poll_dir}")
+            except Exception as exc:
+                self.log.warning(f"Failed to clean up {delta_poll_dir}: {exc}")
+            delta_shell.disconnect()
 
         # 3. checkIntermediateCerts toggle: revoke the intermediate CA's own
         # serial (not the leaf's), then flip the toggle and confirm the
@@ -878,7 +1408,7 @@ class CRLTest(CRLBase):
         # every other check in this test. policy="Require" here (not
         # "Permissive", independent of the cluster's actual configured
         # policy above) -- confirmed live that Permissive collapses this
-        # straight to status="valid" instead of surfacing "undetermined".
+        # straight to status="good" instead of surfacing "undetermined".
         status, content = self.crl_utils.diagnostics_validate(
             self.rest, policy="Require",
             certs=[self.crl_utils.cert_to_pem(leaf_missing_cert).decode()],
@@ -1320,12 +1850,12 @@ class CRLTest(CRLBase):
             self.assertEqual(resp, first, "Concurrent reloadCrl responses diverged")
         self.log.info("10 concurrent reloadCrl calls returned identical results")
 
-        # -- diagnostics/validate: baseline valid/revoked, real 4-value enum --
+        # -- diagnostics/validate: baseline good/revoked, real 4-value enum --
         status, content = self.crl_utils.diagnostics_validate(
             self.rest, policy="Require", certs=[valid_pem]
         )
         self.assertTrue(status, f"diagnostics/validate failed: {content}")
-        self.assertEqual(content["results"][0]["status"], "valid")
+        self.assertEqual(content["results"][0]["status"], "good")
         status, content = self.crl_utils.diagnostics_validate(
             self.rest, policy="Require", certs=[revoked_pem]
         )
@@ -1348,7 +1878,7 @@ class CRLTest(CRLBase):
         self.assertTrue(status, f"diagnostics/validate failed: {content}")
         self.assertEqual(content["results"][0]["status"], "undetermined")
         self.log.info(
-            "Baseline valid/revoked correct; untrusted-issuer cert reports "
+            "Baseline good/revoked correct; untrusted-issuer cert reports "
             "'undetermined' -- confirms the real 4-value enum"
         )
 
@@ -1434,7 +1964,7 @@ class CRLTest(CRLBase):
         # for everything" -- with the earlier diag_endpoint.pem (still
         # active, non-expired) also loaded for the same issuer, the
         # system falls back to it once the newer one expires, and
-        # expired_cert (revoked by neither file) came back "valid"
+        # expired_cert (revoked by neither file) came back "good"
         # instead of "undetermined" -- caught live, not assumed. --
         self._cleanup_created_files()
         expired_cert, _, _ = self.crl_utils.generate_leaf_cert(
@@ -1529,11 +2059,11 @@ class CRLTest(CRLBase):
             self.rest, policy="Require", certs=[valid_pem]
         )
         self.assertTrue(status, f"diagnostics/validate failed: {content}")
-        self.assertEqual(content["results"][0]["status"], "valid")
+        self.assertEqual(content["results"][0]["status"], "good")
         self.assertTrue(
             self._handshake_ok(valid_cert_path, valid_key_path),
             "A live handshake with the same cert diagnostics/validate "
-            "calls 'valid' must also actually connect",
+            "calls 'good' must also actually connect",
         )
         self.log.info(
             "diagnostics/validate's verdict matches a real live mTLS "
@@ -1580,13 +2110,10 @@ class CRLTest(CRLBase):
             status, content = self.crl_utils.diagnostics_status(self.rest)
             self.assertTrue(status, f"Default diagnostics/status failed: {content}")
             self.assertIn(node_key, content)
-            self.assertNotIn(
-                second_key, content,
-                "Known gap: the down node is silently dropped from the "
-                "default (no explicit nodes) diagnostics/status response "
-                "instead of surfacing as an error entry. If this assertion "
-                "now fails, the gap has been fixed -- flip it to assertIn "
-                "+ assert an error entry.",
+            self.assertIn(second_key, content)
+            self.assertIn(
+                "error", content[second_key],
+                f"Down node should surface as an error entry, got: {content[second_key]}",
             )
         finally:
             shell.start_couchbase()
@@ -1599,8 +2126,8 @@ class CRLTest(CRLBase):
                 f"{second.ip} never recovered to status=healthy",
             )
         self.log.info(
-            "Down node: explicit nodes list surfaces it as an error entry; "
-            "default call silently omits it (known gap, asserted as-is)"
+            "Down node surfaces as an error entry both via an explicit "
+            "nodes list and the default (no-nodes) call"
         )
 
     def test_crl_auditing_logs_and_metrics(self):
@@ -2104,7 +2631,7 @@ class CRLTest(CRLBase):
             valid_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(valid_key))
             before_valid = self.crl_utils.get_metric_value(
                 server, "cm_crl_status_checks_total",
-                {"cache": "miss", "verdict": "valid"},
+                {"cache": "miss", "verdict": "good"},
             ) or 0
             self.assertTrue(
                 self._handshake_ok(valid_cert_path, valid_key_path),
@@ -2112,7 +2639,7 @@ class CRLTest(CRLBase):
             )
             after_valid = self.crl_utils.get_metric_value(
                 server, "cm_crl_status_checks_total",
-                {"cache": "miss", "verdict": "valid"},
+                {"cache": "miss", "verdict": "good"},
             ) or 0
             self.assertEqual(after_valid, before_valid + 1)
 
@@ -3554,6 +4081,116 @@ class CRLTest(CRLBase):
             "mapping still works"
         )
 
+        # -- Multi-node uploaded-file sync + peer download. Chronicle only
+        # replicates a CRL's METADATA (filename/checksum/issuer/etc), not its
+        # PEM bytes -- those are pushed to peers by a separate RPC
+        # (sync_with_active_nodes) at upload time. A node that is DOWN during
+        # that RPC genuinely lacks the file on its own disk once it returns,
+        # and must reconcile by downloading it from a live peer -- this is
+        # the one path in the whole suite that can't be reached by any
+        # single-node or all-nodes-up scenario. --
+        sync_cert, sync_key, sync_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "hotReloadSyncLeaf"
+        )
+        sync_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(sync_cert))
+        sync_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(sync_key))
+
+        second_otp_node = next(
+            n for n in self.cluster_util.get_otp_nodes(self.cluster.master)
+            if n.ip == second.ip
+        )
+        shell = RemoteMachineShellConnection(second)
+        try:
+            shell.stop_couchbase()
+            self.assertTrue(
+                self.cluster_util.wait_for_node_status(
+                    self.cluster, second_otp_node, "unhealthy", timeout_in_seconds=180,
+                ),
+                f"{second.ip} never reached status=unhealthy",
+            )
+
+            # Upload happens entirely against master while the second node
+            # is unreachable -- it cannot receive the peer-push RPC.
+            sync_filename = "hot_reload_multinode_sync.pem"
+            status, content = self.crl_utils.revoke_and_upload(
+                self.rest, self.ca_cert, self.ca_key, [sync_serial], sync_filename,
+                crl_number=6,
+            )
+            self.assertTrue(status, f"Upload while {second.ip} was down failed: {content}")
+            self._track_uploaded_file(sync_filename)
+            self.crl_utils.reload_crl(self.rest)
+
+            status, content = self.crl_utils.diagnostics_status(self.rest, nodes=[master_key])
+            self.assertTrue(status, f"Master diagnostics/status failed: {content}")
+            master_entry = self.crl_utils.find_diagnostics_file_entry(
+                content, master_key, sync_filename
+            )
+            self.assertIsNotNone(master_entry, "Master should already have the file")
+            # checksum lives per-entry (one per CRL an issuer contributed to
+            # this file), not on the file object itself -- confirmed against
+            # menelaus_web_crl.erl's status_entry_to_json/1. This file has
+            # exactly one CRL, so entries[0] is unambiguous.
+            expected_checksum = master_entry["entries"][0]["checksum"]
+        finally:
+            shell.start_couchbase()
+            shell.disconnect()
+            self.assertTrue(
+                self.cluster_util.wait_for_node_status(
+                    self.cluster, second_otp_node, "healthy", timeout_in_seconds=180,
+                ),
+                f"{second.ip} never recovered to status=healthy",
+            )
+
+        # Confirmed against upload_file_status_map/4 (cb_crl_manager.erl):
+        # for source="uploaded" files, the terminal SUCCESS value is
+        # literally "uploaded" once the local checksum matches chronicle's
+        # -- "loaded" is a different source's vocabulary (local_dir/url/
+        # generated, which go through an actual fetch-and-decode step).
+        # "notYetSynced" is the transient value while that copy is still
+        # missing, and is what get pulled in via peer download.
+        second_entry, observed_results = self._wait_for_node_crl_reload(
+            second_key, sync_filename, "uploaded", timeout=60,
+        )
+        self.log.info(
+            f"{second.ip}'s sync for {sync_filename} passed through "
+            f"lastReload.result values {observed_results} before reaching 'uploaded'"
+        )
+        self.assertTrue(
+            second_entry.get("entries"),
+            f"'loaded' should mean the file actually decoded, so entries "
+            f"should be non-empty: {second_entry}",
+        )
+        self.assertEqual(
+            second_entry["entries"][0]["checksum"], expected_checksum,
+            f"{second.ip} must end up with the SAME checksum as master's "
+            f"copy -- proves genuine peer-downloaded content, not a "
+            f"placeholder or partial write",
+        )
+        self.assertEqual(
+            second_entry["cacheStatus"], "active",
+            f"Peer-downloaded CRL must actually decode successfully, got: {second_entry}",
+        )
+
+        # The real proof it isn't just correct metadata: connect DIRECTLY to
+        # the second node's own mgmt port -- each node enforces CRL checks
+        # against its own local cache, so this only rejects if node 2
+        # genuinely decoded and loaded the peer-downloaded bytes.
+        try:
+            self.crl_utils.perform_mtls_handshake(
+                second.ip, self.MGMT_PORT, sync_cert_path, sync_key_path,
+            )
+            self.fail(
+                f"{second.ip} should reject the peer-synced revoked cert "
+                f"directly, not just report correct status metadata"
+            )
+        except requests.exceptions.SSLError:
+            pass
+        self.log.info(
+            f"Peer download confirmed end-to-end: {second.ip} downloaded "
+            f"{sync_filename} from a live peer after returning from an "
+            f"outage, with matching checksum, and enforces it locally"
+        )
+
     def test_crl_health_warnings(self):
         """A 'crl_expires_soon' health warning fires proactively for a CRL
         that hasn't expired yet but has already dropped inside its own
@@ -4260,6 +4897,14 @@ class CRLTest(CRLBase):
             "on all 3 nodes"
         )
         self._enable_n2n_encryption(servers, level="all")
+        # Required -- without this, the accept side of a cb_dist connection
+        # uses verify_none and never even requests a peer certificate, so
+        # nodeToNode CRL policy has no effect on that direction at all
+        # (dev-confirmed root cause of an earlier false "accept-side bypass"
+        # report). _enable_n2n_encryption only turns on n2n encryption
+        # itself; this is a separate setting.
+        for server in servers:
+            self.crl_utils.set_client_cert_verification(server, True)
         filename = "n2n_dual_cert_enforcement.pem"
         try:
             self._test_crl_n2n_dual_certificate_enforcement_body(
@@ -4290,11 +4935,12 @@ class CRLTest(CRLBase):
                         f"on {server.ip}: {exc}"
                     )
             try:
-                # Cluster-wide reset back to fresh self-signed node certs,
-                # independent of self.ca_cert -- so CRLBase.tearDown()'s
-                # cleanup_trusted_cas() untrusting that CA afterward can
-                # never again strand a node on a cert signed by it.
-                self.rest.regenerate_cluster_certificate()
+                # Resets certs so cleanup_trusted_cas() can't strand a node
+                # on this CA. Waits for all nodes healthy first (MB-61591),
+                # since this runs right after this test's own restarts.
+                self.crl_utils.regenerate_cluster_certificate_when_healthy(
+                    self.rest, log=self.log
+                )
             except Exception as exc:
                 self.log.warning(f"Best-effort certificate regeneration failed: {exc}")
             try:
@@ -4389,6 +5035,27 @@ class CRLTest(CRLBase):
             "fence the node out (client cert still valid)"
         )
 
+        # -- The internal HTTPS path (menelaus_rest:json_request_hilevel,
+        # used for ordinary node-to-node REST calls) is a genuinely
+        # different mechanism from cb_dist -- no dual-certificate/
+        # simultaneous-connect nuance, just an ordinary client verifying a
+        # server's cert. So unlike cb_dist above, a revoked NODE cert alone
+        # is expected to fence THIS path immediately, even while the same
+        # node stays reachable over cb_dist. If this ever starts passing
+        # (i.e. becomes reachable), the two mechanisms would have quietly
+        # converged and this assertion should be revisited.
+        self.assertFalse(
+            self._internal_https_reachable(self.rest, node_c.ip, self.MGMT_PORT),
+            "Sub-case A: the internal HTTPS path should already reject "
+            "node C on its revoked node cert alone, independent of "
+            "cb_dist's own dual-certificate leniency",
+        )
+        self.log.info(
+            "Sub-case A: internal HTTPS path correctly rejects node C on "
+            "the node-cert-only revocation, even though cb_dist doesn't -- "
+            "confirms these are independently-enforced mechanisms"
+        )
+
         # -- Sub-case B: revoke node C's client cert too -- both now
         # revoked. This is the real "Require correctly fences a
         # fully-revoked node" contract. --
@@ -4425,6 +5092,19 @@ class CRLTest(CRLBase):
             "revoked -- Require correctly fenced it out"
         )
 
+        # -- The internal HTTPS path must stay fenced too, for the same
+        # revoked node cert that already fences it (the client cert
+        # revocation added in this sub-case is irrelevant to this
+        # particular path -- it isn't the one being verified here).
+        self.assertFalse(
+            self._internal_https_reachable(self.rest, node_c.ip, self.MGMT_PORT),
+            "Sub-case B: the internal HTTPS path should still reject node "
+            "C with its node cert revoked",
+        )
+        self.log.info(
+            "Sub-case B: internal HTTPS path still correctly rejects node C"
+        )
+
         # -- Teardown: restore node C so the pool is left clean for later
         # tests in the same run. --
         status, content = self.crl_utils.revoke_and_upload(
@@ -4438,20 +5118,16 @@ class CRLTest(CRLBase):
             shell.start_couchbase()
         finally:
             shell.disconnect()
-        # Generous timeout here specifically -- by this point node C has
-        # already gone through 3 prior restart cycles in the same test
-        # (baseline join, sub-case A, sub-case B), and live testing this
-        # session observed rejoin taking up to ~64s in a comparable
-        # multi-restart scenario, well past the ~40s that's plenty for an
-        # earlier, "fresher" restart.
-        # The outer test method's `finally` block (not here) is responsible
-        # for disabling clientCertVerification/n2n encryption and
-        # regenerating fresh node certs unconditionally -- this assertion
-        # only confirms the *restore path itself* (revoke -> un-revoke ->
-        # restart -> rejoin) genuinely works, it isn't the last line of
-        # defense for pool cleanliness.
+        # Generous timeout: 180s was seen live to be too tight for node C's
+        # 4th restart in this test.
         self.assertTrue(
-            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=90),
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=300),
             "Teardown: node C failed to rejoin after restoring its certs "
             "-- pool may be left in a bad state for later tests",
         )
+        self.assertTrue(
+            self._internal_https_reachable(self.rest, node_c.ip, self.MGMT_PORT),
+            "Teardown: the internal HTTPS path to node C should also "
+            "recover once its certs are restored",
+        )
+        self.log.info("Teardown: internal HTTPS path to node C recovered")

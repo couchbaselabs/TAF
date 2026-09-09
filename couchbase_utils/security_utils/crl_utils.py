@@ -1,5 +1,6 @@
 import base64
 import datetime
+import http.client
 import ipaddress
 import json
 import os
@@ -9,6 +10,7 @@ import ssl
 import tempfile
 import threading
 import time
+import urllib.parse
 import uuid
 
 import requests
@@ -43,11 +45,15 @@ __all__ = [
     "CRLUtils",
     "setup_url_poll_crl_env",
     "cleanup_url_poll_crl_env",
+    "set_url_crl_body",
+    "remove_url_crl_file",
     "POLICY_MODES",
     "SCOPES",
     "CACHE_STATUS_VALUES",
     "RELOAD_RESULT_VALUES",
     "DIAGNOSTIC_STATUS_VALUES",
+    "FILE_SOURCE_VALUES",
+    "DIR_STATUS_VALUES",
     "ENDPOINT_CRL_SETTINGS",
     "ENDPOINT_CRL_FILES",
     "ENDPOINT_CRL_DIAGNOSTICS_STATUS",
@@ -63,10 +69,12 @@ CACHE_STATUS_VALUES = {
     "active", "expired", "notYetValid", "untrusted", "invalid", "notLoaded",
 }
 RELOAD_RESULT_VALUES = {
-    "loaded", "failed", "notAttempted", "uploaded", "notDownloaded",
-    "checksumMismatch", "readError",
+    "loaded", "failed", "notAttempted", "uploaded", "notYetSynced",
+    "checksumMismatch",
 }
-DIAGNOSTIC_STATUS_VALUES = {"valid", "revoked", "undetermined", "failed"}
+DIAGNOSTIC_STATUS_VALUES = {"good", "revoked", "undetermined", "failed"}
+FILE_SOURCE_VALUES = {"localDir", "uploaded", "generated", "url"}
+DIR_STATUS_VALUES = {"readable", "notFound", "unreadable"}
 
 # Key algorithms covering the two most common real-world Couchbase PKI shapes:
 # RSA 2048 (still the default for legacy/enterprise AD CS setups) and ECDSA
@@ -338,7 +346,9 @@ class CRLUtils:
     @staticmethod
     def build_crl(ca_cert, ca_key, revoked_serials=None, this_update=None,
                   next_update=None, crl_number=None, expired=False,
-                  add_authority_key_id=False, revocation_reasons=None):
+                  add_authority_key_id=False, revocation_reasons=None,
+                  delta_crl_indicator=None, freshest_crl_url=None,
+                  only_some_reasons=None):
         """
         Build and sign a CRL for ca_cert/ca_key.
 
@@ -359,6 +369,18 @@ class CRLUtils:
                 a CRLReason extension to that entry. Serials not present
                 here (or when this is omitted) get no reason code, which
                 is the common case.
+            delta_crl_indicator: optional int -- marks this CRL as a DELTA
+                CRL whose base is the CRL carrying that crl_number. Pair it
+                with a base CRL built using freshest_crl_url.
+            freshest_crl_url: optional str URI (http:// or file://) -- adds a
+                FreshestCRL extension naming where the delta CRL for this
+                base CRL lives.
+            only_some_reasons: optional iterable of x509.ReasonFlags -- adds
+                an IssuingDistributionPoint scoping this CRL to just those
+                revocation reasons (RFC 5280 6.3.3). Two CRLs with
+                complementary masks jointly establish a cert's status;
+                incomplete coverage makes it undetermined. Note
+                `unspecified` and `remove_from_crl` are not permitted here.
 
         Returns:
             bytes: PEM-encoded CRL
@@ -399,6 +421,36 @@ class CRLUtils:
             builder = builder.add_extension(
                 x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
                 critical=False,
+            )
+        # Criticality below follows RFC 5280 (deltaCRLIndicator and
+        # issuingDistributionPoint MUST be critical, freshestCRL MUST NOT be)
+        # rather than being caller-selectable: the server rejects any
+        # *unrecognized* critical CRL extension, and all three of these OIDs
+        # are on its recognized list, so conformant flags are also the only
+        # ones that get past upload validation.
+        if delta_crl_indicator is not None:
+            builder = builder.add_extension(
+                x509.DeltaCRLIndicator(delta_crl_indicator), critical=True
+            )
+        if freshest_crl_url is not None:
+            builder = builder.add_extension(
+                x509.FreshestCRL([
+                    x509.DistributionPoint(
+                        full_name=[x509.UniformResourceIdentifier(freshest_crl_url)],
+                        relative_name=None, reasons=None, crl_issuer=None,
+                    )
+                ]),
+                critical=False,
+            )
+        if only_some_reasons is not None:
+            builder = builder.add_extension(
+                x509.IssuingDistributionPoint(
+                    only_some_reasons=frozenset(only_some_reasons),
+                    full_name=None, relative_name=None,
+                    only_contains_user_certs=False, only_contains_ca_certs=False,
+                    indirect_crl=False, only_contains_attribute_certs=False,
+                ),
+                critical=True,
             )
         crl = builder.sign(private_key=ca_key, algorithm=hashes.SHA256())
         return crl.public_bytes(serialization.Encoding.PEM)
@@ -515,11 +567,124 @@ class CRLUtils:
         status, content, _ = api.delete_crl_file(filename)
         return status, self.parse_content(content)
 
+    @staticmethod
+    def build_multipart_body(boundary, parts):
+        """Hand-assembles a multipart/form-data body from `parts` (a list of
+        (extra_headers: dict, content: bytes) pairs), for shapes upload_file()'s
+        `requests`-multipart convenience wrapper can't produce (e.g. two file
+        parts, or a part with no filename at all)."""
+        body = bytearray()
+        for headers, content in parts:
+            body += f"--{boundary}\r\n".encode()
+            for key, value in headers.items():
+                body += f"{key}: {value}\r\n".encode()
+            body += b"\r\n" + content + b"\r\n"
+        body += f"--{boundary}--\r\n".encode()
+        return bytes(body)
+
+    @staticmethod
+    def upload_file_raw(rest, headers, body, chunked=False, timeout=30):
+        """
+        Low-level POST /settings/crl/files that sends `headers`/`body`
+        exactly as given, bypassing upload_file()'s multipart/Content-Length
+        auto-handling -- for exercising request-shape rejections (wrong
+        Content-Type, missing/invalid Content-Length, malformed multipart)
+        that convenience wrapper can't produce.
+
+        Uses http.client directly rather than requests: requests silently
+        recomputes and overwrites Content-Length from the real body length
+        whenever `data` is bytes, even if the caller already set that header
+        -- there is no way to make it send a deliberately wrong value, which
+        is exactly what the invalid-Content-Length case needs to exercise.
+
+        `chunked=True` chunk-encodes `body` per RFC 7230 and sends
+        Transfer-Encoding: chunked with no Content-Length header at all,
+        instead of trusting a caller-supplied header (which would be
+        equally overwritten by an httplib.client-computed one otherwise).
+        Any `Content-Length` already in `headers` is otherwise sent
+        verbatim, valid or not -- including values so malformed (e.g. a
+        non-numeric string) that mochiweb's own request-line parsing drops
+        the connection before the request ever reaches the CRL handler at
+        all, rather than replying with a clean 400. That's a legitimate
+        rejection outcome too (the upload certainly didn't succeed), so
+        it's reported as one rather than raised: status False, content
+        text a "<connection closed...>" marker, response None. Retries a
+        few times first (matching upload_crl_file's own transient-error
+        retry convention) so a genuine one-off network hiccup isn't
+        mistaken for that deliberate server-side drop.
+
+        Returns (status_bool, content_text, response).
+        """
+        base_url = (
+            getattr(rest, "baseUrl", None) or getattr(rest, "base_url", None)
+        ).rstrip("/")
+        username = getattr(rest, "username", None) or getattr(rest, "rest_username", None)
+        password = getattr(rest, "password", None) or getattr(rest, "rest_password", None)
+        parsed = urllib.parse.urlparse(base_url)
+        has_content_length = any(k.lower() == "content-length" for k in headers)
+
+        last_exc = None
+        for attempt in range(3):
+            # base_url's own scheme decides plain vs TLS -- a security test
+            # that's put the cluster in TLS-only mode (enable_tls_on_nodes)
+            # has an https:// baseUrl, and connecting to that port in plain
+            # HTTP gets back a raw TLS alert record instead of any HTTP
+            # response at all (confirmed live: http.client.BadStatusLine on
+            # the alert's raw bytes) -- requests handles this transparently
+            # by inspecting the same scheme; this needs to do it explicitly.
+            if parsed.scheme == "https":
+                conn = http.client.HTTPSConnection(
+                    parsed.hostname, parsed.port, timeout=timeout,
+                    context=ssl._create_unverified_context(),
+                )
+            else:
+                conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=timeout)
+            try:
+                conn.putrequest("POST", "/settings/crl/files", skip_accept_encoding=True)
+                auth_value = base64.b64encode(f"{username}:{password}".encode()).decode()
+                conn.putheader("Authorization", f"Basic {auth_value}")
+                for key, value in headers.items():
+                    conn.putheader(key, value)
+                if chunked:
+                    conn.putheader("Transfer-Encoding", "chunked")
+                    conn.endheaders()
+                    conn.send(f"{len(body):x}\r\n".encode() + body + b"\r\n0\r\n\r\n")
+                else:
+                    # http.client's putheader/endheaders (unlike its
+                    # higher-level request()) never computes Content-Length
+                    # on its own -- add the correct one here when the
+                    # caller didn't already supply one (right or
+                    # deliberately wrong), so every case other than the
+                    # ones actually testing Content-Length itself still
+                    # gets a normal, well-formed request.
+                    if not has_content_length:
+                        conn.putheader("Content-Length", str(len(body)))
+                    conn.endheaders()
+                    conn.send(body)
+                response = conn.getresponse()
+                text = response.read().decode("utf-8", "replace")
+                return response.status < 300, text, response
+            except (http.client.HTTPException, ConnectionError, OSError) as exc:
+                last_exc = exc
+                if attempt < 2:
+                    time.sleep(2)
+            finally:
+                conn.close()
+        return False, f"<connection closed without a response: {last_exc!r}>", None
+
     def diagnostics_status(self, rest, nodes=None):
-        """GET /settings/crl/diagnostics/status. Returns (status_bool, content)."""
+        """GET /settings/crl/diagnostics/status. Returns (status_bool, content).
+
+        Runs assert_status_vocabulary() on every successful response, so
+        every caller gets vocabulary-drift protection automatically instead
+        of remembering to call it separately.
+        """
         api = self._crl_api(rest)
         status, content, _ = api.get_diagnostics_status(nodes=nodes)
-        return status, self.parse_content(content)
+        parsed = self.parse_content(content)
+        if status and isinstance(parsed, dict):
+            self.assert_status_vocabulary(parsed)
+        return status, parsed
 
     def diagnostics_validate(self, rest, policy=None, certs=None):
         """POST /settings/crl/diagnostics/validate. Returns (status_bool, content)."""
@@ -1005,6 +1170,56 @@ class CRLUtils:
                 f"{server.ip}: {response.status_code} {response.text}"
             )
 
+    @staticmethod
+    def regenerate_cluster_certificate_when_healthy(rest, timeout=120, log=None):
+        """
+        Waits for every node in the pool to report healthy, then calls
+        RestConnection.regenerate_cluster_certificate().
+
+        POST /controller/regenerateCertificate refuses to run at all while
+        any cluster node is currently unreachable (MB-61591 -- landed as a
+        deliberate guard against a worse problem: a CA rotation that
+        reaches only some nodes strands the rest, since they keep trusting
+        the old CA while the others now trust the new one. That guard is
+        the actual fix, not something later relaxed, so a genuinely
+        unreachable node still correctly blocks this call). A node that
+        just restarted can look transiently unreachable to this same check
+        for a brief window even though it is otherwise healthy -- confirmed
+        live: TAF's own polling and a live HTTPS check both already saw a
+        node as healthy mere milliseconds before this same REST call
+        rejected it as unreachable. This waits out exactly that window
+        before attempting the call, rather than reacting after the fact.
+
+        Best-effort on the wait itself: if nodes are still not all healthy
+        when the timeout elapses, proceeds anyway and lets
+        regenerate_cluster_certificate() raise its own error -- a node
+        that's genuinely, persistently down should still correctly block
+        this call.
+        """
+        deadline = time.time() + timeout
+        unhealthy = []
+        while time.time() < deadline:
+            content = rest.get_pools_default()
+            if not isinstance(content, dict):
+                # Not part of a multi-node pool (e.g. already ejected) --
+                # no other members to be unreachable, nothing to wait for.
+                unhealthy = []
+                break
+            unhealthy = [
+                node.get("hostname") for node in content.get("nodes", [])
+                if node.get("status") != "healthy"
+            ]
+            if not unhealthy:
+                break
+            time.sleep(5)
+        if unhealthy and log:
+            log.warning(
+                f"regenerate_cluster_certificate_when_healthy: proceeding "
+                f"after {timeout}s even though these nodes never reported "
+                f"healthy: {unhealthy}"
+            )
+        return rest.regenerate_cluster_certificate()
+
     # ── mTLS handshake helpers ───────────────────────────────────────────────
 
     # ssl.SSLSession objects can only be reused against the exact
@@ -1309,6 +1524,78 @@ class CRLUtils:
                 f"Expected source={expected_source!r}, got {entry.get('source')!r}"
             )
 
+    @staticmethod
+    def assert_status_vocabulary(diagnostics_content):
+        """
+        Asserts every value in a diagnostics/status response (as returned by
+        diagnostics_status()) is one of the documented enum values -- across
+        every node in the response. Catches exactly the class of bug an
+        unmapped/renamed status atom produces: the server's own catch-all
+        (unmapped_to_json/2) prints the raw Erlang term rather than raising,
+        so a value falling outside the documented set is otherwise silent.
+
+        Checks, per node:
+          - crlFiles[].cacheStatus in CACHE_STATUS_VALUES
+          - crlFiles[].source in FILE_SOURCE_VALUES
+          - crlFiles[].lastReload.result in RELOAD_RESULT_VALUES
+          - crlFiles[].entries[].status in CACHE_STATUS_VALUES, excluding
+            "notLoaded" (a per-CRL-entry status; the file-level "no entries
+            at all" case is distinguished by an empty entries list, not by
+            an entry saying so)
+          - a file with cacheStatus "active" has ONLY "active" entries
+          - pollDirectory.status (if present) in DIR_STATUS_VALUES
+
+        A bare "ok" (MB-72988: a healthy entry must report "active", never
+        the raw internal atom) is not checked separately -- "ok" is not a
+        member of any of the four enums above, so the plain membership
+        checks already catch it with an equally clear message.
+        """
+        entry_status_values = CACHE_STATUS_VALUES - {"notLoaded"}
+        for node_key, node_data in diagnostics_content.items():
+            if not isinstance(node_data, dict) or "error" in node_data:
+                continue  # a down/unreachable node's entry -- not this helper's job
+            for file_entry in node_data.get("crlFiles", []):
+                filename = file_entry.get("filename")
+                cache_status = file_entry.get("cacheStatus")
+                if cache_status not in CACHE_STATUS_VALUES:
+                    raise AssertionError(
+                        f"{node_key}/{filename}: cacheStatus {cache_status!r} "
+                        f"not in {CACHE_STATUS_VALUES}"
+                    )
+                source = file_entry.get("source")
+                if source not in FILE_SOURCE_VALUES:
+                    raise AssertionError(
+                        f"{node_key}/{filename}: source {source!r} not in "
+                        f"{FILE_SOURCE_VALUES}"
+                    )
+                reload_result = file_entry.get("lastReload", {}).get("result")
+                if reload_result not in RELOAD_RESULT_VALUES:
+                    raise AssertionError(
+                        f"{node_key}/{filename}: lastReload.result "
+                        f"{reload_result!r} not in {RELOAD_RESULT_VALUES}"
+                    )
+                for i, crl_entry in enumerate(file_entry.get("entries", [])):
+                    entry_status = crl_entry.get("status")
+                    if entry_status not in entry_status_values:
+                        raise AssertionError(
+                            f"{node_key}/{filename}/entries[{i}]: status "
+                            f"{entry_status!r} not in {entry_status_values}"
+                        )
+                    if cache_status == "active" and entry_status != "active":
+                        raise AssertionError(
+                            f"{node_key}/{filename}/entries[{i}]: file "
+                            f"cacheStatus is 'active' but this entry's own "
+                            f"status is {entry_status!r}, not 'active'"
+                        )
+            poll_dir = node_data.get("pollDirectory")
+            if poll_dir is not None:
+                dir_status = poll_dir.get("status")
+                if dir_status not in DIR_STATUS_VALUES:
+                    raise AssertionError(
+                        f"{node_key}: pollDirectory.status {dir_status!r} "
+                        f"not in {DIR_STATUS_VALUES}"
+                    )
+
 
 # ── URL-poll ingestion helpers ──────────────────────────────────────────────
 # Mirrors jwt_utils.py's setup_jwks_uri_issuer_env/cleanup_jwks_uri_issuer_env
@@ -1480,6 +1767,35 @@ def setup_url_poll_crl_env(*, crl_utils_obj, cluster_master, rest, ca_cert, ca_k
         "settings_status": status,
         "settings_content": content,
     }
+
+
+def set_url_crl_body(env, content, filename=None):
+    """
+    Replace what the throwaway HTTP server from setup_url_poll_crl_env is
+    serving, without restarting it or re-POSTing /settings/crl -- so a test
+    can watch the URL poller react to the *same* URL changing content
+    (valid -> garbage -> valid, in-date -> expired, and so on).
+
+    `content` may be bytes (a PEM from build_crl) or str (deliberate
+    garbage). `filename` defaults to the env's own served filename.
+    """
+    if isinstance(content, bytes):
+        content = content.decode("utf-8")
+    name = filename or env["crl_url"].rsplit("/", 1)[-1]
+    remote_write_file_b64(env["shell_conn"], f"{env['tmp_dir']}/{name}", content)
+
+
+def remove_url_crl_file(env, filename=None):
+    """
+    Delete the served CRL so the (plain static) HTTP server answers 404 for
+    the configured URL -- how to exercise the server's `HTTP 404 Not Found`
+    fetch-failure path without needing a custom request handler. Pair with
+    set_url_crl_body() to then assert recovery on the next poll.
+    """
+    name = filename or env["crl_url"].rsplit("/", 1)[-1]
+    env["shell_conn"].execute_command(
+        f"sh -c \"rm -f '{env['tmp_dir']}/{name}' || true\""
+    )
 
 
 def cleanup_url_poll_crl_env(env):

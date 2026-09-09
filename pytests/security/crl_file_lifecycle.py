@@ -82,6 +82,20 @@ class CRLFileLifecycle(CRLBase):
         )
         self.log.info(f"Upload of {filename!r} correctly rejected ({reason}): {content}")
 
+    def _assert_raw_upload_rejected(self, headers, body, expected_text, reason, chunked=False):
+        self.log.info(f"Uploading malformed request expecting rejection ({reason})")
+        status, text, response = self.crl_utils.upload_file_raw(
+            self.rest, headers=headers, body=body, chunked=chunked,
+        )
+        self.assertFalse(
+            status, f"Expected upload to be rejected ({reason}) but it succeeded: {text}",
+        )
+        self.assertIn(
+            expected_text, text,
+            f"Expected {expected_text!r} in the rejection ({reason}), got: {text}",
+        )
+        self.log.info(f"Malformed request correctly rejected ({reason}): {text}")
+
     # ── Tests ────────────────────────────────────────────────────────────────
 
     def test_crl_upload_valid_der(self):
@@ -149,7 +163,11 @@ class CRLFileLifecycle(CRLBase):
 
     def test_crl_upload_invalid_filename_rejected(self):
         """Path traversal, disallowed characters, and >255-char filenames
-        are all rejected at upload time."""
+        are all rejected at upload time -- plus malformed request-shape
+        errors ahead of filename validation in the same handler (wrong
+        Content-Type, missing/invalid Content-Length, malformed multipart),
+        and the asymmetry that DELETE never runs the filename validator
+        upload does."""
         crl_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1)
 
         cases = [
@@ -159,6 +177,75 @@ class CRLFileLifecycle(CRLBase):
         ]
         for filename, reason in cases:
             self._assert_upload_rejected(filename, crl_pem, reason=reason)
+
+        # -- Request-shape errors, checked ahead of filename/content in the
+        # handler: Content-Type, then Content-Length, then multipart shape. --
+        self._assert_raw_upload_rejected(
+            headers={"Content-Type": "text/plain"}, body=crl_pem,
+            expected_text="Content-Type must be multipart/form-data",
+            reason="non-multipart Content-Type",
+        )
+
+        boundary = "TAFRawUploadBoundary1"
+        one_file_body = self.crl_utils.build_multipart_body(boundary, [
+            ({"Content-Disposition": 'form-data; name="file"; filename="x.pem"',
+              "Content-Type": "application/pkix-crl"}, crl_pem),
+        ])
+        multipart_ct = f"multipart/form-data; boundary={boundary}"
+
+        self._assert_raw_upload_rejected(
+            headers={"Content-Type": multipart_ct}, body=one_file_body, chunked=True,
+            expected_text="Content-Length header is required",
+            reason="chunked transfer encoding / no Content-Length",
+        )
+        # A numeric-but-negative value reaches the handler and gets a clean
+        # 400. A non-numeric value never gets that far -- mochiweb's own
+        # request-line parsing drops the connection outright, since
+        # Content-Length isn't a valid HTTP header value at all in that
+        # shape. Both are legitimate rejections, just via different layers
+        # -- confirmed live, not assumed.
+        self._assert_raw_upload_rejected(
+            headers={"Content-Type": multipart_ct, "Content-Length": "-1"},
+            body=one_file_body,
+            expected_text="Invalid Content-Length header",
+            reason="Content-Length=-1",
+        )
+        self._assert_raw_upload_rejected(
+            headers={"Content-Type": multipart_ct, "Content-Length": "not-a-number"},
+            body=one_file_body,
+            expected_text="<connection closed without a response",
+            reason="Content-Length=not-a-number",
+        )
+
+        two_files_body = self.crl_utils.build_multipart_body(boundary, [
+            ({"Content-Disposition": 'form-data; name="file"; filename="a.pem"',
+              "Content-Type": "application/pkix-crl"}, crl_pem),
+            ({"Content-Disposition": 'form-data; name="file"; filename="b.pem"',
+              "Content-Type": "application/pkix-crl"}, crl_pem),
+        ])
+        self._assert_raw_upload_rejected(
+            headers={"Content-Type": multipart_ct}, body=two_files_body,
+            expected_text="Multiple files found in multipart form data",
+            reason="two file parts in one request",
+        )
+
+        no_file_body = self.crl_utils.build_multipart_body(boundary, [
+            ({"Content-Disposition": 'form-data; name="notafile"'}, b"just a text field"),
+        ])
+        self._assert_raw_upload_rejected(
+            headers={"Content-Type": multipart_ct}, body=no_file_body,
+            expected_text="No file found in multipart form data",
+            reason="plain form field, no file part",
+        )
+
+        # -- Asymmetry: DELETE takes the filename straight from the path
+        # and never runs validate_upload_filename/1 -- a path-traversal
+        # filename should just miss the lookup (404), not crash or escape. --
+        status, content = self.crl_utils.delete_file(self.rest, "../../etc/passwd")
+        self.assertFalse(
+            status, f"DELETE with a path-traversal filename should not succeed: {content}",
+        )
+        self.log.info(f"DELETE with a path-traversal filename correctly rejected: {content}")
 
     def test_crl_upload_oversized_file(self):
         """An oversized CRL either hits a documented size-limit rejection,
