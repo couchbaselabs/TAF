@@ -590,10 +590,10 @@ class N1qlBase(CollectionBase):
                         dict_to_verify[index] = keys
             for index, docs in dict_to_verify.items():
                 name = index.split('.')
-                docs = [d.encode() for d in docs]
+                key_list = ", ".join(json.dumps(d) for d in docs)
                 query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
-                    "WHERE META().id in %s"\
-                    % (name[0], name[1], name[2], docs)
+                    "WHERE META().id in [%s]"\
+                    % (name[0], name[1], name[2], key_list)
                 self.log.info("query is %s"%query)
                 result = self.n1ql_helper.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == 0:
@@ -615,10 +615,10 @@ class N1qlBase(CollectionBase):
                             collection_savepoint[key][index]["DELETE"]
             for index, docs in dict_to_verify.items():
                 name = index.split('.')
-                docs = [d.encode() for d in docs]
+                key_list = ", ".join(json.dumps(d) for d in docs)
                 query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
-                        "WHERE META().id in %s"\
-                        % (name[0], name[1], name[2], docs)
+                        "WHERE META().id in [%s]"\
+                        % (name[0], name[1], name[2], key_list)
                 self.log.info("query is %s"%query)
                 result = self.n1ql_helper.run_cbq_query(query)
                 if result["metrics"]["resultCount"] == len(docs):
