@@ -91,6 +91,14 @@ class CollectionsRebalance(CollectionBase):
             self.num_savepoints = self.input.param("num_savepoints", 0)
             self.override_savepoint = self.input.param("override_savepoint", 0)
             self.num_buckets = self.input.param("num_buckets", 1)
+            # execute_N1qltxn() runs once during the rebalance/failover
+            # operation and again after it returns, each run in its own
+            # transaction. Accumulate every run's tracking here instead of
+            # letting the latest run overwrite it, so validate_N1qltxn_data()
+            # verifies against the mutations of all committed transactions
+            # rather than only the last one.
+            self.n1ql_txn_results = []
+            self.n1ql_txn_queries = {}
         self.create_metakv_entries = self.input.param("create_metakv_entries", False)
         if self.create_metakv_entries:
             self.log.info("Creating metakv entries start")
@@ -173,6 +181,11 @@ class CollectionsRebalance(CollectionBase):
                 if not isinstance(self.collection_savepoint, dict):
                     self.log.info("N1ql txn failed will be retried")
                     self.retry_n1qltxn = True
+                else:
+                    self.n1ql_txn_results.append([self.collection_savepoint,
+                                                  self.savepoints])
+                    if self.queries:
+                        self.n1ql_txn_queries.update(self.queries)
             except Exception as error:
                 self.log.info("error is %s" % error)
                 self.retry_n1qltxn = True
@@ -279,11 +292,10 @@ class CollectionsRebalance(CollectionBase):
             self.execute_N1qltxn(self.n1ql_server[0])
         doc_gen_list = self.n1ql_helper.get_doc_gen_list(self.bucket_col)
         if isinstance(self.collection_savepoint, dict):
-            results = [[self.collection_savepoint, self.savepoints]]
-            self.log.info("queries ran are %s" % self.queries)
-            self.n1ql_fun.process_value_for_verification(self.bucket_col,
-                                                         doc_gen_list, results,
-                                                         buckets=self.cluster.buckets)
+            self.log.info("queries ran are %s" % self.n1ql_txn_queries)
+            self.n1ql_fun.process_value_for_verification(
+                self.bucket_col, doc_gen_list, self.n1ql_txn_results,
+                buckets=self.cluster.buckets)
         else:
             self.fail(self.collection_savepoint)
 
