@@ -217,6 +217,16 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     CollectionBase.wait_for_cont_doc_load_to_complete(
                         self, cont_load_task)
                 self.sleep(5)
+            elif self.withMutationOps:
+                # Rebalance reached 100% before the 20%*i check above caught
+                # it mid-flight, so the "stop rebalance" branch above (and
+                # its waits) never ran. The mutation/history load started at
+                # the top of this iteration is still running - wait for it
+                # here too, or validate_docs() below counts against a bucket
+                # that is still being written to.
+                self.tasks_result(task)
+                CollectionBase.wait_for_cont_doc_load_to_complete(
+                    self, cont_load_task)
             self.task.jython_task_manager.get_task_result(rebalance)
             if self.cluster_util.is_cluster_rebalanced(rest):
                 self.validate_docs()
