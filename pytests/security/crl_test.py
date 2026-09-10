@@ -116,6 +116,33 @@ class CRLTest(CRLBase):
             + f" within {timeout}s. Last entry seen: {last_entry}"
         )
 
+    def _wait_for_dir_crl_status(self, filename, expected_cache_status,
+                                  timeout=20, interval=2):
+        """
+        Poll diagnostics/status until the directory-poll-sourced CRL entry
+        for `filename` reports cacheStatus == expected_cache_status.
+        Returns that entry; self.fail()s on timeout.
+        """
+        node_key = f"{self.cluster.master.ip}:8091"
+        deadline = time.monotonic() + timeout
+        last_entry = None
+        while time.monotonic() < deadline:
+            status, content = self.crl_utils.diagnostics_status(self.rest)
+            if status:
+                entry = self.crl_utils.find_diagnostics_file_entry(
+                    content, node_key, filename
+                )
+                if entry is not None:
+                    last_entry = entry
+                    if entry.get("cacheStatus") == expected_cache_status:
+                        return entry
+            time.sleep(interval)
+        self.fail(
+            f"Directory CRL entry for {filename} never reached "
+            f"cacheStatus={expected_cache_status!r} within {timeout}s. "
+            f"Last entry seen: {last_entry}"
+        )
+
     def _wait_for_node_crl_reload(self, node_key, filename, expected_result,
                                    timeout=60, interval=3):
         """
@@ -1103,6 +1130,91 @@ class CRLTest(CRLBase):
             self.log.info(
                 "dirPollLeaf correctly rejected — CRL picked up by the directory "
                 "poller with no upload call ever made"
+            )
+
+            # -- A bad file sourced from the poll directory: garbage bytes
+            # never decode, distinct from the untrusted-issuer and expired
+            # cases below (each its own file, same directory, same poller).
+            poll_shell.execute_command(
+                f"echo 'not a real crl, just garbage bytes' > {poll_dir}/dir_poll_garbage.pem"
+            )
+            garbage_entry = self._wait_for_dir_crl_status(
+                "dir_poll_garbage.pem", "notLoaded",
+            )
+            self.assertEqual(garbage_entry["lastReload"]["result"], "failed")
+            self.assertEqual(
+                len(garbage_entry["lastReload"]["errors"]), 1,
+                f"Expected exactly one error for an undecodable file, got: "
+                f"{garbage_entry['lastReload']['errors']}",
+            )
+            self.assertIn("Failed to decode file", garbage_entry["lastReload"]["errors"][0])
+            self.log.info(
+                "Garbage file in the poll directory: cacheStatus=notLoaded, "
+                "lastReload.result=failed, exactly one 'Failed to decode file' error"
+            )
+
+            # -- Untrusted issuer: a CRL that decodes fine but is signed by
+            # a CA never trusted on this cluster.
+            untrusted_ca_cert, untrusted_ca_key = self.crl_utils.generate_ca(
+                "DirPollUntrustedCA"
+            )
+            untrusted_pem = self.crl_utils.build_crl(
+                untrusted_ca_cert, untrusted_ca_key, crl_number=1,
+            )
+            remote_write_file_b64(
+                poll_shell, f"{poll_dir}/dir_poll_untrusted.pem",
+                untrusted_pem.decode("utf-8"),
+            )
+            untrusted_entry = self._wait_for_dir_crl_status(
+                "dir_poll_untrusted.pem", "notLoaded",
+            )
+            self.assertEqual(untrusted_entry["lastReload"]["result"], "failed")
+            self.assertIn(
+                "CRL issuer not trusted",
+                " ".join(untrusted_entry["lastReload"]["errors"]),
+            )
+            self.log.info(
+                "Untrusted-issuer file in the poll directory: "
+                "cacheStatus=notLoaded, error names the reason"
+            )
+            poll_shell.execute_command(f"rm -f {poll_dir}/dir_poll_untrusted.pem")
+
+            # -- Expired CRL in the poll directory, then auto-poll recovery
+            # to active once overwritten with an in-date CRL -- no settings
+            # re-POST, no manual reload, just the next poll cycle.
+            expired_pem = self.crl_utils.build_crl(
+                self.ca_cert, self.ca_key, crl_number=1, expired=True,
+            )
+            remote_write_file_b64(
+                poll_shell, f"{poll_dir}/dir_poll_expiring.pem", expired_pem.decode("utf-8"),
+            )
+            expired_entry = self._wait_for_dir_crl_status(
+                "dir_poll_expiring.pem", "notLoaded",
+            )
+            self.assertEqual(expired_entry["lastReload"]["result"], "failed")
+            self.assertIn("CRL expired", " ".join(expired_entry["lastReload"]["errors"]))
+            self.log.info(
+                "Expired file in the poll directory: cacheStatus=notLoaded, "
+                "error names the reason"
+            )
+            fresh_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=2)
+            remote_write_file_b64(
+                poll_shell, f"{poll_dir}/dir_poll_expiring.pem", fresh_pem.decode("utf-8"),
+            )
+            self._wait_for_dir_crl_status("dir_poll_expiring.pem", "active")
+            self.log.info(
+                "Overwriting with an in-date CRL recovers to active on the "
+                "next poll alone -- no settings re-POST, no manual reload"
+            )
+
+            # -- A bad file never clobbers a previously-good one: the
+            # original revoking dirPollLeaf file has been active the whole
+            # time the garbage/untrusted/expired files above came and went.
+            good_entry = self._wait_for_dir_crl_status("dir_poll_crl.pem", "active")
+            self.assertEqual(good_entry["lastReload"]["result"], "loaded")
+            self.log.info(
+                "The original good file's own status was never disturbed "
+                "by unrelated bad files in the same poll directory"
             )
         finally:
             try:
@@ -2643,6 +2755,51 @@ class CRLTest(CRLBase):
             ) or 0
             self.assertEqual(after_valid, before_valid + 1)
 
+            # -- Hit path + no-op-reload version invariant: a reload with no
+            # actual CRL content change must not bump the CRL version (the
+            # property that keeps existing cache entries valid), and
+            # re-checking the same cert afterward must hit cache rather than
+            # recompute -- neither is asserted by the miss-only checks above.
+            version_before = self.crl_utils.get_push_config_version(self.rest)
+            self.crl_utils.reload_crl(self.rest)
+            version_after = self.crl_utils.get_push_config_version(self.rest)
+            self.assertEqual(
+                version_before, version_after,
+                "A no-op reload must not change the CRL version",
+            )
+            before_hit = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "hit", "verdict": "good"},
+            ) or 0
+            before_miss_again = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "miss", "verdict": "good"},
+            ) or 0
+            self.assertTrue(
+                self._handshake_ok(valid_cert_path, valid_key_path),
+                "Re-checking the same still-valid cert should still connect",
+            )
+            after_hit = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "hit", "verdict": "good"},
+            ) or 0
+            after_miss_again = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "miss", "verdict": "good"},
+            ) or 0
+            self.assertEqual(
+                after_hit, before_hit + 1,
+                "Re-checking the same cert after a no-op reload should hit cache",
+            )
+            self.assertEqual(
+                after_miss_again, before_miss_again,
+                "A cache hit must not also increment the miss counter",
+            )
+            self.log.info(
+                "No-op reload leaves the CRL version unchanged; re-checking "
+                "the same cert hits cache instead of recomputing"
+            )
+
             metrics_revoked_cert, metrics_revoked_key, metrics_revoked_serial = (
                 self.crl_utils.generate_leaf_cert(
                     self.ca_cert, self.ca_key, "auditMetricsRevoked"
@@ -3460,6 +3617,97 @@ class CRLTest(CRLBase):
             )
         self.log.info("TLS 1.2 session resumption of a revoked cert is correctly rejected")
 
+        # -- TLS 1.3 comparison: session tickets are disabled outright, so
+        # there is no resumption mechanism to bypass in the first place --
+        # unlike 1.2's reuse_session re-check hook, this is closed by
+        # removing the bypass surface entirely.
+        tls13_cn = "bypassResumptionTls13"
+        tls13_cert, tls13_key, tls13_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, tls13_cn
+        )
+        tls13_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(tls13_cert))
+        tls13_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(tls13_key))
+        reused13, session13, resp13 = self.crl_utils.tls_handshake(
+            self.cluster.master.ip, self.MGMT_PORT, tls13_cert_path, tls13_key_path,
+            tls_version="1.3",
+        )
+        self.assertFalse(reused13, "The first TLS 1.3 handshake should be full, not resumed")
+        self.assertIsNotNone(resp13, "Expected a real HTTP response over the full handshake")
+
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [tls13_serial], baseline_filename,
+            crl_number=3,
+        )
+        self.assertTrue(status, f"TLS 1.3 revoke upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+
+        # Unlike TLS 1.2, a TLS 1.3 rejection doesn't raise from wrap_socket --
+        # it surfaces as no HTTP response at all. Both count as rejected here.
+        try:
+            reused13b, _, resp13b = self.crl_utils.tls_handshake(
+                self.cluster.master.ip, self.MGMT_PORT, tls13_cert_path, tls13_key_path,
+                tls_version="1.3", session=session13,
+            )
+            self.assertFalse(
+                reused13b,
+                "TLS 1.3 resumption of a now-revoked cert must not be reused",
+            )
+            self.assertIsNone(
+                resp13b,
+                f"TLS 1.3 resumption of a now-revoked cert should never reach "
+                f"an HTTP response, got: {resp13b}",
+            )
+        except ssl.SSLError as exc:
+            self.assertIn(
+                "revoked", str(exc).lower(),
+                f"Expected a certificate-revoked alert on the TLS 1.3 "
+                f"resumption attempt, got: {exc}",
+            )
+        self.log.info("TLS 1.3 session resumption of a revoked cert is correctly rejected too")
+
+        # -- checkIntermediateCerts=true disables session resumption
+        # entirely, even for a still-valid cert: only the leaf is available
+        # in a cached session (OTP doesn't keep the chain), so resumption is
+        # refused outright rather than approved on incomplete evidence. The
+        # refused resumption falls back to a full handshake, which still
+        # succeeds since the cert is genuinely valid. --
+        self.crl_utils.set_settings(self.rest, checkIntermediateCerts=True)
+        try:
+            cic_cn = "bypassCheckIntermediateCerts"
+            cic_cert, cic_key, _ = self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, cic_cn
+            )
+            cic_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cic_cert))
+            cic_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(cic_key))
+            reused_cic, session_cic, resp_cic = self.crl_utils.tls_handshake(
+                self.cluster.master.ip, self.MGMT_PORT, cic_cert_path, cic_key_path,
+                tls_version="1.2",
+            )
+            self.assertFalse(reused_cic, "The first handshake should be full")
+            self.assertIsNotNone(resp_cic, "Expected a real HTTP response")
+
+            reused_cic2, _, resp_cic2 = self.crl_utils.tls_handshake(
+                self.cluster.master.ip, self.MGMT_PORT, cic_cert_path, cic_key_path,
+                tls_version="1.2", session=session_cic,
+            )
+            self.assertFalse(
+                reused_cic2,
+                "checkIntermediateCerts=true should refuse resumption even "
+                "for a still-valid cert -- the cached session's leaf-only "
+                "evidence is incomplete",
+            )
+            self.assertIsNotNone(
+                resp_cic2,
+                "The refused resumption should fall back to a full "
+                "handshake, which succeeds since the cert is still valid",
+            )
+            self.log.info(
+                "checkIntermediateCerts=true refuses resumption outright, "
+                "even for a valid cert, but the fallback full handshake succeeds"
+            )
+        finally:
+            self.crl_utils.set_settings(self.rest, checkIntermediateCerts=False)
+
         # Revoked-serial matching is robust to DER INTEGER leading-zero-
         # padding encoding variance -- a serial whose top byte has the
         # high bit set requires a leading 0x00 padding byte in its
@@ -3525,6 +3773,137 @@ class CRLTest(CRLBase):
                 f"rejected regardless of which reason",
             )
         self.log.info("Every revocation-reason code rejects the cert equally")
+
+        # -- onlySomeReasons reason-partitioned CRLs (RFC 5280 6.3.3): two
+        # CRLs from the same CA, each scoped to a complementary half of the
+        # reason codes and revoking nothing, jointly cover the full reason
+        # space -- the cert is "good" under Require even though neither
+        # CRL alone would be complete. When one half then expires, coverage
+        # becomes incomplete and the cert falls to "undetermined" -- a
+        # distinct {bad_crls, []} path from the missing-CRL {bad_crls,
+        # no_relevant_crls} one, with its own details text.
+        #
+        # A dedicated CA is required here, not self.ca_cert: by this point
+        # in the test several other full-coverage CRLs are already loaded
+        # under "CN=TestCA1", and a cert would match one of those by issuer
+        # name instead of the two partitioned CRLs below, resolving without
+        # ever exercising the reasons-coverage logic under test.
+        partition_ca_cert, partition_ca_key = self.crl_utils.generate_ca("TestReasonsCA")
+        self._trust_ca_on_cluster(partition_ca_cert)
+        partition_cert, _, _ = self.crl_utils.generate_leaf_cert(
+            partition_ca_cert, partition_ca_key, "bypassReasonPartitioned"
+        )
+        partition_pem = self.crl_utils.cert_to_pem(partition_cert).decode()
+        half_a = [
+            x509.ReasonFlags.key_compromise, x509.ReasonFlags.ca_compromise,
+            x509.ReasonFlags.affiliation_changed, x509.ReasonFlags.superseded,
+        ]
+        half_b = [
+            x509.ReasonFlags.cessation_of_operation, x509.ReasonFlags.certificate_hold,
+            x509.ReasonFlags.privilege_withdrawn, x509.ReasonFlags.aa_compromise,
+        ]
+        filename_a = "bypass_reason_partition_a.pem"
+        filename_b = "bypass_reason_partition_b.pem"
+        this_update = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename_a,
+            self.crl_utils.build_crl(
+                partition_ca_cert, partition_ca_key, crl_number=1, only_some_reasons=half_a,
+                this_update=this_update,
+            ),
+        )
+        self.assertTrue(status, f"Reason-partition CRL A upload failed: {content}")
+        self._track_uploaded_file(filename_a)
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename_b,
+            self.crl_utils.build_crl(
+                partition_ca_cert, partition_ca_key, crl_number=1, only_some_reasons=half_b,
+                this_update=this_update,
+            ),
+        )
+        self.assertTrue(status, f"Reason-partition CRL B upload failed: {content}")
+        self._track_uploaded_file(filename_b)
+        self.crl_utils.reload_crl(self.rest)
+
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[partition_pem]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(
+            content["results"][0]["status"], "good",
+            "Two CRLs with complementary onlySomeReasons masks should "
+            "jointly cover the full reason space",
+        )
+        self.log.info(
+            "Complementary onlySomeReasons CRLs jointly establish a "
+            "'good' status even though neither alone is complete"
+        )
+
+        # Expire half A -- coverage is now incomplete (half B alone can't
+        # speak for the reasons half A used to cover). An already-expired
+        # CRL is rejected at upload time by default, so this briefly
+        # enables allow_expired_crls to push one straight in (matching
+        # ns_server's own reason_partitioned_crl_test), rather than waiting
+        # out real wall-clock time. this_update must be strictly later than
+        # the first upload's, or the replacement isn't treated as newer.
+        status, _ = self.crl_utils.set_allow_expired_crls(self.rest, True)
+        self.assertTrue(status, "Failed to enable allow_expired_crls")
+        try:
+            expired_this_update = this_update + datetime.timedelta(seconds=1)
+            status, content = self.crl_utils.upload_file(
+                self.rest, filename_a,
+                self.crl_utils.build_crl(
+                    partition_ca_cert, partition_ca_key, crl_number=2, only_some_reasons=half_a,
+                    this_update=expired_this_update,
+                    next_update=expired_this_update + datetime.timedelta(seconds=1),
+                ),
+            )
+            self.assertTrue(status, f"Expired reason-partition CRL A upload failed: {content}")
+        finally:
+            self.crl_utils.set_allow_expired_crls(self.rest, False)
+        self.crl_utils.reload_crl(self.rest)
+
+        status, content = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status, f"diagnostics/status failed: {content}")
+        node_key = f"{self.cluster.master.ip}:8091"
+        entry_a = self.crl_utils.find_diagnostics_file_entry(content, node_key, filename_a)
+        entry_b = self.crl_utils.find_diagnostics_file_entry(content, node_key, filename_b)
+        self.assertEqual(entry_a.get("cacheStatus"), "expired")
+        self.assertEqual(entry_b.get("cacheStatus"), "active")
+
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[partition_pem]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        result = content["results"][0]
+        self.assertEqual(
+            result["status"], "undetermined",
+            "Incomplete onlySomeReasons coverage (one half expired) should "
+            "make the cert's status undetermined, not fall through to good",
+        )
+        details = result.get("details", "")
+        for expected in (
+            "no CRL established this certificate's status",
+            "expired CRLs", "CRLs considered", "TestReasonsCA",
+        ):
+            self.assertIn(
+                expected, details,
+                f"Expected {expected!r} in the incomplete-coverage details, got: {details}",
+            )
+        self.log.info(
+            f"Incomplete onlySomeReasons coverage correctly reports "
+            f"'undetermined' with distinguishing details: {details}"
+        )
+
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Permissive", certs=[partition_pem]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(
+            content["results"][0]["status"], "good",
+            "Permissive should fail open on incomplete onlySomeReasons coverage",
+        )
+        self.log.info("Permissive fails open on incomplete onlySomeReasons coverage")
 
         # A CRL with an unrecognized critical extension is rejected on
         # upload -- RFC 5280 says an application that can't process a
@@ -3637,6 +4016,58 @@ class CRLTest(CRLBase):
         self.log.info(
             "clientAuth and nodeToNode enforce independently -- neither "
             "scope's policy leaks into the other's outcome"
+        )
+
+        # -- Scope follows the leaf certificate, not the listener: a client
+        # cert carrying the internal-client SAN (rfc822Name
+        # <name>@internal.couchbase.com) is governed by nodeToNode even
+        # when checked against a clientAuth-scoped listener. Proven the
+        # same way as the cross-scope-leak check above, but with the
+        # opposite outcome for the SAME two policy combos, since this
+        # leaf's real scope is the other one. --
+        internal_cert, internal_key, internal_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassInternalIdentity",
+            email_names=["bypassInternalIdentity@internal.couchbase.com"],
+        )
+        internal_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(internal_cert))
+        internal_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(internal_key))
+        internal_filename = "bypass_internal_identity.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [internal_serial], internal_filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"Internal-identity revoking CRL upload failed: {content}")
+        self._track_uploaded_file(internal_filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        # Policy is still clientAuth=Require, nodeToNode=Disabled from
+        # above -- a normal external cert would be rejected here (proven
+        # for race_cert_path just above), but this leaf's real scope is
+        # nodeToNode, which is Disabled, so it must connect.
+        self.assertTrue(
+            self._handshake_ok(internal_cert_path, internal_key_path),
+            "An @internal-identity cert is governed by nodeToNode, not "
+            "clientAuth -- must connect under clientAuth=Require when "
+            "nodeToNode=Disabled, opposite of an external cert",
+        )
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Require"},
+        )
+        self.assertFalse(
+            self._handshake_ok(internal_cert_path, internal_key_path),
+            "The same @internal-identity cert must now be rejected under "
+            "nodeToNode=Require, opposite of an external cert under "
+            "clientAuth=Disabled",
+        )
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.log.info(
+            "An @internal-identity client cert is governed by nodeToNode's "
+            "policy even when checked at a clientAuth-scoped listener -- "
+            "scope follows the leaf, not which listener presented it"
         )
 
         # Revoking a certificate does not touch a same-named password

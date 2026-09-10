@@ -736,6 +736,29 @@ class CRLUtils:
         return rest.diag_eval(code)
 
     @staticmethod
+    def set_allow_expired_crls(rest, value):
+        """
+        Sets the allow_expired_crls ns_config param on the node `rest` is
+        bound to, via diag/eval (no REST endpoint exists for this). It's a
+        per-node key (cb_crl_manager's ?get_param(allow_expired_crls,
+        false) reads {node, node(), {cb_crl_manager, allow_expired_crls}}),
+        so a multi-node caller must call this once per server.
+
+        With it off (the default), an already-expired CRL is rejected at
+        upload time; with it on, upload accepts one (see
+        CRLBadCRLTests.upload_expired_crl_test in ns_server's own suite for
+        the default-off case).
+
+        Returns (status_bool, content).
+        """
+        erlang_bool = "true" if value else "false"
+        code = (
+            "ns_config:set({node, node(), {cb_crl_manager, allow_expired_crls}}, "
+            f"{erlang_bool})."
+        )
+        return rest.diag_eval(code)
+
+    @staticmethod
     def get_push_config_version(rest):
         """
         The CRL 'version' pushed to cbauth-registered GO services and
