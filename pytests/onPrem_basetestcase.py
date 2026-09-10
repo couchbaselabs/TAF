@@ -954,6 +954,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         self.sleep(120, "waiting after enabling TLS")
                         status = self.cluster_util.check_if_services_obey_tls(
                             cluster.servers)
+                        # 'strict' disables the plaintext port; sync server
+                        # objects to SSL ports so later SDK/loader connects
+                        # (e.g. Sirius Java SDK) don't bootstrap against it.
+                        for server in cluster.servers:
+                            self.set_ports_for_server(server, "ssl")
                 if status:
                     break
                 else:
