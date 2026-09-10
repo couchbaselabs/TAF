@@ -35,6 +35,7 @@ class CRLTest(CRLBase):
 
     MGMT_PORT = 18091
     KV_SSL_PORT = 11207
+    CAPI_SSL_PORT = 18092
     AUDIT_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/current-audit.log"
     DEBUG_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/debug.log"
 
@@ -226,6 +227,44 @@ class CRLTest(CRLBase):
         )
         status, content = from_rest.diag_eval(code)
         return status and content == "ok"
+
+    def _wait_n2n_reconnected(self, from_server, to_server, expect_connected,
+                              timeout=30, interval=1):
+        """
+        Forces a fresh cb_dist TLS handshake between from_server and
+        to_server via diag_eval (net_kernel:disconnect + net_adm:ping) --
+        exercises the identical verify_fun/CRL-check code path as a full
+        node restart, in ~1-2s instead of 60-300s, and with none of the
+        chronicle-rejoin machinery a restart drags in. Matches ns_server's
+        own CRLNodeToNodeTests._wait_n2n_reconnected exactly.
+
+        Polls until the two nodes are (or aren't) distribution-connected,
+        matching expect_connected. self.fail()s on timeout.
+        """
+        from_rest = RestConnection(from_server)
+        to_rest = RestConnection(to_server)
+        status, otp_name = to_rest.diag_eval("node().")
+        self.assertTrue(status, f"Failed to get OTP name for {to_server.ip}: {otp_name}")
+        otp_name = (otp_name.decode() if isinstance(otp_name, bytes) else otp_name).strip()
+
+        status, content = from_rest.diag_eval(
+            "[net_kernel:disconnect(N) || N <- nodes()]."
+        )
+        self.assertTrue(status, f"Failed to disconnect {from_server.ip}: {content}")
+
+        deadline = time.monotonic() + timeout
+        last_pong = None
+        while time.monotonic() < deadline:
+            status, pong = from_rest.diag_eval(f"net_adm:ping({otp_name}).")
+            if status:
+                last_pong = (pong.decode() if isinstance(pong, bytes) else pong).strip()
+                if (last_pong == "pong") == expect_connected:
+                    return
+            time.sleep(interval)
+        self.fail(
+            f"{from_server.ip} <-> {to_server.ip} ({otp_name}) never reached "
+            f"connected={expect_connected} within {timeout}s (last ping: {last_pong!r})"
+        )
 
     def _assert_audit_event_shape(self, event, event_id):
         """
@@ -4778,16 +4817,33 @@ class CRLTest(CRLBase):
         )
 
     def test_crl_cross_service_kv_vs_ns_server_consistency(self):
-        """The KV service (memcached's own SSL listener) and ns_server's
-        mgmt HTTPS listener -- two independently-implemented enforcement
+        """The KV service (memcached's own SSL listener), ns_server's mgmt
+        HTTPS listener, and the capi (views/ssl_capi_port) HTTPS listener
+        -- independently-implemented or independently-hosted enforcement
         paths that only share the same CRL configuration, not the same
         code -- reach the same accept/reject outcome for both a revoked
         and a valid cert. KV accepts the handshake optimistically and
         closes it asynchronously (~1s later) with the same "certificate
         revoked" TLS alert once its own async revocation check completes,
-        unlike ns_server's mgmt listener, which rejects synchronously
-        inside the handshake itself -- tls_handshake_ok() accounts for
-        this, so both sides are compared on final outcome, not timing."""
+        unlike ns_server's mgmt and capi listeners, which reject
+        synchronously inside the handshake itself -- tls_handshake_ok()
+        accounts for this, so all three sides are compared on final
+        outcome, not timing.
+
+        The capi listener is the "ns_couchdb node" surface entry #19 of
+        CRL_missing_automation_and_manual.md calls out: cb_crl.erl's
+        verify_chain_on_ns_server/2 hops to the ns_server node via RPC
+        when invoked from a genuinely separate ns_couchdb OTP node, failing
+        closed (crl_unavailable) on badrpc. In this product version there
+        is no such separate node (`ns_node_disco:couchdb_node()` returns
+        `node()` itself when `ns_couchdb_node` is unset, which it is here)
+        -- confirmed via source (ns_node_disco.erl) rather than assumed --
+        so the RPC is effectively a same-node call that cannot badrpc in
+        practice, and capi's do_start_link_capi_service/1 uses the exact
+        same ssl_server_opts()/server_verify_fun_opt(CertAuth) as mgmt
+        (ns_ssl_services_setup.erl). What's genuinely observable and worth
+        pinning here is that capi enforces the identical clientAuth policy
+        as mgmt/KV -- not the unreachable-in-practice RPC failure path."""
         self._enable_client_cert_auth(state="enable")
         self.crl_utils.set_settings(
             self.rest,
@@ -4819,11 +4875,20 @@ class CRLTest(CRLBase):
         revoked_mgmt_ok = self.crl_utils.tls_handshake_ok(
             host, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
         )
+        revoked_capi_ok = self.crl_utils.tls_handshake_ok(
+            host, self.CAPI_SSL_PORT, revoked_cert_path, revoked_key_path,
+        )
         self.assertFalse(revoked_kv_ok, "KV service should reject the revoked cert")
         self.assertFalse(revoked_mgmt_ok, "ns_server mgmt should reject the revoked cert")
+        self.assertFalse(revoked_capi_ok, "capi (views) listener should reject the revoked cert")
         self.assertEqual(
             revoked_kv_ok, revoked_mgmt_ok,
             "KV and ns_server mgmt must reach the same outcome for the "
+            "same revoked cert",
+        )
+        self.assertEqual(
+            revoked_mgmt_ok, revoked_capi_ok,
+            "ns_server mgmt and capi must reach the same outcome for the "
             "same revoked cert",
         )
 
@@ -4833,17 +4898,26 @@ class CRLTest(CRLBase):
         valid_mgmt_ok = self.crl_utils.tls_handshake_ok(
             host, self.MGMT_PORT, valid_cert_path, valid_key_path,
         )
+        valid_capi_ok = self.crl_utils.tls_handshake_ok(
+            host, self.CAPI_SSL_PORT, valid_cert_path, valid_key_path,
+        )
         self.assertTrue(valid_kv_ok, "KV service should accept the valid cert")
         self.assertTrue(valid_mgmt_ok, "ns_server mgmt should accept the valid cert")
+        self.assertTrue(valid_capi_ok, "capi (views) listener should accept the valid cert")
         self.assertEqual(
             valid_kv_ok, valid_mgmt_ok,
             "KV and ns_server mgmt must reach the same outcome for the "
             "same valid cert",
         )
+        self.assertEqual(
+            valid_mgmt_ok, valid_capi_ok,
+            "ns_server mgmt and capi must reach the same outcome for the "
+            "same valid cert",
+        )
         self.log.info(
-            "KV service (memcached SSL) and ns_server mgmt HTTPS reach "
-            "identical accept/reject outcomes for both a revoked and a "
-            "valid cert"
+            "KV service (memcached SSL), ns_server mgmt HTTPS, and capi "
+            "(views) HTTPS all reach identical accept/reject outcomes for "
+            "both a revoked and a valid cert"
         )
 
     def test_crl_performance_upload_timeout_and_handshake_overhead(self):
@@ -5386,6 +5460,38 @@ class CRLTest(CRLBase):
         test_crl_n2n_dual_certificate_enforcement so that method's
         try/finally can guarantee cleanup runs regardless of where an
         assertion here fails."""
+        # -- OOTB cluster-CA exemption: not a special-cased path, just
+        # genuinely valid against the cluster's own auto-generated CRL.
+        # One diagnostics/validate call checks every node's certs -- no
+        # restart or handshake needed. --
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Require", "clientAuth": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to set nodeToNode=Require for OOTB check: {content}")
+        status, content = self.crl_utils.diagnostics_validate(self.rest)
+        self.assertTrue(status, f"OOTB diagnostics/validate failed: {content}")
+        self.assertTrue(
+            content.get("usingClusterCertificates"),
+            f"Expected usingClusterCertificates=true: {content}",
+        )
+        self.assertTrue(
+            content.get("allAllowed"),
+            f"OOTB certs should all be allowed under Require: {content}",
+        )
+        self.assertEqual(content.get("disallowed"), [])
+        cert_types = {r["certificateType"] for r in content["results"]}
+        self.assertIn("node_cert", cert_types)
+        self.assertIn("client_cert", cert_types)
+        self.log.info(
+            "OOTB cluster-CA exemption confirmed: every node's own "
+            "OOTB client_cert+node_cert allowed under nodeToNode=Require, "
+            "via the cluster's own auto-generated CRL"
+        )
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Disabled", "clientAuth": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to reset nodeToNode=Disabled: {content}")
+
         # CA trust is genuinely cluster-wide (chronicle-replicated) -- one
         # call against master reaches every existing member, no per-node
         # loop needed (all 3 are already cluster members via nodes_init=3).
@@ -5536,6 +5642,101 @@ class CRLTest(CRLBase):
             "Sub-case B: internal HTTPS path still correctly rejects node C"
         )
 
+        # -- Server-cert direction in isolation (verify_server_cert/3): A/B
+        # above only see the combined race outcome. crlsValidate calls the
+        # same verify_chain/2 logic directly, no handshake or race. --
+        server_cert, _, server_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "n2nServerDirectionLeaf",
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH],
+        )
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(server_cert)], "nodeToNode",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        self.assertEqual(content["statuses"][0]["status"], "valid")
+
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [server_serial], filename, crl_number=4,
+        )
+        self.assertTrue(status, f"Server-direction revoking CRL upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(server_cert)], "nodeToNode",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        self.assertEqual(content["statuses"][0]["status"], "revoked")
+        self.log.info(
+            "Server-cert direction in isolation: valid before revocation, "
+            "revoked after, checked directly via crlsValidate with no "
+            "handshake or race involved"
+        )
+
+        # A cert whose issuer never had a CRL published at all is
+        # "undetermined" -- a dedicated CA is required here, not
+        # self.ca_cert, which already has an active CRL for this scope;
+        # reusing it would match by issuer name and resolve valid
+        # (ns_server's own reference suite calls this out explicitly).
+        no_crl_ca_cert, no_crl_ca_key = self.crl_utils.generate_ca("N2NServerDirectionNoCRLCA")
+        self._trust_ca_on_cluster(no_crl_ca_cert)
+        missing_cert, _, _ = self.crl_utils.generate_leaf_cert(
+            no_crl_ca_cert, no_crl_ca_key, "n2nServerDirectionMissingCrl",
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH],
+        )
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(missing_cert)], "nodeToNode",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        self.assertEqual(content["statuses"][0]["status"], "undetermined")
+        self.log.info("Server-cert direction: a CA with no published CRL is undetermined")
+
+        # An expired CRL for the same CA -- distinct undetermined cause,
+        # distinct details text. An already-expired CRL is rejected at
+        # upload by default, so allow_expired_crls is briefly enabled.
+        status, _ = self.crl_utils.set_allow_expired_crls(self.rest, True)
+        self.assertTrue(status, "Failed to enable allow_expired_crls")
+        try:
+            status, content = self.crl_utils.upload_file(
+                self.rest, "n2n_server_direction_expired.pem",
+                self.crl_utils.build_crl(no_crl_ca_cert, no_crl_ca_key, crl_number=1, expired=True),
+            )
+            self.assertTrue(status, f"Expired CRL upload failed: {content}")
+            self._track_uploaded_file("n2n_server_direction_expired.pem")
+        finally:
+            self.crl_utils.set_allow_expired_crls(self.rest, False)
+        self.crl_utils.reload_crl(self.rest)
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(missing_cert)], "nodeToNode",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        result = content["statuses"][0]
+        self.assertEqual(result["status"], "undetermined")
+        self.log.info(
+            f"Server-cert direction: an expired CRL is undetermined too, "
+            f"with distinguishing details: {result.get('details')}"
+        )
+
+        # nodeToNode=Disabled short-circuits to valid regardless of
+        # revocation status -- reusing the already-revoked server_cert
+        # from above proves this isn't just "nothing was checked yet".
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Disabled", "clientAuth": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to set nodeToNode=Disabled: {content}")
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(server_cert)], "nodeToNode",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        self.assertEqual(
+            content["statuses"][0]["status"], "valid",
+            "nodeToNode=Disabled should short-circuit to valid even for an "
+            "already-revoked cert",
+        )
+        self.log.info("Server-cert direction: nodeToNode=Disabled short-circuits to valid")
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Require", "clientAuth": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to restore nodeToNode=Require: {content}")
+
         # -- Teardown: restore node C so the pool is left clean for later
         # tests in the same run. --
         status, content = self.crl_utils.revoke_and_upload(
@@ -5562,3 +5763,197 @@ class CRLTest(CRLBase):
             "recover once its certs are restored",
         )
         self.log.info("Teardown: internal HTTPS path to node C recovered")
+
+        # -- Sub-case D: ccv=false only disables the accept-side ssl_dist_opts
+        # (code-level, per cb_dist.erl -- confirmed by sub-case C the
+        # connector-side check itself doesn't care about ccv). But
+        # verify_none skips ALL peer-cert checking there, and Couchbase's
+        # own mesh redials aggressively enough that node C's own outbound
+        # reconnect always wins the race regardless of which cert was
+        # revoked -- confirmed via two live methods. So both halves below
+        # observe the same "still connects" outcome. --
+        for server in servers:
+            self.crl_utils.set_client_cert_verification(server, False)
+        self.log.info("Sub-case D: clientCertVerification disabled on all 3 nodes")
+
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key,
+            [client_serials[node_c.ip]], filename, crl_number=5,
+        )
+        self.assertTrue(status, f"Client-cert-only revocation upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=40),
+            "Sub-case D: with clientCertVerification=false, revoking only "
+            "node C's CLIENT cert should NOT fence it -- the accept-side "
+            "check that would have caught this is inert",
+        )
+        self.log.info(
+            "Sub-case D (client-cert half): confirmed inert -- node C "
+            "recovered despite its revoked client cert"
+        )
+
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key,
+            [node_serials[node_c.ip]], filename, crl_number=6,
+        )
+        self.assertTrue(status, f"Node-cert-only revocation upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        # Forcing master into the connector role still doesn't fence C --
+        # confirmed via two live methods (see comment above this sub-case).
+        self._wait_n2n_reconnected(master, node_c, expect_connected=True, timeout=30)
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=40),
+            "Sub-case D: with clientCertVerification=false, revoking only "
+            "node C's NODE cert should also fail to fence it -- C's own "
+            "outbound reconnect (using its still-valid client cert) is "
+            "accepted unconditionally by any ccv=false peer",
+        )
+        self.log.info(
+            "Sub-case D (node-cert half): confirmed also inert in practice "
+            "-- node C reconnects regardless of which single cert is "
+            "revoked once clientCertVerification=false is set anywhere in "
+            "the mesh, masking the connector-side check's code-level "
+            "asymmetry (see sub-case C for that check verified in isolation)"
+        )
+
+        # Restore node C and clientCertVerification before sub-case E.
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=7,
+        )
+        self.assertTrue(status, f"Sub-case D restoration CRL upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        for server in servers:
+            self.crl_utils.set_client_cert_verification(server, True)
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=300),
+            "Sub-case D teardown: node C failed to rejoin after restoring "
+            "its certs and clientCertVerification",
+        )
+        self.log.info("Sub-case D teardown: node C rejoined with clientCertVerification restored")
+
+        # -- Sub-case E: Permissive stays connected for a missing/expired
+        # CRL. Needs a dedicated, never-reused CA -- reusing self.ca_cert
+        # would match its already-loaded CRL and resolve valid instead. --
+        permissive_ca_cert, permissive_ca_key = self.crl_utils.generate_ca("N2NPermissiveCA")
+        self._trust_ca_on_cluster(permissive_ca_cert)
+
+        # Permissive must be set before deploying certs from a CRL-less CA
+        # -- deploy_node_cert's own reload self-tests against whichever
+        # policy is active, and Require (still active) fails it closed.
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Permissive", "clientAuth": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to set nodeToNode=Permissive: {content}")
+
+        permissive_node_cert, permissive_node_key, permissive_node_serial = (
+            self.crl_utils.generate_leaf_cert(
+                permissive_ca_cert, permissive_ca_key, cn=node_c.ip, dns_names=[node_c.ip],
+                extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH],
+            )
+        )
+        self._deploy_node_cert(node_c, permissive_node_cert, permissive_node_key)
+        permissive_client_cert, permissive_client_key, _ = self.crl_utils.generate_leaf_cert(
+            permissive_ca_cert, permissive_ca_key, cn=f"ns_1@{node_c.ip}",
+            extended_key_usage=[ExtendedKeyUsageOID.CLIENT_AUTH],
+            email_names=[f"{node_c.ip.replace('.', '-')}@internal.couchbase.com"],
+        )
+        self._deploy_client_cert(node_c, permissive_client_cert, permissive_client_key)
+
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=60),
+            "Sub-case E: node C on a CA with NO published CRL should stay "
+            "connected under nodeToNode=Permissive",
+        )
+        self.log.info(
+            "Sub-case E (missing CRL): confirmed connected under Permissive"
+        )
+
+        # Now an expired CRL for the same CA -- rejected at upload by
+        # default, briefly allowed for this sub-case only.
+        status, _ = self.crl_utils.set_allow_expired_crls(self.rest, True)
+        self.assertTrue(status, "Failed to enable allow_expired_crls")
+        try:
+            status, content = self.crl_utils.upload_file(
+                self.rest, "n2n_permissive_expired.pem",
+                self.crl_utils.build_crl(
+                    permissive_ca_cert, permissive_ca_key, crl_number=1, expired=True,
+                ),
+            )
+            self.assertTrue(status, f"Expired CRL upload failed: {content}")
+            self._track_uploaded_file("n2n_permissive_expired.pem")
+        finally:
+            self.crl_utils.set_allow_expired_crls(self.rest, False)
+        self.crl_utils.reload_crl(self.rest)
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=60),
+            "Sub-case E: node C on a CA with only an EXPIRED CRL should "
+            "still stay connected under nodeToNode=Permissive",
+        )
+        self.log.info(
+            "Sub-case E (expired CRL): confirmed still connected under "
+            "Permissive -- both missing and expired CRLs are treated as "
+            "'no relevant CRL' and fail open, as designed"
+        )
+
+        # -- Teardown: restore node C to self.ca_cert-signed certs so the
+        # pool is left clean, matching the state after the D-teardown above.
+        self._trust_ca_on_cluster(self.ca_cert)
+        node_c_cert, node_c_key, node_c_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, cn=node_c.ip, dns_names=[node_c.ip],
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH],
+        )
+        self._deploy_node_cert(node_c, node_c_cert, node_c_key)
+        node_c_client_cert, node_c_client_key, node_c_client_serial = (
+            self.crl_utils.generate_leaf_cert(
+                self.ca_cert, self.ca_key, cn=f"ns_1@{node_c.ip}",
+                extended_key_usage=[ExtendedKeyUsageOID.CLIENT_AUTH],
+                email_names=[f"{node_c.ip.replace('.', '-')}@internal.couchbase.com"],
+            )
+        )
+        self._deploy_client_cert(node_c, node_c_client_cert, node_c_client_key)
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Require", "clientAuth": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to restore nodeToNode=Require: {content}")
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [], filename, crl_number=8,
+        )
+        self.assertTrue(status, f"Final restoration CRL upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        shell = RemoteMachineShellConnection(node_c)
+        try:
+            shell.stop_couchbase()
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        self.assertTrue(
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=300),
+            "Sub-case E teardown: node C failed to rejoin on self.ca_cert-signed "
+            "certs -- pool may be left in a bad state for later tests",
+        )
+        self.log.info("Sub-case E teardown: node C rejoined on self.ca_cert-signed certs")
