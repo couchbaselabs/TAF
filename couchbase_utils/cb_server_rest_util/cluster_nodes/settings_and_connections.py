@@ -93,9 +93,9 @@ class SettingsAndConnectionsAPI(CBRestConnection):
 
     def trigger_data_reencryption(self, bucket):
         """
-        POST :: /controller/dropEncryptionAtRestKeys/bucket/<bucket>
+        POST :: /controller/dropEncryptionAtRestDeks/bucket/<bucket>
         """
-        api = f"{self.base_url}/controller/dropEncryptionAtRestKeys/bucket/{bucket}"
+        api = f"{self.base_url}/controller/dropEncryptionAtRestDeks/bucket/{bucket}"
         status, json_parsed, _ = self.request(api, method=self.POST)
         return status, json_parsed
 

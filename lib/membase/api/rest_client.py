@@ -2542,9 +2542,9 @@ class RestConnection(newRC):
 
     def trigger_data_reencryption(self, bucket):
         """
-        POST :: /controller/dropEncryptionAtRestKeys/bucket/<bucket>
+        POST :: /controller/dropEncryptionAtRestDeks/bucket/<bucket>
         """
-        api = self.baseUrl + '/controller/dropEncryptionAtRestKeys/bucket/' + str(bucket)
+        api = self.baseUrl + '/controller/dropEncryptionAtRestDeks/bucket/' + str(bucket)
         headers = self._create_headers()
         status, json_parsed, _ = self._http_request(api, method='POST', headers=headers)
         return status, json_parsed

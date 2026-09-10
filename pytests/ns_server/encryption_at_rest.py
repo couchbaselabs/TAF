@@ -8,6 +8,7 @@ from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from cluster_utils.encryption_util import EncryptionUtil
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 
 
 class EncryptionAtRest(CollectionBase):
@@ -302,25 +303,23 @@ class EncryptionAtRest(CollectionBase):
     def test_bucket_encryption_at_rest(self):
         bucket_helper = BucketHelper(self.cluster.master)
         rest = RestConnection(self.cluster.master)
+        sec_rest = SecurityRestAPI(self.cluster.master)
 
         params = bucket_helper.create_secret_params(
             secret_type="cb-server-managed-aes-key-256",
             name="TestSecretEncryptionAtRest",
-            usage=["bucket-encryption-*"],
+            usage=["bucket-encryption"],
             autoRotation=True,
             rotationIntervalInSeconds=60,
             port=None
         )
         doc_id = "test_collections-"
-        for node in self.cluster.nodes_in_cluster:
-            shell = RemoteMachineShellConnection(node)
-            rest_obj = RestConnection(node)
-            node_config = rest_obj.get_nodes_self_unparsed()
-            data_path = node_config['storage']['hdd'][0]['path']
-            data_path_command = "grep -r '{}' {}".format(doc_id, data_path)
-            output, error = shell.execute_command(data_path_command)
-            self.assertTrue(len(output) != 0, "No document IDs found in the data path, test won't be accurate")
-            shell.disconnect()
+        for node_ip, files in self.encryption_util.grep_doc_ids_in_data_path(
+                self.cluster.kv_nodes, doc_id).items():
+            self.assertTrue(
+                len(files) != 0,
+                "%s: No document IDs found in the data path, "
+                "test won't be accurate" % node_ip)
 
         status, response = rest.create_secret(params)
         secret_id = None
@@ -338,18 +337,24 @@ class EncryptionAtRest(CollectionBase):
             )
 
         for bucket in self.cluster.buckets:
-            bucket_helper.compact_bucket(bucket.name)
-            self.sleep(10)
+            status, content = sec_rest.drop_encryption_deks_for_bucket(
+                bucket.name)
+            self.assertTrue(
+                status,
+                "%s: Failed to drop encryption DEKs: %s"
+                % (bucket.name, content))
 
-        for node in self.cluster.nodes_in_cluster:
-            shell = RemoteMachineShellConnection(node)
-            rest_obj = RestConnection(node)
-            node_config = rest_obj.get_nodes_self_unparsed()
-            data_path = node_config['storage']['hdd'][0]['path']
-            data_path_command = "grep -r '{}' {}".format(doc_id, data_path)
-            output, error = shell.execute_command(data_path_command)
-            self.assertEqual(len(output), 0, "Found document IDs in the data path, encryption at rest might not be working")
-            shell.disconnect()
+        for bucket in self.cluster.buckets:
+            self.encryption_util.wait_for_bucket_data_encrypted(
+                bucket_helper, bucket)
+
+        for node_ip, files in self.encryption_util.grep_doc_ids_in_data_path(
+                self.cluster.kv_nodes, doc_id).items():
+            self.assertEqual(
+                len(files), 0,
+                "%s: Found document IDs in the data path, encryption at rest "
+                "might not be working. Matching files: %s"
+                % (node_ip, files[:10]))
 
     def test_rapid_dek_rotation_with_crud_and_recovery(self):
         bucket_helper = BucketHelper(self.cluster.master)

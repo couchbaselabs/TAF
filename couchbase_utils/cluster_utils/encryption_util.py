@@ -1,10 +1,13 @@
 import json
+import time
 import uuid
 from datetime import datetime, timedelta
 
+from common_lib import sleep
 from global_vars import logger
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class EncryptionUtil:
@@ -228,6 +231,59 @@ class EncryptionUtil:
         status, content = rest.diag_eval("ns_config:set(test_bypass_encr_cfg_restrictions, true).")
         self.log.info("Bypassed encryption restrictions. Status: {0}, Output: {1}".format(status, content))
         return status, content
+
+    def grep_doc_ids_in_data_path(self, kv_nodes, doc_id):
+        """
+        Grep for 'doc_id' as plain text under the data path of each kv node.
+        :return: dict of {node_ip: [matching_file_path, ...]}. An empty list
+                 means the doc_id was not found unencrypted on that node.
+        """
+        matches = dict()
+        for node in kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            try:
+                node_config = RestConnection(node).get_nodes_self_unparsed()
+                data_path = node_config['storage']['hdd'][0]['path']
+                command = "grep -rla '{}' {}".format(doc_id, data_path)
+                output, error, exit_code = shell.execute_command(
+                    command, get_exit_code=True)
+                # grep exits 1 when there is simply no match, which is a
+                # valid outcome here. Anything else is a real failure.
+                if exit_code not in [0, 1]:
+                    raise AssertionError(
+                        "%s: '%s' failed with exit_code=%s, stderr=%s"
+                        % (node.ip, command, exit_code, error[:5]))
+                self.log.debug("%s - '%s' matched %d file(s), exit_code=%s"
+                               % (node.ip, command, len(output), exit_code))
+                matches[node.ip] = output
+            finally:
+                shell.disconnect()
+        return matches
+
+    def wait_for_bucket_data_encrypted(self, bucket_helper, bucket,
+                                       timeout=900):
+        """
+        Poll encryptionAtRestInfo.dataStatus until the bucket reports that
+        all of its on-disk data has been encrypted.
+        """
+        end_time = time.time() + timeout
+        data_status = None
+        while time.time() < end_time:
+            bucket_info = bucket_helper.get_buckets_json(bucket.name)
+            encryption_info = bucket_info["encryptionAtRestInfo"]
+            data_status = encryption_info["dataStatus"]
+            if encryption_info["issues"] != []:
+                raise AssertionError(
+                    "%s: Encryption issues reported: %s"
+                    % (bucket.name, encryption_info["issues"]))
+            if data_status == "encrypted":
+                self.log.info("%s - dataStatus=encrypted, dekNumber=%s"
+                              % (bucket.name, encryption_info["dekNumber"]))
+                return
+            sleep(10, "%s - dataStatus=%s, waiting for 'encrypted'"
+                      % (bucket.name, data_status))
+        raise AssertionError("%s: dataStatus stuck at '%s' after %s seconds"
+                             % (bucket.name, data_status, timeout))
 
     def set_encryption_ids(self, test_obj, encryption_result):
         """Set the returned encryption IDs back to test_obj"""
