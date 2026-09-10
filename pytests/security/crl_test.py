@@ -2,6 +2,8 @@ import base64
 import concurrent.futures
 import datetime
 import hashlib
+import json
+import socket
 import ssl
 import statistics
 import threading
@@ -440,6 +442,108 @@ class CRLTest(CRLBase):
         self.assertTrue(status, "Failed to restore default CRL settings")
         self.log.info(f"Defaults restored: {restored}")
 
+        # Step 8 -- urls validation: array shape, string entries, http(s)
+        # scheme, dedup, and the 100-URL cap (menelaus_web_crl.erl:121-148).
+        status, content = self.crl_utils.set_settings(self.rest, urls="not-a-list")
+        self.assertFalse(status, f"urls must reject a non-array value: {content}")
+        self.assertIn("urls must be a JSON array", str(content.get("errors", {}).get("urls")))
+
+        status, content = self.crl_utils.set_settings(self.rest, urls=[123, 456])
+        self.assertFalse(status, f"urls must reject non-string entries: {content}")
+        self.assertIn("urls entries must be strings", str(content.get("errors", {}).get("urls")))
+
+        status, content = self.crl_utils.set_settings(self.rest, urls=["ftp://example.com/crl.pem"])
+        self.assertFalse(status, f"urls must reject a non-http(s) scheme: {content}")
+        self.assertIn("invalid URL", str(content.get("errors", {}).get("urls")))
+
+        too_many_urls = [f"http://example.com/crl{i}.pem" for i in range(101)]
+        status, content = self.crl_utils.set_settings(self.rest, urls=too_many_urls)
+        self.assertFalse(status, f"101 URLs should exceed the default 100 cap: {content}")
+        self.assertIn(
+            "maximum number of URLs is 100", str(content.get("errors", {}).get("urls")),
+        )
+
+        status, content = self.crl_utils.set_settings(self.rest, urls=too_many_urls[:100])
+        self.assertTrue(status, f"Exactly 100 URLs should be accepted: {content}")
+
+        dup_urls = ["http://example.com/crl0.pem", "http://example.com/crl0.pem"]
+        status, content = self.crl_utils.set_settings(self.rest, urls=dup_urls)
+        self.assertTrue(status, f"Duplicate URLs should be deduplicated, not rejected: {content}")
+        self.assertEqual(
+            len(content["urls"]), 1, f"Duplicate entries should collapse to one: {content['urls']}",
+        )
+        self.crl_utils.set_settings(self.rest, urls=[])
+        self.log.info("urls validation: array-shape, scheme, count-cap, and de-dup all confirmed")
+
+        # Step 9 -- policyPerScope shape validation (menelaus_web_crl.erl:102-119).
+        status, content = self.crl_utils.set_settings(self.rest, policyPerScope="not-an-object")
+        self.assertFalse(status, f"policyPerScope must reject a non-object value: {content}")
+        self.assertIn(
+            "policyPerScope must be a JSON object",
+            str(content.get("errors", {}).get("policyPerScope")),
+        )
+
+        status, content = self.crl_utils.set_settings(self.rest, policyPerScope={"clientAuth": 123})
+        self.assertFalse(status, f"policyPerScope must reject a non-string value: {content}")
+        self.assertIn(
+            "policyPerScope entries must be string:string",
+            str(content.get("errors", {}).get("policyPerScope")),
+        )
+
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"notARealScope": "Require"},
+        )
+        self.assertFalse(status, f"policyPerScope must reject an unknown scope: {content}")
+        self.assertIn(
+            "unknown scope: notARealScope", str(content.get("errors", {}).get("policyPerScope")),
+        )
+        self.log.info("policyPerScope shape validation: object/string-pair/unknown-scope confirmed")
+
+        # Step 10 -- interval range validation, 1000-86400000ms inclusive.
+        for field in ("dirPollIntervalMs", "urlPollIntervalMs"):
+            for bad_value in (999, 86400001):
+                status, content = self.crl_utils.set_settings(self.rest, **{field: bad_value})
+                self.assertFalse(status, f"{field}={bad_value} should be rejected: {content}")
+                self.assertIn(
+                    "The value must be in range from 1000 to 86400000 (inclusive)",
+                    str(content.get("errors", {}).get(field)),
+                )
+        self.log.info("dirPollIntervalMs/urlPollIntervalMs range validation confirmed")
+
+        # Step 11 -- request envelope: oversized body, undecodable JSON,
+        # and ?just_validate=1 validating without applying.
+        oversized_body = json.dumps({"directory": "x" * (21 * 1024 * 1024)})
+        status, content, response = self.crl_utils.post_settings_raw(self.rest, oversized_body)
+        self.assertEqual(
+            response.status_code, 413, f"A >20MB body should 413: got {response.status_code}",
+        )
+
+        status, content, response = self.crl_utils.post_settings_raw(self.rest, "{not valid json")
+        self.assertEqual(response.status_code, 400, f"Undecodable JSON should 400: {content}")
+        self.assertEqual(
+            self.crl_utils.parse_content(content), {"errors": {"_": "Invalid Json"}},
+            f"Undecodable JSON's error body should be the standard shape: {content}",
+        )
+
+        status, before_settings = self.crl_utils.get_settings(self.rest)
+        self.assertTrue(status)
+        status, content, response = self.crl_utils.post_settings_raw(
+            self.rest, json.dumps({"checkIntermediateCerts": True}), query="just_validate=1",
+        )
+        self.assertEqual(
+            response.status_code, 200,
+            f"?just_validate=1 with no errors should 200: {response.status_code}",
+        )
+        status, after_settings = self.crl_utils.get_settings(self.rest)
+        self.assertTrue(status)
+        self.assertEqual(
+            before_settings, after_settings, "?just_validate=1 must not apply the change",
+        )
+        self.log.info(
+            "Request envelope: >20MB body -> 413, undecodable JSON -> 400 "
+            "'Invalid Json', ?just_validate=1 validates without applying"
+        )
+
         # -- The out-of-the-box (OOTB) generated CRL lifecycle. The
         # cluster's own self-signed CA always carries a matching
         # auto-generated CRL (source="generated", file "ootb.crl"), used to
@@ -714,15 +818,43 @@ class CRLTest(CRLBase):
         )
         self.log.info("Forged issuer/signature CRL correctly rejected at upload")
 
-        # Sanity close — leaf1 is still correctly rejected: the two rejected
-        # uploads above had no effect on CA-1's real, valid revocation.
+        # Dedicated CRL-signing certificates are explicitly unsupported
+        # (cb_crl.erl:817-823): make_issuer_fun only matches a CRL's issuer
+        # name against the trusted *CA* list, so a CRL genuinely, validly
+        # signed by a delegate leaf cert (itself properly issued by CA-1,
+        # but not itself trusted as a CA) fails the same way as a forged
+        # one -- CA-1's own public key cannot verify it.
+        delegate_cert, delegate_key, _ = self.crl_utils.generate_leaf_cert(
+            ca1_cert, ca1_key, "crlSigningDelegate"
+        )
+        filename_delegate = "crypto_boundary_crl_delegate.pem"
+        delegate_pem = self.crl_utils.build_crl(
+            ca1_cert, delegate_key, revoked_serials=[333], crl_number=1
+        )
+        status, content = self.crl_utils.upload_file(self.rest, filename_delegate, delegate_pem)
+        self.assertFalse(
+            status,
+            f"A CRL signed by a delegate (non-CA) cert must be rejected "
+            f"at upload, got: {content}",
+        )
+        self.assertIn(
+            "issuer", str(content.get("error", "")).lower(),
+            f"Expected a CRL-issuer-not-trusted error, got: {content}",
+        )
+        self.log.info(
+            "Dedicated CRL-signing (delegate) certificate correctly "
+            "unsupported -- rejected at upload like a forged CRL"
+        )
+
+        # Sanity close — leaf1 is still correctly rejected: the three
+        # rejected uploads above had no effect on CA-1's real, valid revocation.
         self.assertFalse(
             self._handshake_ok(leaf1_cert_path, leaf1_key_path),
             "leaf1 should still be rejected",
         )
         self.log.info(
-            "leaf1 still correctly rejected (the untrusted and forged CRLs "
-            "above had no effect)"
+            "leaf1 still correctly rejected (the untrusted, forged, and "
+            "delegate-signed CRLs above had no effect)"
         )
 
         # CA-2 needs its own applicable (even if empty) CRL before we can
@@ -2221,6 +2353,57 @@ class CRLTest(CRLBase):
             "handshake outcome for the same certs"
         )
 
+        # -- Self-signed root: 'good' with no CRL lookup at all -- a
+        # self-signed cert cannot be revoked by a CRL, matching production's
+        # own self-signed-CA skip (menelaus_web_crl.erl:check_otp_cert). --
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require",
+            certs=[self.crl_utils.cert_to_pem(self.ca_cert).decode()],
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        result = content["results"][0]
+        self.assertEqual(result["status"], "good")
+        self.assertEqual(result.get("details"), "self-signed root; not CRL-checked")
+        self.log.info("Self-signed root cert: 'good' with no CRL lookup, exact details text")
+
+        # -- Exact (not substring) details text for a genuinely no-CRL cert:
+        # no suffix at all when nothing is expired/considered. Dedicated CA
+        # -- self.ca_cert already has an active CRL for this scope. --
+        no_crl_ca_cert, no_crl_ca_key = self.crl_utils.generate_ca("DiagNoCRLCA")
+        self._trust_ca_on_cluster(no_crl_ca_cert)
+        no_crl_leaf, _, _ = self.crl_utils.generate_leaf_cert(
+            no_crl_ca_cert, no_crl_ca_key, "diagNoCrlLeaf"
+        )
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require",
+            certs=[self.crl_utils.cert_to_pem(no_crl_leaf).decode()],
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        result = content["results"][0]
+        self.assertEqual(result["status"], "undetermined")
+        self.assertEqual(result.get("details"), "no usable CRL for this certificate")
+        self.log.info("Exact 'no usable CRL for this certificate' details text confirmed")
+
+        # -- policy defaults to Require when omitted -- must not fall back
+        # to the cluster's real (here Disabled) policy: a wrong fallback
+        # would silently report 'good' instead of 'revoked'. --
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to set clientAuth=Disabled: {content}")
+        status, content = self.crl_utils.diagnostics_validate(self.rest, certs=[revoked_pem])
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(
+            content["results"][0]["status"], "revoked",
+            "Omitting policy should default to Require, not the cluster's "
+            "actually-configured (Disabled) policy",
+        )
+        status, content = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Failed to restore clientAuth=Require: {content}")
+        self.log.info("Omitted policy defaults to Require, independent of the cluster's real policy")
+
         # Per-node behaviour when one node is down: explicit `nodes` list
         # should surface it as an error entry; the default (no explicit
         # nodes) call silently omits it instead -- known gap, asserting
@@ -2492,6 +2675,14 @@ class CRLTest(CRLBase):
             revoked_reason = revoked_auth_event.get("reason")
             self.assertTrue(
                 revoked_reason, f"auth_failure event missing a reason: {revoked_auth_event}"
+            )
+
+            # Envelope: raw_url is always "-", no real_userid (nothing
+            # authenticated), local side is the mgmt/ssl_rest listener.
+            self.assertEqual(revoked_auth_event.get("raw_url"), "-")
+            self.assertNotIn("real_userid", revoked_auth_event)
+            self.assertEqual(
+                revoked_auth_event.get("local", {}).get("port"), self.MGMT_PORT,
             )
 
             # No raw serial number or PEM/DER bytes should leak into the
@@ -2874,6 +3065,148 @@ class CRLTest(CRLBase):
                 "and revoked checks"
             )
 
+            # -- verdict=undetermined: reachable via a CA with no CRL at
+            # all. The metric label is policy-independent (notify_verdict
+            # uses the pre-apply_policy RawVerdict) -- reported even under
+            # Permissive, which lets the connection through. Dedicated CA
+            # since self.ca_cert already has an active CRL for this scope. --
+            undetermined_ca_cert, undetermined_ca_key = self.crl_utils.generate_ca(
+                "AuditMetricsUndeterminedCA"
+            )
+            self._trust_ca_on_cluster(undetermined_ca_cert)
+            undetermined_cert, undetermined_key, _ = self.crl_utils.generate_leaf_cert(
+                undetermined_ca_cert, undetermined_ca_key, "auditMetricsUndetermined"
+            )
+            undetermined_cert_path = self._write_temp_pem(
+                self.crl_utils.cert_to_pem(undetermined_cert)
+            )
+            undetermined_key_path = self._write_temp_pem(
+                self.crl_utils.key_to_pem(undetermined_key)
+            )
+            before_undetermined = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "miss", "verdict": "undetermined"},
+            ) or 0
+            self.assertFalse(
+                self._handshake_ok(undetermined_cert_path, undetermined_key_path),
+                "A cert with no covering CRL should be rejected under Require",
+            )
+            after_undetermined = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "miss", "verdict": "undetermined"},
+            ) or 0
+            self.assertEqual(after_undetermined, before_undetermined + 1)
+
+            # Same cert; Permissive lets it through but still labels it
+            # undetermined -- a cache *miss* though, not a hit, since
+            # policyPerScope is a hashed key and bumps the cache-busting
+            # version (caught live: this first expected a hit).
+            status, content = self.crl_utils.set_settings(
+                self.rest,
+                policyPerScope={"clientAuth": "Permissive", "nodeToNode": "Disabled"},
+            )
+            self.assertTrue(status, f"Failed to set clientAuth=Permissive: {content}")
+            before_undetermined_permissive = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "miss", "verdict": "undetermined"},
+            ) or 0
+            self.assertTrue(
+                self._handshake_ok(undetermined_cert_path, undetermined_key_path),
+                "Permissive should let an undetermined-status cert connect",
+            )
+            after_undetermined_permissive = self.crl_utils.get_metric_value(
+                server, "cm_crl_status_checks_total",
+                {"cache": "miss", "verdict": "undetermined"},
+            ) or 0
+            self.assertEqual(after_undetermined_permissive, before_undetermined_permissive + 1)
+            status, content = self.crl_utils.set_settings(
+                self.rest,
+                policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+            )
+            self.assertTrue(status, f"Failed to restore clientAuth=Require: {content}")
+            self.log.info(
+                "cm_crl_status_checks_total verdict=undetermined confirmed "
+                "reachable and policy-independent -- same label under "
+                "Require (rejected) and Permissive (connected)"
+            )
+
+            # -- Negative audit cases: no TLS-alert-shaped 8264 (raw_url="-")
+            # for a successful handshake, plain TCP, or a client-generated
+            # alert. get_audit_event() alone is too coarse: 8264 is also
+            # used for unrelated REST auth failures (raw_url="/whoami"),
+            # confirmed live via _handshake_ok's own identity lookup. --
+            def last_tls_alert_auth_failure():
+                tail = grep_remote_log(shell, self.AUDIT_LOG_PATH, '"id":8264,', lines=200)
+                match = None
+                for line in tail.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if event.get("id") == 8264 and event.get("raw_url") == "-":
+                        match = event
+                return match
+
+            last_before = last_tls_alert_auth_failure()
+
+            self.assertTrue(
+                self._handshake_ok(valid_cert_path, valid_key_path),
+                "Baseline: a successful handshake should still succeed",
+            )
+            self.assertEqual(
+                (last_tls_alert_auth_failure() or {}).get("timestamp"),
+                (last_before or {}).get("timestamp"),
+                "A successful handshake must not add a new TLS-alert auth_failure entry",
+            )
+
+            raw_sock = socket.create_connection(
+                (self.cluster.master.ip, self.MGMT_PORT), timeout=10
+            )
+            try:
+                raw_sock.sendall(b"not a tls client hello\r\n\r\n")
+                try:
+                    raw_sock.recv(64)
+                except OSError:
+                    pass
+            finally:
+                raw_sock.close()
+            self.assertEqual(
+                (last_tls_alert_auth_failure() or {}).get("timestamp"),
+                (last_before or {}).get("timestamp"),
+                "A plain-TCP (non-TLS) connection must not add a new "
+                "TLS-alert auth_failure entry -- it's a negotiation "
+                "failure, not a certificate one",
+            )
+
+            # We (the client) reject the server's own certificate against
+            # a CA we don't trust -- we generate the alert, so it arrives
+            # at the server as a 'remote' alert (received, not generated).
+            wrong_ca_cert, _ = self.crl_utils.generate_ca("AuditNegativeWrongCA")
+            wrong_ca_path = self._write_temp_pem(self.crl_utils.cert_to_pem(wrong_ca_cert))
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.load_verify_locations(wrong_ca_path)
+            ctx.check_hostname = False
+            with self.assertRaises(ssl.SSLError):
+                with socket.create_connection(
+                    (self.cluster.master.ip, self.MGMT_PORT), timeout=10
+                ) as plain_sock:
+                    with ctx.wrap_socket(plain_sock):
+                        pass
+            self.assertEqual(
+                (last_tls_alert_auth_failure() or {}).get("timestamp"),
+                (last_before or {}).get("timestamp"),
+                "A client-generated certificate rejection is a 'remote' "
+                "alert from the server's side and must not be audited",
+            )
+            self.log.info(
+                "Negative audit cases confirmed: no new auth_failure event "
+                "for a successful handshake, a plain-TCP connection, or a "
+                "client-generated (remote) alert"
+            )
+
             # A metric reflecting CRL expiry status should exist
             # (structural check only -- the full expiry-alert lifecycle
             # is a separate test).
@@ -3161,6 +3494,89 @@ class CRLTest(CRLBase):
         self.log.info(
             "crlsValidate correctly requires [admin,internal] -- strictly "
             "narrower than every other CRL endpoint's [admin,security]"
+        )
+
+        # -- expiration field: nextUpdate of the covering CRL, or null when
+        # none was consulted. Dedicated CA (not self.ca_cert, whose already-
+        # loaded CRL would coexist unreliably -- entry #21's gap) with an
+        # explicit next_update so the expected value is precisely known. --
+        expiry_ca_cert, expiry_ca_key = self.crl_utils.generate_ca("CbauthExpiryCA")
+        self._trust_ca_on_cluster(expiry_ca_cert)
+        expiry_valid_cert, _, _ = self.crl_utils.generate_leaf_cert(
+            expiry_ca_cert, expiry_ca_key, "cbauthExpiryValid"
+        )
+        expiry_revoked_cert, _, expiry_revoked_serial = self.crl_utils.generate_leaf_cert(
+            expiry_ca_cert, expiry_ca_key, "cbauthExpiryRevoked"
+        )
+        next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=10)
+        expiry_filename = "cbauth_crls_validate_expiry.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, expiry_ca_cert, expiry_ca_key, [expiry_revoked_serial], expiry_filename,
+            crl_number=1, next_update=next_update,
+        )
+        self.assertTrue(status, f"Expiry-test CRL upload failed: {content}")
+        self._track_uploaded_file(expiry_filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        def parse_iso(ts):
+            return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+        # One cert per call -- certs is a single chain (leaf-first), not a
+        # batch: two unrelated leafs in one call treats the first as an
+        # unchecked "intermediate", silently skipping its real CRL check.
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(expiry_valid_cert)], "clientAuth",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        valid_result = content["statuses"][0]
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(expiry_revoked_cert)], "clientAuth",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        revoked_result = content["statuses"][0]
+        self.assertEqual(valid_result["status"], "valid")
+        self.assertEqual(revoked_result["status"], "revoked")
+        for result in (valid_result, revoked_result):
+            self.assertIsNotNone(result.get("expiration"), f"Expected a real expiration: {result}")
+            self.assertLess(
+                abs((parse_iso(result["expiration"]) - next_update).total_seconds()), 5,
+                f"expiration should match the covering CRL's nextUpdate: {result}",
+            )
+
+        # A CA with no CRL published at all: undetermined, no CRL exists to
+        # source an expiration from.
+        no_crl_ca_cert, no_crl_ca_key = self.crl_utils.generate_ca("CbauthExpiryNoCRLCA")
+        self._trust_ca_on_cluster(no_crl_ca_cert)
+        no_crl_leaf, _, _ = self.crl_utils.generate_leaf_cert(
+            no_crl_ca_cert, no_crl_ca_key, "cbauthExpiryNoCrlLeaf"
+        )
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(no_crl_leaf)], "clientAuth",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        result = content["statuses"][0]
+        self.assertEqual(result["status"], "undetermined")
+        self.assertIsNone(
+            result.get("expiration"), f"No CRL exists at all -- expiration should be null: {result}",
+        )
+
+        # Disabled policy short-circuits to valid with no CRL consulted at
+        # all, so expiration is null regardless of any CRL that otherwise
+        # applies (nodeToNode is still Disabled from earlier in this test).
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [self.crl_utils.cert_to_der_b64(expiry_revoked_cert)], "nodeToNode",
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        result = content["statuses"][0]
+        self.assertEqual(result["status"], "valid")
+        self.assertIsNone(
+            result.get("expiration"),
+            f"nodeToNode=Disabled should short-circuit with expiration=null: {result}",
+        )
+        self.log.info(
+            "expiration field: matches the covering CRL's nextUpdate for "
+            "both valid and revoked, null when no CRL exists, and null "
+            "when the scope's policy is Disabled"
         )
 
     def test_crl_cbauth_push_config(self):
@@ -3581,6 +3997,36 @@ class CRLTest(CRLBase):
         self.log.info(
             "AKI/SKI correctly disambiguates two trusted CAs sharing a "
             "subject name"
+        )
+
+        # -- Only directoryName GeneralNames are honored in a cert's own
+        # CRL Distribution Points (cb_crl.erl:771-798) -- a URI-only CDP
+        # (which resolves to nothing, since Couchbase never fetches CRLs
+        # from it) must not cause the cert to be skipped: the synthetic
+        # issuer/issuerAltName DP is consulted independently and always
+        # applies, regardless of what the cert's own CDP extension says. --
+        uri_cdp_cert, uri_cdp_key, uri_cdp_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "chainUriCdpLeaf",
+            crl_distribution_url="http://example.invalid/never-fetched.crl",
+        )
+        uri_cdp_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(uri_cdp_cert))
+        uri_cdp_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(uri_cdp_key))
+        filename = "cert_chain_uri_cdp.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [uri_cdp_serial], filename, crl_number=2,
+        )
+        self.assertTrue(status, f"URI-CDP revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(uri_cdp_cert_path, uri_cdp_key_path),
+            "A cert with a URI-only (non-directoryName) CDP must still be "
+            "correctly revoked, via the synthetic issuer DP, not skipped "
+            "because its own CDP extension points nowhere useful",
+        )
+        self.log.info(
+            "A cert with a URI-only CDP is still correctly checked via "
+            "the synthetic issuer DP, not skipped"
         )
 
     def test_crl_bypass_hardening(self):
@@ -4551,6 +4997,61 @@ class CRLTest(CRLBase):
             "mapping still works"
         )
 
+        # -- Genuinely coexisting CRLs (different filenames, not an
+        # overwrite) for the same issuer, sorted newest-thisUpdate-first
+        # before pkix_crls_validate/3 (cb_crl.erl:758-769): a revoking CRL
+        # coexists with a fresher reissue that no longer lists the serial
+        # -- the newer (non-revoking) verdict must win. A dedicated,
+        # never-reused CA is required: confirmed live, the hard way, that
+        # only the single overall-freshest CRL for an issuer is actually
+        # consulted, not a union of every coexisting one -- reusing
+        # self.ca_cert would let one of its many already-loaded, default-
+        # timestamped (upload time minus 1 day) files silently outrank
+        # whichever of this sub-case's own two files was meant to win,
+        # depending on incidental timing. A dedicated CA has only these
+        # two files, so the newer one is unambiguously the freshest. --
+        sort_ca_cert, sort_ca_key = self.crl_utils.generate_ca("HotReloadSortCA")
+        self._trust_ca_on_cluster(sort_ca_cert)
+        sort_cert, sort_key, sort_serial = self.crl_utils.generate_leaf_cert(
+            sort_ca_cert, sort_ca_key, "hotReloadSortOrder"
+        )
+        sort_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(sort_cert))
+        sort_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(sort_key))
+        now = datetime.datetime.now(datetime.timezone.utc)
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, sort_ca_cert, sort_ca_key, [sort_serial],
+            "hot_reload_sort_old.pem", crl_number=1,
+            this_update=now - datetime.timedelta(days=2),
+        )
+        self.assertTrue(status, f"Older (revoking) CRL upload failed: {content}")
+        self._track_uploaded_file("hot_reload_sort_old.pem")
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(sort_cert_path, sort_key_path),
+            "Cert should be rejected while the only applicable CRL revokes it",
+        )
+        status, content = self.crl_utils.upload_file(
+            self.rest, "hot_reload_sort_new.pem",
+            self.crl_utils.build_crl(
+                sort_ca_cert, sort_ca_key, crl_number=2,
+                this_update=now - datetime.timedelta(seconds=100),
+            ),
+        )
+        self.assertTrue(status, f"Newer (non-revoking) CRL upload failed: {content}")
+        self._track_uploaded_file("hot_reload_sort_new.pem")
+        self.crl_utils.reload_crl(self.rest)
+        self.assertTrue(
+            self._handshake_ok(sort_cert_path, sort_key_path),
+            "The newer, coexisting CRL's non-revoking verdict must win "
+            "over the older, coexisting one that revoked this serial -- "
+            "not silently masked by the older, stale file",
+        )
+        self.log.info(
+            "Newest-thisUpdate-first sort confirmed: a newer, genuinely "
+            "coexisting non-revoking CRL wins over an older, coexisting "
+            "revoking one for the same issuer"
+        )
+
         # -- Multi-node uploaded-file sync + peer download. Chronicle only
         # replicates a CRL's METADATA (filename/checksum/issuer/etc), not its
         # PEM bytes -- those are pushed to peers by a separate RPC
@@ -4674,6 +5175,12 @@ class CRLTest(CRLBase):
         all, since only these two alert types exist."""
         server = self.cluster.master
         node_key = f"{self.cluster.master.ip}:8091"
+        # Multi-node aggregation: CRL files sync cluster-wide (entry #7), so
+        # one upload to either node ends up on both, sharing one checksum --
+        # the alert's "present on node(s)" list should then name both,
+        # sorted the same way Erlang's atom sort does (equivalent to a
+        # plain string sort here, since both share the "ns_1@" prefix).
+        node_ips_str = ", ".join(sorted(s.ip for s in self.cluster.servers[:self.nodes_init]))
 
         # -- One short-lived CRL, observed through both real state
         # transitions in sequence -- proactively inside its warning window
@@ -4708,15 +5215,23 @@ class CRLTest(CRLBase):
             "Expected 'crl_expires_soon' to fire for a CRL already inside "
             "its own proportional warning window, before actual expiry",
         )
+        # Exact message format (menelaus_web_alerts_srv.erl:errors/1), not
+        # just a substring -- the date portion is the only part not pinned
+        # exactly here (format_time's own exact output isn't reproduced).
         alert_msgs = self.crl_utils.get_alert_messages(self.rest)
+        prefix = (
+            f"Certificate Revocation List (CRL) issued by 'CN=TestCA1' "
+            f"(CRL number: 1, file(s): {soon_filename}) will expire at "
+        )
+        suffix = f" (present on node(s): {node_ips_str})."
         self.assertTrue(
-            any("will expire at" in m and "TestCA1" in m for m in alert_msgs),
-            "Expected a human-readable 'will expire at ...' alert naming "
-            f"the issuing CA, got: {alert_msgs}",
+            any(m.startswith(prefix) and m.endswith(suffix) for m in alert_msgs),
+            f"Expected an alert exactly matching {prefix!r} + <date> + "
+            f"{suffix!r}, got: {alert_msgs}",
         )
         self.log.info(
             "'crl_expires_soon' fired proactively, before actual "
-            "expiry, with correct human-readable text"
+            "expiry, with the exact expected message format"
         )
 
         self.assertTrue(
@@ -4726,11 +5241,16 @@ class CRLTest(CRLBase):
             "Expected the same CRL to later trigger 'crl_expired', "
             "distinct from 'crl_expires_soon', once it genuinely expired",
         )
+        # No date field in the expired message -- exact full-string match.
         alert_msgs = self.crl_utils.get_alert_messages(self.rest)
-        self.assertTrue(
-            any("has expired" in m and "TestCA1" in m for m in alert_msgs),
-            "Expected a distinctly-worded 'has expired' alert naming the "
-            f"issuing CA, got: {alert_msgs}",
+        expected_expired_msg = (
+            f"Certificate Revocation List (CRL) issued by 'CN=TestCA1' "
+            f"(CRL number: 1, file(s): {soon_filename}) has expired "
+            f"(present on node(s): {node_ips_str})."
+        )
+        self.assertIn(
+            expected_expired_msg, alert_msgs,
+            f"Expected the exact message {expected_expired_msg!r}, got: {alert_msgs}",
         )
         self.log.info(
             "The same CRL later triggered a distinctly-worded "
@@ -4814,6 +5334,70 @@ class CRLTest(CRLBase):
         self.log.info(
             "Known gap: diagnostics/status correctly flips to 'untrusted', "
             "but no health warning of either type fires for it"
+        )
+
+        # -- crlExpirationDays / crlWarningValidityFraction
+        # (/settings/alerts/limits) actually govern the warning window, not
+        # just round-trip. A CRL with ~20min remaining, ~40min total
+        # validity: default fraction=4 caps the window at validity/4=~10min,
+        # so 20min-remaining is not yet inside it. Disabling the cap
+        # (fraction=0) and raising crlExpirationDays to 1 day makes the flat
+        # window govern instead, putting it inside immediately. --
+        limits_url = f"https://{self.cluster.master.ip}:18091/settings/alerts/limits"
+        auth = (self.rest.username, self.rest.password)
+        resp = requests.get(limits_url, auth=auth, verify=False, timeout=30)
+        self.assertEqual(resp.status_code, 200, f"GET alerts/limits failed: {resp.text}")
+        original_limits = resp.json()
+
+        knob_filename = "health_warning_knobs.pem"
+        now = datetime.datetime.now(datetime.timezone.utc)
+        knob_soon_baseline = self.crl_utils.get_crl_alert_count(server, "crl_expires_soon")
+        status, content = self.crl_utils.upload_file(
+            self.rest, knob_filename,
+            self.crl_utils.build_crl(
+                self.ca_cert, self.ca_key,
+                this_update=now - datetime.timedelta(seconds=1200),
+                next_update=now + datetime.timedelta(seconds=1200),
+                crl_number=3,
+            ),
+        )
+        self.assertTrue(status, f"Knob-test CRL upload failed: {content}")
+        self._track_uploaded_file(knob_filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self.crl_utils.wait_for_crl_alert_increment(
+                server, "crl_expires_soon", knob_soon_baseline, max_wait=75,
+            ),
+            "Under the default crlWarningValidityFraction=4, a CRL with "
+            "20 minutes remaining (proportional window ~10 minutes) "
+            "should not yet be inside its warning window",
+        )
+
+        resp = requests.post(
+            limits_url, auth=auth, verify=False, timeout=30,
+            data={"crlExpirationDays": 1, "crlWarningValidityFraction": 0},
+        )
+        self.assertEqual(resp.status_code, 200, f"POST alerts/limits failed: {resp.text}")
+        try:
+            self.assertTrue(
+                self.crl_utils.wait_for_crl_alert_increment(
+                    server, "crl_expires_soon", knob_soon_baseline, max_wait=100,
+                ),
+                "Disabling the proportional cap (fraction=0) and setting "
+                "a 1-day flat window should now put a 20-minutes-"
+                "remaining CRL inside its warning window",
+            )
+        finally:
+            requests.post(
+                limits_url, auth=auth, verify=False, timeout=30,
+                data={
+                    "crlExpirationDays": original_limits["crlExpirationDays"],
+                    "crlWarningValidityFraction": original_limits["crlWarningValidityFraction"],
+                },
+            )
+        self.log.info(
+            "crlExpirationDays/crlWarningValidityFraction confirmed to "
+            "actually govern the warning window, not just round-trip"
         )
 
     def test_crl_cross_service_kv_vs_ns_server_consistency(self):

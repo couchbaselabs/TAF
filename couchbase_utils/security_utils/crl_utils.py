@@ -519,6 +519,22 @@ class CRLUtils:
         status, content, _ = api.post_crl_settings(fields)
         return status, self.parse_content(content)
 
+    def post_settings_raw(self, rest, body, query=""):
+        """
+        POST /settings/crl with a raw, already-encoded body (str/bytes) and
+        an optional literal query string -- for request-envelope shape
+        tests (oversized body, undecodable JSON, ?just_validate=1) that
+        set_settings()'s dict -> json.dumps() path can't produce.
+
+        Returns (status_bool, content, response).
+        """
+        api = self._crl_api(rest)
+        url = f"{api.base_url}{ENDPOINT_CRL_SETTINGS}"
+        if query:
+            url = f"{url}?{query}"
+        headers = api.get_headers_for_content_type_json()
+        return api.request(url, "POST", body, headers=headers)
+
     def list_files(self, rest):
         """GET /settings/crl/files. Returns (status_bool, content_list)."""
         api = self._crl_api(rest)
