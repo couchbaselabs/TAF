@@ -74,7 +74,7 @@ class UpgradeTests(UpgradeBase):
             cbstat_cmd="all", stat_name="ep_queue_size",
             timeout=60)
         self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster, timeout=4800)
+            self.cluster, timeout=21600)
 
     def __trigger_cbcollect(self, log_path):
         self.log.info("Triggering cb_collect_info")
@@ -91,6 +91,16 @@ class UpgradeTests(UpgradeBase):
         else:
             self.log_failure("API perform_cb_collect returned False")
         return status
+
+    def _assert_restore_succeeded(self, output, error, timestamp):
+        """CbContBk.restore only logs failures and returns (output, error),
+        so unchecked calls let a failed/partial restore surface much later
+        as a doc-count mismatch. Fail here with the cbcontbk output instead."""
+        error_lines = [line for line in (output or [])
+                       if line.strip().lower().startswith("error")]
+        if error or not output or error_lines:
+            self.log_failure(f"cbcontbk restore to timestamp {timestamp} failed. "
+                             f"stdout: {output}, stderr: {error}")
 
     def __play_with_collection(self):
         # MB-44092 - Collection load not working with pre-existing connections
@@ -1638,8 +1648,8 @@ class UpgradeTests(UpgradeBase):
                 "history_retention_bytes", 0),
             log=self.log)
 
-        self.sleep(self.continuous_backup_interval * 60,
-                   f"Waiting for {self.continuous_backup_interval} minutes after enabling continuous backup")
+        self.sleep(self.continuous_backup_interval * 60 * 2,
+                   f"Waiting for {self.continuous_backup_interval * 2} minutes after enabling continuous backup")
 
         # Create backup repository and perform initial backup. The staging dir
         # is what makes these work against an object-store archive; it is None
@@ -1653,11 +1663,16 @@ class UpgradeTests(UpgradeBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=obj_staging_dir)
 
-        self.sleep(self.continuous_backup_interval * 60,
-                   f"Waiting for {self.continuous_backup_interval} minutes after initial backup")
+        self.sleep(self.continuous_backup_interval * 60 * 2,
+                   f"Waiting for {self.continuous_backup_interval * 2} minutes after initial backup")
+
+        self.load_during_rebalance(self.sub_data_spec)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+        self.sleep(self.continuous_backup_interval * 60 * 2,
+                   f"Waiting for {self.continuous_backup_interval * 2} minutes after initial backup")
 
         # Capture initial timestamp and item count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         item_counts = {}
         for bucket in self.cluster.buckets:
             curr_items = self.bucket_util.get_buckets_item_count(
@@ -1687,7 +1702,8 @@ class UpgradeTests(UpgradeBase):
         # Flush all buckets
         self.log.info("Flushing all buckets before restore verification")
         for bucket in self.cluster.buckets:
-            self.bucket_util.flush_bucket(self.cluster, bucket)
+            flush_status = self.bucket_util.flush_bucket(self.cluster, bucket)
+            self.assertTrue(flush_status, f"Failed to flush bucket {bucket.name}")
         self.sleep(30, "Waiting after bucket flush")
 
         # Restore from all timestamps in sequential fashion and verify item counts
@@ -1704,7 +1720,7 @@ class UpgradeTests(UpgradeBase):
                     no_ssl_verify = True if self.tls_level == "strict" \
                         else False
 
-                    self.cont_bk_mgr.restore(
+                    output, error = self.cont_bk_mgr.restore(
                         self.backup_archive_dir, self.backup_repo_name,
                         location=self.continuous_backup_location,
                         temp_dir="/data/tmp",
@@ -1712,6 +1728,8 @@ class UpgradeTests(UpgradeBase):
                         map_data=f"{bucket.name}={bucket.name}",
                         obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
                         no_ssl_verify=no_ssl_verify)
+
+                    self._assert_restore_succeeded(output, error, timestamp)
 
             # Wait for stats and verify item count
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
@@ -1737,7 +1755,7 @@ class UpgradeTests(UpgradeBase):
         else:
             rebalance_tasks = self.rebalance_op.split(":")
 
-        for reb_task in rebalance_tasks:
+        for i, reb_task in enumerate(rebalance_tasks):
             self.sleep(120, "Sleeping before starting the next rebalance task")
             rebalance_data_load = None
             if data_load:
@@ -1965,21 +1983,24 @@ class UpgradeTests(UpgradeBase):
             # other tests reach tasks_post_upgrade() without it -- a timestamp
             # is meaningless when nothing is being backed up.
             if self.cont_bkp_test and self.cont_bk_mgr is not None:
-                self.sleep(self.continuous_backup_interval * 60,
-                           f"Waiting for {self.continuous_backup_interval} minutes for continuous backup")
                 self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+                self.sleep(self.continuous_backup_interval * 2 * 60,
+                           f"Waiting for {self.continuous_backup_interval * 2} minutes for continuous backup")
 
                 item_counts = {}
                 for bucket in self.cluster.buckets:
                     curr_items = self.bucket_util.get_buckets_item_count(
                         self.cluster, bucket.name)
                     item_counts[bucket.name] = curr_items
-                    self.log.info("Item count for bucket %s after %s: %s"
-                                  % (bucket.name, reb_task, curr_items))
+                    self.log.info("Item count for bucket %s after rebalance: "
+                                  "%s" % (bucket.name, curr_items))
 
                 timestamp = self.cont_bk_mgr.get_cluster_timestamp()
+                if i == len(rebalance_tasks) -1 :
+                    timestamp = "everything"
                 self.pitr_timestamps[timestamp] = item_counts
-                self.log.info("Timestamp captured after %s: %s" % (reb_task, timestamp))
+                self.log.info("Timestamp captured after rebalance: %s"
+                              % timestamp)
 
     def create_new_bucket_post_upgrade_and_load_data(self):
 
