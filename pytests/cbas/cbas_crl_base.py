@@ -140,27 +140,71 @@ class CBASCRLBase(CBASBaseTest):
 
     def _require_object_store(self):
         """
-        Connection details for an S3-compatible object store, from the same
-        LOCALSTACK_* environment variables the backup CRL suite uses (which in
-        practice point at a MinIO instance).
+        Connection details for an S3-compatible object store.
 
-        Fails rather than skips when unset: a silently skipped test reports as
-        passing coverage that never ran, and section 4 is exactly the area
+        Prefers AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, which is what the
+        rest of TAF uses (AWSProvider reads exactly these, and the WORM and
+        Iceberg suites already run on them) and what CI exports, so these
+        tests pick up an existing AWS-capable job with no extra wiring. Falls
+        back to LOCALSTACK_* for a local S3-compatible store -- typically
+        MinIO -- which is how the suite was developed and how it runs where
+        no AWS identity is available.
+
+        No credential is defaulted. This used to fall back to literal
+        'minioadmin' values, which put a credential in the source tree for a
+        rule that says not to, and turned a missing-configuration mistake
+        into a confusing authentication failure against whatever endpoint
+        was set. An incomplete environment now says so directly.
+
+        Fails rather than skips when unset: a silently skipped test reports
+        as passing coverage that never ran, and section 4 is exactly the area
         where that would matter.
+
+        Returns:
+            dict with endpoint, access_key, secret_key, region, bucket. The
+            endpoint is None for real AWS, where the service's own default
+            applies -- see _create_s3_link, which omits serviceEndpoint then.
         """
+        aws_key = os.getenv("AWS_ACCESS_KEY_ID")
+        aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY")
+        if aws_key and aws_secret:
+            return {
+                # Unset for real S3: Analytics resolves the regional endpoint
+                # itself. Only set this to reach an S3-compatible service
+                # while still using the AWS_* credentials.
+                "endpoint": os.getenv("AWS_S3_ENDPOINT") or None,
+                "access_key": aws_key,
+                "secret_key": aws_secret,
+                "region": os.getenv("AWS_REGION", "us-east-1"),
+                "bucket": os.getenv("AWS_S3_BUCKET", "test-backup-taf"),
+            }
+
         endpoint = os.getenv("LOCALSTACK_ENDPOINT")
-        if not endpoint:
+        access_key = os.getenv("LOCALSTACK_ACCESS_KEY_ID")
+        secret_key = os.getenv("LOCALSTACK_SECRET_ACCESS_KEY")
+        if not (endpoint and access_key and secret_key):
+            missing = [
+                name for name, value in (
+                    ("LOCALSTACK_ENDPOINT", endpoint),
+                    ("LOCALSTACK_ACCESS_KEY_ID", access_key),
+                    ("LOCALSTACK_SECRET_ACCESS_KEY", secret_key),
+                ) if not value
+            ]
             self.fail(
-                "This test needs an S3-compatible object store (MinIO) that "
-                "the Analytics node can reach. Set LOCALSTACK_ENDPOINT, "
-                "LOCALSTACK_ACCESS_KEY_ID, LOCALSTACK_SECRET_ACCESS_KEY and "
-                "optionally LOCALSTACK_REGION / LOCALSTACK_BUCKET."
+                "This test needs an S3-compatible object store the Analytics "
+                "node can reach. Either export AWS_ACCESS_KEY_ID and "
+                "AWS_SECRET_ACCESS_KEY (plus optionally AWS_REGION / "
+                "AWS_S3_BUCKET), which is what the rest of TAF uses, or point "
+                "the suite at a local store with LOCALSTACK_ENDPOINT, "
+                "LOCALSTACK_ACCESS_KEY_ID and LOCALSTACK_SECRET_ACCESS_KEY "
+                "(plus optionally LOCALSTACK_REGION / LOCALSTACK_BUCKET). "
+                f"No AWS credentials were set and these are missing: "
+                f"{', '.join(missing)}."
             )
         return {
             "endpoint": endpoint,
-            "access_key": os.getenv("LOCALSTACK_ACCESS_KEY_ID", "minioadmin"),
-            "secret_key": os.getenv("LOCALSTACK_SECRET_ACCESS_KEY",
-                                    "minioadmin"),
+            "access_key": access_key,
+            "secret_key": secret_key,
             "region": os.getenv("LOCALSTACK_REGION", "us-east-1"),
             "bucket": os.getenv("LOCALSTACK_BUCKET", "cbas-crl-test"),
         }
@@ -172,6 +216,11 @@ class CBASCRLBase(CBASBaseTest):
 
         Access-key authentication on purpose: that is the case section 4 asks
         about, and it is the one where nothing certificate-shaped is involved.
+
+        serviceEndpoint is omitted entirely when the store has none, rather
+        than sent as null: that is the real-AWS case, where Analytics derives
+        the regional endpoint itself. Sending the key with an empty value
+        would make it resolve nothing.
         """
         link_properties = {
             "name": name,
@@ -181,17 +230,18 @@ class CBASCRLBase(CBASBaseTest):
             "accessKeyId": store["access_key"],
             "secretAccessKey": store["secret_key"],
             "region": store["region"],
-            "serviceEndpoint": store["endpoint"],
         }
+        if store.get("endpoint"):
+            link_properties["serviceEndpoint"] = store["endpoint"]
         created = self.cbas_util.create_link(
             self.cluster, link_properties, create_dataverse=False
         )
         if not created:
             self.fail(f"Could not create S3 external link {dataverse}.{name}")
         self._created_links.append((dataverse, name))
+        target = store.get("endpoint") or f"AWS S3 ({store['region']})"
         self.log.info(
-            f"Created S3 external link {dataverse}.{name} -> "
-            f"{store['endpoint']}"
+            f"Created S3 external link {dataverse}.{name} -> {target}"
         )
         return link_properties
 
