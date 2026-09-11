@@ -30,7 +30,7 @@ CB_VERSION_NAME = {"0.0": "master",
                    "6.0": "alice", "6.5": "mad-hatter", "6.6": "mad-hatter",
                    "7.0": "cheshire-cat", "7.1": "neo", "7.2": "neo",
                    "7.5": "elixir", "7.6": "trinity", "7.7": "cypher", "8.0": "morpheus",
-                   "8.1": "totoro"}
+                   "8.5": "totoro"}
 
 SYSTEMD_SERVER = ["centos 8", "centos 7",
                   "suse 12", "suse 15",
