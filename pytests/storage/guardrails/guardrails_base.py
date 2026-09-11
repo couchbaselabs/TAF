@@ -63,6 +63,12 @@ class GuardrailsBase(StorageBase):
             for item in res["data"]["result"]:
                 if item["metric"]["state"] == "active":
                     bucket_name = item["metric"]["bucket"]
+                    if bucket_name not in kv_ep_max_size:
+                        # The two queries are scraped independently, so a
+                        # freshly created bucket can appear in this one
+                        # before kv_ep_max_size has a series for it. Skip
+                        # it; the caller polls and will pick it up next time
+                        continue
                     logical_data_bytes = float(item["value"][1])
                     resident_ratio = (kv_ep_max_size[bucket_name] / logical_data_bytes) * 100
                     resident_ratio = min(resident_ratio, 100)
@@ -74,6 +80,10 @@ class GuardrailsBase(StorageBase):
         return bucket_rr
 
     def check_if_rr_guardrail_breached(self, bucket, current_rr, threshold):
+
+        if bucket.name not in current_rr:
+            # check_resident_ratio had no usable sample for this bucket yet
+            return False
 
         rr_bucket = current_rr[bucket.name]
         for rr_val in rr_bucket:

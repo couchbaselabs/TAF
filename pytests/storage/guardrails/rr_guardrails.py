@@ -3,6 +3,7 @@ import time
 from BucketLib.bucket import Bucket
 from cb_constants import CbServer, DocLoading
 from cb_tools.cbstats import Cbstats
+from error_simulation.cb_error import CouchbaseError
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
@@ -377,7 +378,10 @@ class RRGuardrails(GuardrailsBase):
 
         self.log.info("Deleting existing bucket : {}".format(self.bucket.name))
         self.bucket_util.delete_bucket(self.cluster, self.bucket)
-        self.cluster.sdk_client_pool.shutdown()
+        # sdk_client_pool is None when load_docs_using=sirius_java_sdk,
+        # since the Sirius loader keeps its client pool server-side
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.shutdown()
 
         self.log.info("Creating a bucket...")
         self.bucket_util.create_default_bucket(self.cluster, bucket_type=self.bucket_type,
@@ -655,7 +659,10 @@ class RRGuardrails(GuardrailsBase):
 
             self.log.info("Stopping service {}".format(self.restart_service))
             if self.restart_service == "prometheus":
-                shell.stop_prometheus()
+                # Linux shell has no stop/start_prometheus; CouchbaseError
+                # sends the same SIGSTOP/SIGCONT the removed helpers did
+                cb_error = CouchbaseError(self.log, shell)
+                cb_error.create(CouchbaseError.STOP_PROMETHEUS)
             elif self.restart_service == "memcached":
                 shell.stop_memcached()
             elif self.restart_service == "server":
@@ -665,7 +672,7 @@ class RRGuardrails(GuardrailsBase):
 
             self.log.info("Re-starting service {}".format(self.restart_service))
             if self.restart_service == "prometheus":
-                shell.start_prometheus()
+                cb_error.revert(CouchbaseError.STOP_PROMETHEUS)
             elif self.restart_service == "memcached":
                 shell.start_memcached()
             elif self.restart_service == "server":
@@ -715,7 +722,7 @@ class RRGuardrails(GuardrailsBase):
 
         self.log.info('Configure backup')
         configure_bkup_cmd = '{0}cbbackupmgr config -a {1} -r {2}'.format(
-            shell.return_bin_path_based_on_os(shell.return_os_type()),
+            "{}bin/".format(shell.cb_path),
             archive, repo)
         o, r = shell.execute_command(configure_bkup_cmd)
         shell.log_command_output(o, r)
@@ -723,11 +730,11 @@ class RRGuardrails(GuardrailsBase):
         self.log.info("Backing up data")
         if CbServer.use_https:
             bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --no-ssl-verify'.format(
-                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                "{}bin/".format(shell.cb_path),
                 archive, repo, self.cluster.master.ip, username, password)
         else:
             bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
-                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                "{}bin/".format(shell.cb_path),
                 archive, repo, self.cluster.master.ip, username, password)
 
         o, r = shell.execute_command(bkup_cmd)
@@ -750,11 +757,11 @@ class RRGuardrails(GuardrailsBase):
         shell = RemoteMachineShellConnection(self.cluster.master)
         if CbServer.use_https:
             restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --no-ssl-verify'.format(
-                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                "{}bin/".format(shell.cb_path),
                 archive, repo, self.cluster.master.ip, username, password)
         else:
             restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
-                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                "{}bin/".format(shell.cb_path),
                 archive, repo, self.cluster.master.ip, username, password)
 
         o, r = shell.execute_command(restore_cmd)
