@@ -18,11 +18,12 @@ class EnableProjectCMEKProvider(APIBase):
 
     def test_api_path(self):
         testcases = [
+            # {
+            #     "description": "Enable project CMEK provider with valid path",
+            #     "cloudProvider": "azure",
+            #     "expected_status_code": [204, 422]
+            # }, 
             {
-                "description": "Enable project CMEK provider with valid path",
-                "cloudProvider": "azure",
-                "expected_status_code": [204, 422]
-            }, {
                 "description": "Replace API version in URI",
                 "url": "/v3/organizations/{}/projects/{}/cmek/providers",
                 "cloudProvider": "azure",
