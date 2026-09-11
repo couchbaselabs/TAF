@@ -77,6 +77,8 @@ absent on 8.1.0-2377); cbworkloadgen/cbtransfer remain but there is no
 equivalent tool left to exercise this restriction against.
 """
 
+import json
+
 from basetestcase import ClusterSetup
 from BucketLib.bucket import Bucket
 from cb_server_rest_util.cluster_nodes.cluster_init_provision import \
@@ -85,6 +87,7 @@ from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbbackupmgr import CbBackupMgr
 from cluster_utils.cluster_ready_functions import CBCluster
+from couchbase_utils.security_utils.crl_utils import CRLUtils
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -122,6 +125,15 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
             % (feature, content_str[:300]))
         self.log.info("CE correctly blocked '%s': %s", feature,
                       content_str[:200])
+
+    def _make_json_request(self, path, method, body_dict):
+        api = self.rest.base_url + path
+        headers = self.rest.get_headers_for_content_type_json()
+        status, content, response = self.rest.request(
+            api, method, json.dumps(body_dict), headers=headers)
+        content_str = (content.decode() if isinstance(content, bytes)
+                       else str(content))
+        return status, content_str, response
 
     # ------------------------------------------------------------------
     # Server groups / zones
@@ -698,3 +710,96 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
             self._assert_blocked(
                 status, content,
                 "indexer storageMode=%s (EE-only)" % mode)
+
+    # ------------------------------------------------------------------
+    # CRL + JWT: both a simple EE gate on their settings handler, combined
+    # into one test to share a single nodes_init=1 setup.
+    # ------------------------------------------------------------------
+
+    def test_crl_and_jwt_settings_blocked(self):
+        """CRL and JWT must both be blocked on CE via every endpoint each
+        feature exposes, returning 400 + X-enterprise-edition-needed: 1.
+        Exception: CRL's /_cbauth/crlsValidate is on a separate,
+        non-edition-gated route and must stay reachable -- an intentional
+        asymmetry, pinned here explicitly rather than assumed.
+        """
+        get_endpoints = [
+            "/settings/crl",
+            "/settings/crl/diagnostics/status",
+            "/settings/crl/files",
+        ]
+        for path in get_endpoints:
+            status, content = self._make_request(path)
+            self._assert_blocked(status, content, "GET %s" % path)
+
+        status, content = self._make_request(
+            "/settings/crl", "POST", {"clientAuth": json.dumps(
+                {"state": "enable", "policyPerScope": [
+                    {"scope": "default", "state": "require"}]})})
+        self._assert_blocked(status, content, "POST /settings/crl")
+
+        status, content, response = self._make_json_request(
+            "/settings/crl/diagnostics/validate", "POST",
+            {"scope": "clientAuth", "certs": [""]})
+        self._assert_blocked(
+            status, content, "POST /settings/crl/diagnostics/validate")
+        self.assertEqual(
+            response.headers.get("X-enterprise-edition-needed"), "1",
+            "Expected X-enterprise-edition-needed header. Got headers: %s"
+            % dict(response.headers))
+
+        status, content = self._make_request(
+            "/node/controller/reloadCrl", "POST", {})
+        self._assert_blocked(status, content, "POST /node/controller/reloadCrl")
+
+        # crlsValidate: separate route, no edition gate -- must NOT be
+        # blocked, and must return a genuine validation result.
+        ca_cert, ca_key = CRLUtils.generate_ca("CeAsymmetryTestCA")
+        leaf_cert, _, _ = CRLUtils.generate_leaf_cert(
+            ca_cert, ca_key, "ceAsymmetryLeaf")
+        status, content, response = self._make_json_request(
+            "/_cbauth/crlsValidate", "POST",
+            {"scope": "clientAuth",
+             "certs": [CRLUtils.cert_to_der_b64(leaf_cert)]})
+        self.assertTrue(
+            status,
+            "crlsValidate must NOT be edition-gated on CE. Got: %s" % content)
+        self.assertIsNone(
+            response.headers.get("X-enterprise-edition-needed"),
+            "crlsValidate unexpectedly carried the EE-gate header on CE")
+        statuses = response.json().get("statuses", [])
+        self.assertEqual(
+            len(statuses), 1,
+            "Expected one status entry. Got: %s" % content)
+        self.assertEqual(
+            statuses[0].get("status"), "valid",
+            "Expected a real validation verdict (untrusted CA -> 'valid', "
+            "since checkIntermediateCerts defaults off). Got: %s" % content)
+        self.log.info(
+            "Confirmed crlsValidate stays reachable on CE while every "
+            "settings/crl endpoint is blocked: %s", content)
+
+        # --- JWT: same EE-gate pattern, all three /settings/jwt methods ---
+        status, content = self._make_request("/settings/jwt")
+        self._assert_blocked(status, content, "GET /settings/jwt")
+
+        status, content, response = self._make_json_request(
+            "/settings/jwt", "PUT",
+            {"enabled": True, "issuers": [{
+                "name": "ce-blocked-test-issuer",
+                "signingAlgorithm": "HS256",
+                "sharedSecret": "x" * 32,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "audienceHandling": "any",
+                "audiences": ["ce-test-aud"],
+                "jitProvisioning": True,
+            }]})
+        self._assert_blocked(status, content, "PUT /settings/jwt")
+        self.assertEqual(
+            response.headers.get("X-enterprise-edition-needed"), "1",
+            "Expected X-enterprise-edition-needed header. Got headers: %s"
+            % dict(response.headers))
+
+        status, content = self._make_request("/settings/jwt", "DELETE")
+        self._assert_blocked(status, content, "DELETE /settings/jwt")
