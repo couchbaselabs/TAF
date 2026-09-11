@@ -2,12 +2,17 @@
 import json
 import re
 import time
+import unittest
 import uuid
 import urllib.parse
 import base64
 import jwt
 
 from couchbase_utils.security_utils import jwt_utils
+from couchbase_utils.security_utils.crl_utils import (
+    audit_keyword_count,
+    get_audit_event,
+)
 from membase.api.rest_client import RestConnection
 from pytests.onPrem_basetestcase import OnPremBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -16,6 +21,8 @@ class JWTTokenTest(OnPremBaseTest):
     """
     Basic JWT auth sanity test for Couchbase.
     """
+
+    AUDIT_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/current-audit.log"
 
     def setUp(self):
         super(JWTTokenTest, self).setUp()
@@ -122,6 +129,17 @@ class JWTTokenTest(OnPremBaseTest):
             self.rest.delete_builtin_group(group_name)
         except Exception:
             pass
+
+    def _set_audit_enabled(self, enabled):
+        # /settings/audit takes classic form-encoded params, not a JSON body.
+        api = f"{self.rest.baseUrl}settings/audit"
+        payload = urllib.parse.urlencode({"auditdEnabled": "true" if enabled else "false"})
+        ok, content, resp = self.rest._http_request(api, "POST", payload)
+        status = self.jwt_utils.status_code(resp)
+        self.assertEqual(
+            status, 200,
+            f"Failed to set auditdEnabled={enabled}: status={status} content={content}",
+        )
 
     def _get_jwt_config(self):
         group_maps = self.token_group_matching_rule or [f"^admin$ {self.group_name}"]
@@ -535,6 +553,21 @@ class JWTTokenTest(OnPremBaseTest):
             log_callback=self.log.info
         )
 
+    def _parse_jwt_error_body(self, content):
+        """
+        Parse a JWT auth-failure response body into a dict, tolerating both
+        already-decoded dict content and raw JSON string content.
+        Returns None if content is empty or not valid JSON.
+        """
+        if not content:
+            return None
+        if isinstance(content, dict):
+            return content
+        try:
+            return json.loads(content)
+        except (ValueError, TypeError):
+            return None
+
     def test_jwt_expired_token_with_error_messaging(self):
         """
         Test that expired tokens fail immediately with clear error messaging.
@@ -543,6 +576,11 @@ class JWTTokenTest(OnPremBaseTest):
         - Tokens with negative TTL (already expired) are rejected
         - Response status code indicates token expiry
         - Error content clearly indicates expiration issue (contains "expir", "expire", "timeout", or similar)
+
+        Also covers: a JWT auth failure must return the *specific* reason in
+        the 401 body (`{"errors": "<reason>"}`), not just something that
+        loosely reads as expiry-related, and this detail must be scoped to
+        JWT only (a non-JWT auth failure must stay a bare empty 401).
         """
         config = self._get_jwt_config()
         self._setup_jwt_config(config)
@@ -569,6 +607,82 @@ class JWTTokenTest(OnPremBaseTest):
                 has_expiry_indicator,
                 f"Error message should indicate token validity issue. Content: {content}"
             )
+
+        # The loose keyword check above is no longer enough on its own —
+        # pin the exact reason string.
+        parsed = self._parse_jwt_error_body(content)
+        self.assertEqual(
+            parsed, {"errors": "Token has expired"},
+            f"MB-72543: expected the exact expiry reason in the 401 body, got {content!r}",
+        )
+
+        # Wrong audience -> exact "Invalid audience" reason.
+        wrong_aud_token = self.create_token(audience="mb72543-wrong-audience")
+        ok, status_code, content = self._verify_token_rest(wrong_aud_token)
+        self._assert_unauthorized_status(
+            status_code, f"Expected 401 for wrong-audience token, got {status_code}"
+        )
+        parsed = self._parse_jwt_error_body(content)
+        self.assertEqual(
+            parsed, {"errors": "Invalid audience"},
+            f"MB-72543: expected the exact wrong-audience reason, got {content!r}",
+        )
+
+        # A subMaps rule that matches nothing -> exact "Username not
+        # provisioned" reason (distinct from a matched-but-invalid rule).
+        no_match_issuer = f"{self.issuer_name}-mb72543-no-submaps-match"
+        no_match_audience = "mb72543-no-submaps-match-aud"
+        no_match_config = {
+            "enabled": True,
+            "issuers": [{
+                "name": no_match_issuer,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "audienceHandling": "any",
+                "audiences": [no_match_audience],
+                "jitProvisioning": True,
+                "subMaps": ["^prefix-(.*)$ \\1"],
+            }],
+        }
+        self._setup_jwt_config(no_match_config, create_groups=False)
+        no_match_token = self.jwt_utils.create_token(
+            issuer_name=no_match_issuer,
+            user_name="does-not-start-with-prefix",
+            algorithm=self.algorithm,
+            private_key=self.private_key,
+            token_audience=no_match_audience,
+            ttl=self.ttl,
+            nbf_seconds=self.nbf_seconds,
+            normalize_audience=True,
+        )
+        ok, status_code, content = self._verify_token_rest(no_match_token)
+        self._assert_unauthorized_status(
+            status_code, f"Expected 401 for unmatched subMaps token, got {status_code}"
+        )
+        parsed = self._parse_jwt_error_body(content)
+        self.assertEqual(
+            parsed, {"errors": "Username not provisioned"},
+            f"MB-72543: expected the exact no-match reason, got {content!r}",
+        )
+
+        # Non-JWT control: a wrong Basic-auth password must stay a bare,
+        # empty 401 — confirms the new detail is scoped to JWT only.
+        basic_auth_header = base64.b64encode(b"Administrator:not-the-real-password").decode()
+        ok, content, response = self.rest._http_request(
+            f"{self.rest.baseUrl}pools/default/buckets", "GET", "",
+            headers={"Authorization": f"Basic {basic_auth_header}"},
+        )
+        basic_status = self.jwt_utils.status_code(response)
+        self._assert_unauthorized_status(
+            basic_status, f"Expected 401 for wrong Basic-auth password, got {basic_status}"
+        )
+        self.assertFalse(
+            content,
+            f"Non-JWT auth failures must stay a bare empty 401 body, got {content!r}",
+        )
 
     def test_jwt_expired_token_multiple_retries(self):
         """
@@ -965,6 +1079,101 @@ class JWTTokenTest(OnPremBaseTest):
         finally:
             self._delete_group(group_admin)
 
+        # Internal-only roles must never be reachable via an external
+        # issuer's rolesClaim (bypassing groupsMaps) — filtered to roles:[].
+        internal_only_roles = ["service_admin", "metakv2_access", "stats_reader"]
+        internal_role_issuer = f"{self.issuer_name}-int1"
+        internal_role_config = {
+            "enabled": True,
+            "issuers": [{
+                "name": internal_role_issuer,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "audienceHandling": "any",
+                "audiences": [self.token_audience] if isinstance(self.token_audience, str)
+                else list(self.token_audience),
+                "jitProvisioning": True,
+                "rolesClaim": "roles",
+            }],
+        }
+        self._setup_jwt_config(internal_role_config, create_groups=False)
+
+        for internal_role in internal_only_roles:
+            curr_time = int(time.time())
+            payload = {
+                "iss": internal_role_issuer,
+                "sub": f"int1_user_{uuid.uuid4().hex[:8]}",
+                "aud": self.token_audience,
+                "exp": curr_time + self.ttl,
+                "iat": curr_time,
+                "nbf": curr_time + self.nbf_seconds,
+                "jti": str(uuid.uuid4()),
+                "roles": [internal_role],
+            }
+            internal_role_token = self._create_signed_token_from_payload(payload)
+
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, internal_role_token)
+            self.assertTrue(
+                whoami is not None,
+                f"INT-1: expected a 200 /whoami response (auth should still succeed) "
+                f"for internal role {internal_role!r}, got None",
+            )
+            granted_roles = whoami.get("roles") or []
+            self.assertEqual(
+                granted_roles, [],
+                f"INT-1: internal-only role {internal_role!r} must never be granted "
+                f"through an external issuer's rolesClaim, got roles={granted_roles}",
+            )
+
+        # ro_admin denies {[ui],none}, so UI login also needs ui_access
+        # separately. Tested via local /uilogin, not bearer auth (which never reaches it).
+        ro_only_user = f"jwt_bug10_ro_only_{uuid.uuid4().hex[:8]}"
+        ro_only_password = f"Bug10Pwd!{uuid.uuid4().hex[:8]}"
+        ro_ui_user = f"jwt_bug10_ro_ui_{uuid.uuid4().hex[:8]}"
+        ro_ui_password = f"Bug10Pwd!{uuid.uuid4().hex[:8]}"
+
+        try:
+            self.rest.add_set_builtin_user(
+                ro_only_user,
+                urllib.parse.urlencode({"password": ro_only_password, "roles": "ro_admin"}),
+            )
+            self.rest.add_set_builtin_user(
+                ro_ui_user,
+                urllib.parse.urlencode(
+                    {"password": ro_ui_password, "roles": "ro_admin,ui_access"}
+                ),
+            )
+
+            uilogin_api = f"{self.rest.baseUrl}uilogin"
+
+            _, content_ro_only, resp_ro_only = self.rest._http_request(
+                uilogin_api, "POST",
+                urllib.parse.urlencode({"user": ro_only_user, "password": ro_only_password}),
+            )
+            status_ro_only = self.jwt_utils.status_code(resp_ro_only)
+            self.assertEqual(
+                status_ro_only, 403,
+                f"BUG-10: ro_admin without ui_access should be denied UI login "
+                f"({{[ui],read}}), got status={status_ro_only} content={content_ro_only}",
+            )
+
+            _, content_ro_ui, resp_ro_ui = self.rest._http_request(
+                uilogin_api, "POST",
+                urllib.parse.urlencode({"user": ro_ui_user, "password": ro_ui_password}),
+            )
+            status_ro_ui = self.jwt_utils.status_code(resp_ro_ui)
+            self.jwt_utils.assert_success_status(
+                status_ro_ui,
+                f"BUG-10: ro_admin WITH ui_access should be allowed UI login "
+                f"({{[ui],read}}), got status={status_ro_ui} content={content_ro_ui}",
+            )
+        finally:
+            self.rest.delete_builtin_user(ro_only_user)
+            self.rest.delete_builtin_user(ro_ui_user)
+
     def test_jwt_rbac_role_update_reflection(self):
         """
         Test that updating RBAC group roles reflects in subsequent authorization.
@@ -1069,6 +1278,8 @@ class JWTTokenTest(OnPremBaseTest):
         - Expiry claims: missing_exp | exp_boundary_before | exp_boundary_at | exp_boundary_after | exp_boundary_just_expired
         - Not Before claims: nbf_boundary_at | nbf_boundary_just_future
         - Audience strict mode: all_audiences_required_missing_one
+        - expiryLeewayS: expiry_leeway_config_max_301_rejected | expiry_leeway_default_boundary_at |
+          expiry_leeway_zero_reject | expiry_leeway_max_accept | expiry_leeway_max_reject
         """
         verify_cli = self.input.param("verify_cli", True)
         expected_auth = self.input.param("expected_jwt_auth", False)
@@ -1211,12 +1422,95 @@ class JWTTokenTest(OnPremBaseTest):
             }
             token = self._create_signed_token_from_payload(payload)
 
+        elif claim == "expiry_leeway_config_max_301_rejected":
+            # expiryLeewayS max is 300 -- 301 must be a clean config-time 400,
+            # not a token-driven check, so this branch returns early.
+            invalid_config = self._get_jwt_config()
+            invalid_config["issuers"][0]["expiryLeewayS"] = 301
+            status, content = self.jwt_utils.put_jwt_config(self.rest, invalid_config)
+            self.assertEqual(
+                int(status) if status else 0, 400,
+                f"expiryLeewayS=301 (above the max of 300) should be rejected, "
+                f"got status={status} content={content}",
+            )
+            return
+
+        elif claim == "expiry_leeway_default_boundary_at":
+            # Server default is 15s; use 14s not exactly 15 -- the exact edge
+            # raced validate_jwt_expectations' sequential REST calls (200 -> 401).
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time - 14,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "expiry_leeway_zero_reject":
+            leeway_config = self._get_jwt_config()
+            leeway_config["issuers"][0]["expiryLeewayS"] = 0
+            self._setup_jwt_config(leeway_config, create_groups=False)
+            # Recompute curr_time -- the re-PUT's ~10s "wait for effect"
+            # sleep would otherwise stale the "expired N seconds ago" offset.
+            curr_time = int(time.time())
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time - 1,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "expiry_leeway_max_accept":
+            leeway_config = self._get_jwt_config()
+            leeway_config["issuers"][0]["expiryLeewayS"] = 300
+            self._setup_jwt_config(leeway_config, create_groups=False)
+            curr_time = int(time.time())
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time - 290,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "expiry_leeway_max_reject":
+            leeway_config = self._get_jwt_config()
+            leeway_config["issuers"][0]["expiryLeewayS"] = 300
+            self._setup_jwt_config(leeway_config, create_groups=False)
+            curr_time = int(time.time())
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time - 310,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
         else:
             self.fail(
                 f"Unknown claim={claim}. "
                 "Use: missing_issuer|wrong_issuer|missing_audience|wrong_audience|invalid_nbf|"
                 "missing_exp|exp_boundary_before|exp_boundary_at|exp_boundary_after|exp_boundary_just_expired|"
-                "nbf_boundary_at|nbf_boundary_just_future|all_audiences_required_missing_one"
+                "nbf_boundary_at|nbf_boundary_just_future|all_audiences_required_missing_one|"
+                "expiry_leeway_config_max_301_rejected|expiry_leeway_default_boundary_at|"
+                "expiry_leeway_zero_reject|expiry_leeway_max_accept|expiry_leeway_max_reject"
             )
 
         try:
@@ -2895,6 +3189,13 @@ class JWTTokenTest(OnPremBaseTest):
     def test_jwt_mapping_stop_on_first_match(self):
         """
         Validate stop-on-first-match behavior for ordered group mapping rules.
+
+        Also covers: a rule that *matches* but whose mapped result is
+        *rejected* (nonexistent group/role, or an over-length username) must
+        not fall through to a later rule. Before that fix, "stop on first
+        match" actually stopped at the first rule whose result validated,
+        silently skipping a matched-but-invalid rule in favor of a later one
+        it never should have reached.
         """
         issuer_name = self.input.param("stop_first_issuer_name", "manual-stop-first-issuer")
         user_name = self.input.param("stop_first_user_name", "stop_first_user@example.com")
@@ -2905,8 +3206,19 @@ class JWTTokenTest(OnPremBaseTest):
             "groups_stop_on_first_match_field", "groupsMapsStopFirstMatch"
         )
 
+        # A group that is never created (rule 1's target, always "matches
+        # but invalid") and one that is (rule 2's target, must not be granted).
+        ghost_group = f"jwt_stop_ghost_{uuid.uuid4().hex[:8]}"
+        real_group = f"jwt_stop_real_{uuid.uuid4().hex[:8]}"
+        fallthrough_user = f"stop_first_fallthrough_{uuid.uuid4().hex[:8]}@example.com"
+        collecting_user = f"stop_first_collecting_{uuid.uuid4().hex[:8]}@example.com"
+
+        submaps_issuer_name = f"{issuer_name}-submaps"
+        submaps_user = "a" * 122
+
         self._create_group(group_ro, roles="ro_admin")
         self._create_group(group_admin, roles="admin")
+        self._create_group(real_group, roles="ro_admin")
 
         config = {
             "enabled": True,
@@ -2968,10 +3280,146 @@ class JWTTokenTest(OnPremBaseTest):
                 endpoint=jwt_utils.ENDPOINT_SETTINGS_JWT,
                 expected_status_code=False,
             )
+
+            # Rule 1 matches but is invalid (nonexistent group); stopFirstMatch=true
+            # must drop the value entirely, not fall through to rule 2's real group.
+            self.jwt_utils.delete_external_user(self.rest, fallthrough_user)
+            fallthrough_config = {
+                "enabled": True,
+                "issuers": [{
+                    "name": issuer_name,
+                    "signingAlgorithm": self.algorithm,
+                    "publicKeySource": "pem",
+                    "publicKey": self.pub_key,
+                    "subClaim": "sub",
+                    "audClaim": "aud",
+                    "groupsClaim": "groups",
+                    "audienceHandling": "any",
+                    "audiences": [audience],
+                    "jitProvisioning": True,
+                    "groupsMaps": [
+                        f"^eng$ {ghost_group}",
+                        f"^eng$ {real_group}",
+                    ],
+                    "groupsMapsStopFirstMatch": True,
+                }],
+            }
+            self._setup_jwt_config(fallthrough_config, create_groups=False)
+
+            fallthrough_token = self.jwt_utils.create_token(
+                issuer_name=issuer_name,
+                user_name=fallthrough_user,
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=audience,
+                user_groups=["eng"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+            )
+            fallthrough_whoami = self.jwt_utils.get_user_info_from_whoami(
+                self.rest, fallthrough_token
+            )
+            self.assertTrue(
+                fallthrough_whoami,
+                "Expected /whoami JSON for MB-73325 fallthrough-guard token",
+            )
+            fallthrough_roles = [
+                r.get("role") for r in (fallthrough_whoami.get("roles") or [])
+                if isinstance(r, dict)
+            ]
+            self.assertNotIn(
+                "ro_admin",
+                fallthrough_roles,
+                "MB-73325 regression: rule 1 matched 'eng' but its target group "
+                f"doesn't exist, yet rule 2's real group was granted anyway. "
+                f"roles={fallthrough_roles}",
+            )
+
+            # --- Collecting mode (stopFirstMatch=false) is unaffected: rule 2
+            # still contributes independently even though rule 1 (for the
+            # same value) is rejected. ---
+            self.jwt_utils.delete_external_user(self.rest, collecting_user)
+            collecting_config = dict(fallthrough_config)
+            collecting_config["issuers"] = [
+                {**fallthrough_config["issuers"][0], "groupsMapsStopFirstMatch": False}
+            ]
+            self._setup_jwt_config(collecting_config, create_groups=False)
+
+            collecting_token = self.jwt_utils.create_token(
+                issuer_name=issuer_name,
+                user_name=collecting_user,
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=audience,
+                user_groups=["eng"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+            )
+            collecting_whoami = self.jwt_utils.get_user_info_from_whoami(
+                self.rest, collecting_token
+            )
+            self.assertTrue(
+                collecting_whoami,
+                "Expected /whoami JSON for collecting-mode token",
+            )
+            collecting_roles = [
+                r.get("role") for r in (collecting_whoami.get("roles") or [])
+                if isinstance(r, dict)
+            ]
+            self.assertIn(
+                "ro_admin",
+                collecting_roles,
+                "Collecting mode (stopFirstMatch=false) must still apply rule 2's "
+                f"grant even though rule 1 (same value) was rejected. "
+                f"roles={collecting_roles}",
+            )
+
+            # Same idea for subMaps: rule 1 maps the subject to an over-length
+            # (>128 char) username; auth must fail, not fall back to rule 2's raw identity.
+            self.jwt_utils.delete_external_user(self.rest, submaps_user)
+            submaps_config = {
+                "enabled": True,
+                "issuers": [{
+                    "name": submaps_issuer_name,
+                    "signingAlgorithm": self.algorithm,
+                    "publicKeySource": "pem",
+                    "publicKey": self.pub_key,
+                    "subClaim": "sub",
+                    "audClaim": "aud",
+                    "audienceHandling": "any",
+                    "audiences": [audience],
+                    "jitProvisioning": True,
+                    "subMaps": [
+                        "^(.*)$ cbuser-\\1",
+                        "^(.*)$ \\1",
+                    ],
+                }],
+            }
+            self._setup_jwt_config(submaps_config, create_groups=False)
+
+            submaps_token = self.jwt_utils.create_token(
+                issuer_name=submaps_issuer_name,
+                user_name=submaps_user,
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=audience,
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+            )
+            self.jwt_utils.verify_token_authentication(
+                self.rest, submaps_token, expected_status_code=401
+            )
         finally:
             self.jwt_utils.delete_external_user(self.rest, user_name)
+            self.jwt_utils.delete_external_user(self.rest, fallthrough_user)
+            self.jwt_utils.delete_external_user(self.rest, collecting_user)
+            self.jwt_utils.delete_external_user(self.rest, submaps_user)
             self._delete_group(group_ro)
             self._delete_group(group_admin)
+            self._delete_group(real_group)
 
     def test_jwt_custom_claims_validation(self):
         """
@@ -2979,6 +3427,15 @@ class JWTTokenTest(OnPremBaseTest):
 
         Covers string pattern, number min/max, boolean const, array, object,
         and mandatory claim rejection.
+
+        Also covers custom-claim gaps: `enum` on a number claim, including
+        float/int equivalence (2.0 must match enum:[1,2,3] the same as 2); an
+        optional (mandatory:false) claim that's absent must silently pass, not
+        fail like a missing mandatory one; a nested dot-path claim name
+        (`profile.region`) must resolve against the nested JWT payload; and an
+        empty array `[]` must be accepted (presence-only check, no non-empty
+        requirement — a deliberate review-discussion resolution, not the
+        ticket's original literal wording).
         """
         issuer_name = self.input.param("custom_claims_issuer_name", "manual-custom-claims-issuer")
         user_name = self.input.param("custom_claims_user_name", "custom_claims_user@example.com")
@@ -3038,6 +3495,28 @@ class JWTTokenTest(OnPremBaseTest):
                         "type": "object",
                         "mandatory": True,
                     },
+                    # Enum on an optional number claim, separate from
+                    # access_level's min/max.
+                    {
+                        "name": "clearance_level",
+                        "type": "number",
+                        "enum": [1, 2, 3],
+                        "mandatory": False,
+                    },
+                    # Nested dot-path claim, resolved against the same
+                    # nested `profile` object above.
+                    {
+                        "name": "profile.region",
+                        "type": "string",
+                        "pattern": "^(us|eu|apac)$",
+                        "mandatory": False,
+                    },
+                    # Optional array claim; empty array must be accepted.
+                    {
+                        "name": "permissions",
+                        "type": "array",
+                        "mandatory": False,
+                    },
                 ],
             }],
         }
@@ -3056,7 +3535,9 @@ class JWTTokenTest(OnPremBaseTest):
                 "access_level": 3,
                 "is_admin": True,
                 "project_tags": ["security", "jwt"],
-                "profile": {"team": "security", "active": True},
+                "profile": {"team": "security", "active": True, "region": "us"},
+                "clearance_level": 2,
+                "permissions": ["read", "write"],
             }
             for key, value in overrides.items():
                 if value is None:
@@ -3090,6 +3571,13 @@ class JWTTokenTest(OnPremBaseTest):
                 "object_wrong_type": _payload(profile="security"),
                 "missing_mandatory_array": _payload(project_tags=None),
                 "missing_mandatory_object": _payload(profile=None),
+                # Value outside the enum -> rejected, same as min/max.
+                "number_enum_mismatch": _payload(clearance_level=5),
+                # A nested dot-path claim that doesn't match its pattern
+                # must still be rejected, same as a top-level one.
+                "nested_claim_pattern_mismatch": _payload(
+                    profile={"team": "security", "active": True, "region": "invalid-region"}
+                ),
             }
             for name, payload in invalid_cases.items():
                 self.log.info(f"Testing custom claim rejection: {name}")
@@ -3099,6 +3587,332 @@ class JWTTokenTest(OnPremBaseTest):
                     status,
                     f"Invalid custom claim case '{name}' should be rejected. status={status}",
                 )
+
+            # Enum float/int equivalence — 2.0 must match enum:[1,2,3] the
+            # same way 2 does.
+            enum_float_token = self._create_signed_token_from_payload(
+                _payload(clearance_level=2.0)
+            )
+            enum_float_whoami = self.jwt_utils.get_user_info_from_whoami(
+                self.rest, enum_float_token
+            )
+            self.assertTrue(
+                enum_float_whoami,
+                "MB-66505: clearance_level=2.0 should satisfy enum:[1,2,3] "
+                "the same way the integer 2 does",
+            )
+
+            # An absent optional claim must still authenticate, not be
+            # treated like a missing mandatory one.
+            optional_absent_token = self._create_signed_token_from_payload(
+                _payload(clearance_level=None)
+            )
+            optional_absent_whoami = self.jwt_utils.get_user_info_from_whoami(
+                self.rest, optional_absent_token
+            )
+            self.assertTrue(
+                optional_absent_whoami,
+                "MB-66505: an absent optional custom claim must not fail auth",
+            )
+
+            # An empty array must be accepted (presence-only check, no
+            # non-empty requirement).
+            empty_array_token = self._create_signed_token_from_payload(
+                _payload(permissions=[])
+            )
+            empty_array_whoami = self.jwt_utils.get_user_info_from_whoami(
+                self.rest, empty_array_token
+            )
+            self.assertTrue(
+                empty_array_whoami,
+                "MB-66505: an empty array custom claim value must be accepted",
+            )
         finally:
             self.jwt_utils.delete_external_user(self.rest, user_name)
+
+    def test_jwt_audit_events(self):
+        """
+        Audit correctness sweep for JWT.
+
+        One audit-enabled fixture, several triggering requests, one log-reading
+        helper (crl_utils.get_audit_event / audit_keyword_count) reused
+        throughout -- all of these are "what does current-audit.log actually
+        contain after a JWT-related REST call", differing only in which call
+        and which field:
+
+        - PUT /settings/jwt produces a "modify JWT configuration" (8284) event.
+        - JWT bearer success, a bad-signature failure, an expired token, and a
+          wrong-audience (claim-mismatch-shaped) failure all produce *no*
+          login success/failure (8192/8193) event -- a real, pre-existing
+          gap, guarded here so it doesn't silently start or stop happening.
+        - An "access forbidden" (8275) event for a JWT-authenticated but
+          under-privileged write renders array-valued claims (groups, aud) as
+          genuine JSON arrays, not concatenated strings -- checked for both a
+          two-element and a single-element array.
+        """
+        self._set_audit_enabled(True)
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        group_name = f"jwt_audit_ro_{uuid.uuid4().hex[:8]}"
+        try:
+            self._create_group(group_name, roles="ro_admin")
+
+            # A plain config PUT must produce a fresh audit event.
+            before_8284 = audit_keyword_count(
+                shell, self.AUDIT_LOG_PATH, '"id":8284,', lines=2000
+            )
+            group_maps = [f"^auditors$ {group_name}"]
+            config = self.jwt_utils.get_jwt_config(
+                issuer_name=self.issuer_name,
+                algorithm=self.algorithm,
+                pub_key=self.pub_key,
+                token_audience=self.token_audience,
+                token_group_matching_rule=group_maps,
+                jit_provisioning=True,
+            )
+            self._setup_jwt_config(config, create_groups=False)
+            after_8284 = audit_keyword_count(
+                shell, self.AUDIT_LOG_PATH, '"id":8284,', lines=2000
+            )
+            self.assertGreater(
+                after_8284, before_8284,
+                "AL-1: expected a new 'modify JWT configuration' (8284) audit "
+                "event after PUT /settings/jwt",
+            )
+            config_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8284)
+            self.assertIsNotNone(config_event, "AL-1: no 8284 audit event found")
+
+            # JWT bearer success must not audit a login-success event --
+            # documented gap, guarded here.
+            user = f"jwt_audit_user_{uuid.uuid4().hex[:8]}"
+            token = self.create_token(user_name=user, user_groups=["auditors"])
+            before_8192 = audit_keyword_count(
+                shell, self.AUDIT_LOG_PATH, '"id":8192,', lines=2000
+            )
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertTrue(whoami, "AL-2 setup: JWT bearer request should succeed")
+            after_8192 = audit_keyword_count(
+                shell, self.AUDIT_LOG_PATH, '"id":8192,', lines=2000
+            )
+            self.assertEqual(
+                after_8192, before_8192,
+                "AL-2: JWT bearer success unexpectedly produced a login "
+                "success (8192) audit event -- gap-guard regressed",
+            )
+
+            # JWT bearer failures (bad sig/expired/wrong aud) must not audit
+            # a login-failure event either.
+            before_8193 = audit_keyword_count(
+                shell, self.AUDIT_LOG_PATH, '"id":8193,', lines=2000
+            )
+
+            tampered_token = self.jwt_utils.build_tampered_payload_token(
+                token, {"tamper": "al3"}
+            )
+            _, status_tampered, _ = self.jwt_utils.request_with_jwt(
+                self.rest, tampered_token, jwt_utils.ENDPOINT_WHOAMI, method="GET"
+            )
+            self.assertEqual(
+                int(status_tampered) if status_tampered else 0, 401,
+                f"AL-3 setup: tampered-signature token should be 401, got "
+                f"{status_tampered}",
+            )
+
+            expired_token = self.create_token(user_name=user, ttl=-60)
+            _, status_expired, _ = self.jwt_utils.request_with_jwt(
+                self.rest, expired_token, jwt_utils.ENDPOINT_WHOAMI, method="GET"
+            )
+            self.assertEqual(
+                int(status_expired) if status_expired else 0, 401,
+                f"AL-4 setup: expired token should be 401, got {status_expired}",
+            )
+
+            wrong_aud_token = self.create_token(user_name=user, audience="al5-wrong-audience")
+            _, status_wrong_aud, _ = self.jwt_utils.request_with_jwt(
+                self.rest, wrong_aud_token, jwt_utils.ENDPOINT_WHOAMI, method="GET"
+            )
+            self.assertEqual(
+                int(status_wrong_aud) if status_wrong_aud else 0, 401,
+                f"AL-5 setup: wrong-audience token should be 401, got "
+                f"{status_wrong_aud}",
+            )
+
+            after_8193 = audit_keyword_count(
+                shell, self.AUDIT_LOG_PATH, '"id":8193,', lines=2000
+            )
+            self.assertEqual(
+                after_8193, before_8193,
+                "AL-3/AL-4/AL-5: JWT bearer failures unexpectedly produced a "
+                "login failure (8193) audit event -- gap-guard regressed",
+            )
+
+            # Array-valued claims (groups, aud) must render as genuine JSON
+            # arrays in the audit event, not concatenated strings.
+            multi_groups = ["decoy-group", "auditors"]
+            multi_aud = [self.token_audience[0], "mb73360-decoy-aud"]
+            multi_token = self.jwt_utils.create_token(
+                issuer_name=self.issuer_name,
+                user_name=f"jwt_audit_multi_{uuid.uuid4().hex[:8]}",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=multi_aud,
+                user_groups=multi_groups,
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=False,
+            )
+            _, status_multi, _ = self.jwt_utils.request_with_jwt(
+                self.rest, multi_token, jwt_utils.ENDPOINT_SETTINGS_WEB, method="POST",
+                params="username=jwt_audit_probe&password=testpass123&port=8091",
+            )
+            self.assertIn(
+                int(status_multi) if status_multi else 0, [401, 403],
+                f"MB-73360 setup: ro_admin write should be denied, got {status_multi}",
+            )
+            multi_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8275)
+            self.assertIsNotNone(multi_event, "MB-73360: no 8275 audit event found")
+            self.assertEqual(
+                multi_event.get("groups"), multi_groups,
+                f"MB-73360: expected 'groups' to render as the genuine array "
+                f"{multi_groups}, got {multi_event.get('groups')!r}",
+            )
+            self.assertEqual(
+                multi_event.get("aud"), multi_aud,
+                f"MB-73360: expected 'aud' to render as the genuine array "
+                f"{multi_aud}, got {multi_event.get('aud')!r}",
+            )
+
+            # Single-element array variant: still a list of one, not
+            # degenerated to a bare string.
+            single_groups = ["auditors"]
+            single_aud = [self.token_audience[0]]
+            single_token = self.jwt_utils.create_token(
+                issuer_name=self.issuer_name,
+                user_name=f"jwt_audit_single_{uuid.uuid4().hex[:8]}",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=single_aud,
+                user_groups=single_groups,
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=False,
+            )
+            _, status_single, _ = self.jwt_utils.request_with_jwt(
+                self.rest, single_token, jwt_utils.ENDPOINT_SETTINGS_WEB, method="POST",
+                params="username=jwt_audit_probe2&password=testpass123&port=8091",
+            )
+            self.assertIn(
+                int(status_single) if status_single else 0, [401, 403],
+                f"MB-73360 setup: ro_admin write should be denied, got {status_single}",
+            )
+            single_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8275)
+            self.assertIsNotNone(single_event, "MB-73360: no 8275 audit event found")
+            self.assertEqual(
+                single_event.get("groups"), single_groups,
+                f"MB-73360: expected a single-element array {single_groups}, not "
+                f"a bare string, got {single_event.get('groups')!r}",
+            )
+            self.assertEqual(
+                single_event.get("aud"), single_aud,
+                f"MB-73360: expected a single-element array {single_aud}, not "
+                f"a bare string, got {single_event.get('aud')!r}",
+            )
+        finally:
+            shell.disconnect()
+            self._delete_group(group_name)
+            self._set_audit_enabled(False)
+
+    @unittest.expectedFailure
+    def test_jwt_reserved_internal_issuer_name(self):
+        """
+        An admin-configured JWT issuer literally named "ns_server" must never
+        grant external JWT users internal-only roles.
+
+        STATUS: open bug, no fix yet. The reserved name "ns_server" is the
+        literal issuer name the internal service issuer uses
+        (jwt_issuer:name()); jwt_auth:map_claim/3's role-scope decision keys
+        only on that name to select the "all" role scope (intended solely for
+        the internal service issuer that signs @fusion/@test tokens).
+        menelaus_web_jwt.erl validates reserved *claim* names but never
+        validates the issuer *name* field against this reserved value, so an
+        admin can today PUT an issuer named "ns_server" with their own
+        sharedSecret and mint tokens that reach internal-only roles
+        (service_admin/metakv2_access/stats_reader) that are otherwise
+        unreachable through any other issuer name.
+
+        This test asserts the SAFE end state, tolerant of either valid fix
+        approach: PUT-time rejection (400) or admin config never reaching the
+        "all" scope (PUT succeeds but roles still resolve empty, same as an
+        external issuer). Marked @unittest.expectedFailure so it fails LOUDLY today
+        (not silently) -- once either fix ships, this test unexpectedly
+        PASSES (reported as "unexpected success" by unittest), which is the
+        signal to remove the decorator and keep this as a permanent
+        regression guard.
+
+        NOTE: transiently shadows the real internal service issuer while the
+        reserved name is configured (an EdDSA-signed internal token would be
+        validated against this test's HS256 config instead) -- keep the
+        window tiny, always DELETE /settings/jwt in `finally`, and this is
+        the one test in the suite meant to run against an isolated
+        single-node setup (nodes_init=1) rather than the shared cluster.
+        """
+        reserved_name = "ns_server"
+        shared_secret = "int2-reserved-issuer-probe-" + uuid.uuid4().hex
+        audience = self.token_audience[0] if isinstance(self.token_audience, list) else self.token_audience
+        config = {
+            "enabled": True,
+            "issuers": [{
+                "name": reserved_name,
+                "signingAlgorithm": "HS256",
+                "sharedSecret": shared_secret,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "audienceHandling": "any",
+                "audiences": [audience],
+                "jitProvisioning": True,
+                "rolesClaim": "roles",
+            }],
+        }
+        try:
+            status, content = self.jwt_utils.put_jwt_config(self.rest, config)
+            put_status = int(status) if status else 0
+            if put_status == 400:
+                # Fixed via PUT-time rejection of the reserved name -- safe,
+                # nothing further to check.
+                return
+
+            self.assertEqual(
+                int(status) if status else 0, 200,
+                f"INT-2 setup: unexpected PUT status for reserved issuer name "
+                f"'{reserved_name}': {status} content={content}",
+            )
+            self.sleep(10, "Waiting for JWT config to take effect")
+
+            curr_time = int(time.time())
+            payload = {
+                "iss": reserved_name,
+                "sub": f"int2_user_{uuid.uuid4().hex[:8]}",
+                "aud": audience,
+                "exp": curr_time + self.ttl,
+                "iat": curr_time,
+                "nbf": curr_time + self.nbf_seconds,
+                "jti": str(uuid.uuid4()),
+                "roles": ["metakv2_access"],
+            }
+            token = jwt.encode(payload=payload, algorithm="HS256", key=shared_secret)
+
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertTrue(
+                whoami is not None,
+                "INT-2: expected a 200 /whoami response for the reserved-name "
+                "issuer token",
+            )
+            granted_roles = whoami.get("roles") or []
+            self.assertEqual(
+                granted_roles, [],
+                f"INT-2: an issuer named '{reserved_name}' must not grant "
+                f"internal-only roles to an external JWT user, even if the PUT "
+                f"itself succeeds. got roles={granted_roles}",
+            )
+        finally:
+            self._disable_jwt()
 

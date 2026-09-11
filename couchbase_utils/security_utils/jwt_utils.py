@@ -31,6 +31,7 @@ ENDPOINT_SETTINGS_WEB = "/settings/web"
 # Call .format(realm=...) or .format(realm=..., component_id=...) before use.
 # Build full URL as: f"{scheme}://{ip}:{port}{KC_PATH_TOKEN.format(realm=realm)}"
 KC_PATH_REALM = "/realms/{realm}"
+KC_PATH_AUTH = "/realms/{realm}/protocol/openid-connect/auth"
 KC_PATH_TOKEN = "/realms/{realm}/protocol/openid-connect/token"
 KC_PATH_JWKS = "/realms/{realm}/protocol/openid-connect/certs"
 KC_PATH_DISCOVERY = "/realms/{realm}/.well-known/openid-configuration"
@@ -1783,6 +1784,114 @@ class JWTUtils:
 
         if self.log:
             self.log.info(f"Building OIDC JWT config for issuer: {issuer_name}")
+
+        return {"enabled": True, "issuers": [issuer]}
+
+    def get_manual_oidc_jwt_config(
+        self,
+        keycloak_ip,
+        keycloak_port,
+        keycloak_realm,
+        client_id,
+        client_secret,
+        cluster_master_ip,
+        cluster_port=8091,
+        cluster_use_https=False,
+        algorithm="RS384",
+        sub_claim="preferred_username",
+        aud_claim="azp",
+        roles_claim=None,
+        jit_provisioning=False,
+        tls_verify_peer=False,
+        pkce_enabled=True,
+        nonce_validation=True,
+        disable_par=True,
+        scopes=None,
+        use_https=True,
+        expiry_leeway_s=None,
+        display_name=None,
+        omit_authorization_endpoint=False,
+        omit_token_endpoint=False,
+        also_set_discovery_uri=False,
+    ):
+        """
+        Build JWT configuration with manual (non-discovery) OIDC endpoints --
+        endpointSource="manual" with explicit authorizationEndpoint/tokenEndpoint,
+        the counterpart to get_oidc_jwt_config()'s discovery-mode builder.
+
+        Args:
+            (same as get_oidc_jwt_config, plus:)
+            omit_authorization_endpoint: build the config without authorizationEndpoint
+                (for the M1 negative case: 400 when it's missing)
+            omit_token_endpoint: build the config without tokenEndpoint
+                (for the M2 negative case: 400 when it's missing)
+            also_set_discovery_uri: also set oidcDiscoveryUri alongside the manual
+                endpoints (for the M4 negative case: discovery+manual conflict -> 400)
+
+        Returns:
+            dict: JWT configuration with manual OIDC endpoint settings
+        """
+        scheme = "https" if use_https else "http"
+        keycloak_base = f"{scheme}://{keycloak_ip}:{keycloak_port}"
+        issuer_name = f"{keycloak_base}{KC_PATH_REALM.format(realm=keycloak_realm)}"
+
+        if scopes is None:
+            scopes = ["openid", "profile", "email"]
+
+        if display_name is None:
+            display_name = keycloak_realm
+
+        oidc_settings = {
+            "clientId": client_id,
+            "clientSecret": client_secret,
+            "baseRedirectUris": [
+                f"{'https' if cluster_use_https else 'http'}://{cluster_master_ip}:{cluster_port}/"
+            ],
+            "endpointSource": "manual",
+            "scopes": scopes,
+            "pkceEnabled": pkce_enabled,
+            "nonceValidation": nonce_validation,
+            "disablePushedAuthorizationRequests": disable_par,
+            "tlsVerifyPeer": tls_verify_peer,
+        }
+        if not omit_authorization_endpoint:
+            oidc_settings["authorizationEndpoint"] = (
+                f"{keycloak_base}{KC_PATH_AUTH.format(realm=keycloak_realm)}"
+            )
+        if not omit_token_endpoint:
+            oidc_settings["tokenEndpoint"] = (
+                f"{keycloak_base}{KC_PATH_TOKEN.format(realm=keycloak_realm)}"
+            )
+        if also_set_discovery_uri:
+            oidc_settings["oidcDiscoveryUri"] = (
+                f"{keycloak_base}{KC_PATH_DISCOVERY.format(realm=keycloak_realm)}"
+            )
+
+        issuer = {
+            "name": issuer_name,
+            "displayName": display_name,
+            "signingAlgorithm": algorithm,
+            # Manual mode has no discovery to auto-fill this, so point
+            # jwksUri at Keycloak's certs endpoint directly.
+            "publicKeySource": "jwks_uri",
+            "jwksUri": f"{keycloak_base}{KC_PATH_JWKS.format(realm=keycloak_realm)}",
+            "jwksUriTlsVerifyPeer": tls_verify_peer,
+            "subClaim": sub_claim,
+            "audClaim": aud_claim,
+            "audienceHandling": "any",
+            "audiences": [client_id],
+            "jitProvisioning": jit_provisioning,
+            "oidcSettings": oidc_settings,
+        }
+
+        if roles_claim:
+            issuer["rolesClaim"] = roles_claim
+
+        if expiry_leeway_s is not None:
+            issuer["expiryLeewayS"] = expiry_leeway_s
+
+        if self.log:
+            self.log.info(f"Building manual-mode OIDC JWT config for issuer: {issuer_name}")
 
         return {"enabled": True, "issuers": [issuer]}
 

@@ -321,6 +321,33 @@ class JWTOIDCBase(ClusterSetup):
             display_name=overrides.get("display_name"),
         )
 
+    def _get_manual_oidc_jwt_config(self, **overrides):
+        """Build manual-mode (non-discovery) OIDC JWT config using test instance defaults."""
+        return self.jwt_utils.get_manual_oidc_jwt_config(
+            keycloak_ip=overrides.get("keycloak_ip", self.keycloak_ip),
+            keycloak_port=overrides.get("keycloak_port", self.keycloak_port),
+            keycloak_realm=overrides.get("keycloak_realm", self.keycloak_realm),
+            client_id=overrides.get("client_id", self.keycloak_client_id),
+            client_secret=overrides.get("client_secret", self.keycloak_client_secret),
+            cluster_master_ip=overrides.get("cluster_master_ip", self.cluster_master_ip),
+            cluster_port=overrides.get("cluster_port", self.cluster_port),
+            cluster_use_https=overrides.get("cluster_use_https", self.cluster_use_https),
+            algorithm=overrides.get("algorithm", self.keycloak_algorithm),
+            sub_claim=overrides.get("sub_claim", self.sub_claim),
+            aud_claim=overrides.get("aud_claim", self.aud_claim),
+            roles_claim=overrides.get("roles_claim", self.roles_claim),
+            jit_provisioning=overrides.get("jit_provisioning", self.jit_provisioning),
+            tls_verify_peer=overrides.get("tls_verify_peer", self.keycloak_tls_verify),
+            pkce_enabled=overrides.get("pkce_enabled", self.pkce_enabled),
+            nonce_validation=overrides.get("nonce_validation", self.nonce_validation),
+            use_https=overrides.get("use_https", self.keycloak_use_https),
+            expiry_leeway_s=overrides.get("expiry_leeway_s"),
+            display_name=overrides.get("display_name"),
+            omit_authorization_endpoint=overrides.get("omit_authorization_endpoint", False),
+            omit_token_endpoint=overrides.get("omit_token_endpoint", False),
+            also_set_discovery_uri=overrides.get("also_set_discovery_uri", False),
+        )
+
     def _enable_oidc_config(self, sleep_seconds=10, **overrides):
         """PUT OIDC JWT config and wait for it to take effect."""
         config = self._get_oidc_jwt_config(**overrides)

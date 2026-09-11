@@ -1,3 +1,5 @@
+import base64
+import json
 import time
 import urllib.parse
 import uuid
@@ -214,6 +216,74 @@ class JWTOIDCTest(JWTOIDCBase):
             self.log.info("Redirect uses JAR (JWT Secured Authorization Request) format")
         self.log.info("OIDC redirect flow validated with required parameters")
 
+        # Flipping tlsVerifyPeer false->true on the same issuer must not
+        # reuse a pooled connection — must reject the self-signed cert.
+        self._enable_oidc_config(tls_verify_peer=True)
+
+        result_strict = self.jwt_utils.validate_oidc_redirect_flow(
+            cluster_master_ip=self.cluster_master_ip,
+            cluster_port=self.cluster.master.port,
+            issuer_url=self.issuer_url,
+            keycloak_ip=self.keycloak_ip,
+            couchbase_use_https=self.cluster_use_https,
+            keycloak_use_https=self.keycloak_use_https,
+        )
+        self.log.info(f"OIDC redirect result (tlsVerifyPeer=True): {result_strict}")
+
+        self.assertEqual(
+            result_strict["redirect_status"],
+            302,
+            f"Expected a 302 redirect even on TLS rejection (server bounces to the UI "
+            f"error page), got {result_strict['redirect_status']}",
+        )
+        self.assertIn(
+            "oidcError=login_failed",
+            result_strict["redirect_location"],
+            f"MB-72541: tlsVerifyPeer=true against a self-signed cert must fail the "
+            f"redirect with oidcError=login_failed, got location="
+            f"{result_strict['redirect_location']!r}",
+        )
+        self.assertNotIn(
+            "request_uri=",
+            result_strict["redirect_location"],
+            f"MB-72541: a successful PAR redirect (request_uri=) here would mean a "
+            f"pooled insecure connection from the tlsVerifyPeer=false config was "
+            f"silently reused instead of enforcing the new setting. location="
+            f"{result_strict['redirect_location']!r}",
+        )
+
+        # Flip back to false on the identical issuer: confirm the profile
+        # recovers cleanly rather than staying permanently wedged.
+        self._enable_oidc_config(tls_verify_peer=False)
+
+        result_recovered = self.jwt_utils.validate_oidc_redirect_flow(
+            cluster_master_ip=self.cluster_master_ip,
+            cluster_port=self.cluster.master.port,
+            issuer_url=self.issuer_url,
+            keycloak_ip=self.keycloak_ip,
+            couchbase_use_https=self.cluster_use_https,
+            keycloak_use_https=self.keycloak_use_https,
+        )
+        self.log.info(f"OIDC redirect result (recovered, tlsVerifyPeer=False): {result_recovered}")
+
+        self.assertEqual(
+            result_recovered["redirect_status"],
+            302,
+            f"Expected 302 redirect after recovering to tlsVerifyPeer=false, got "
+            f"{result_recovered['redirect_status']}",
+        )
+        self.assertTrue(
+            result_recovered["redirects_to_keycloak"],
+            f"MB-72541: profile must recover after flipping back to tlsVerifyPeer=false, "
+            f"not stay wedged. Location: {result_recovered['redirect_location']}",
+        )
+        self.assertNotIn(
+            "oidcError=login_failed",
+            result_recovered["redirect_location"],
+            f"Expected a successful redirect after recovery, got "
+            f"{result_recovered['redirect_location']!r}",
+        )
+
 
     def test_oidc_external_readonly_user(self):
         """
@@ -407,6 +477,56 @@ class JWTOIDCTest(JWTOIDCBase):
 
         self.log.info("Sensitive fields properly masked and PUT preserves secret")
 
+        # A masked placeholder for an issuer with no prior secret must be
+        # rejected, not stored as a literal secret.
+        new_issuer_config = self._get_oidc_jwt_config()
+        new_issuer_config["issuers"][0]["name"] = f"{self.issuer_url}-mb71599-new"
+        new_issuer_config["issuers"][0]["oidcSettings"]["clientSecret"] = "********"
+        status_new, content_new = self.jwt_utils.put_jwt_config(self.rest, new_issuer_config)
+        self.assertEqual(
+            int(status_new) if status_new else 0, 400,
+            f"MB-71599: masked placeholder for a brand-new issuer (no prior secret) "
+            f"must be rejected, got status={status_new} content={content_new}",
+        )
+        self.assertIn(
+            "no existing value to keep", str(content_new),
+            f"MB-71599: expected the 'no existing value to keep' reason, got {content_new!r}",
+        )
+        self.log.info("MB-71599: masked placeholder for a brand-new issuer correctly rejected")
+
+        # Matching is by issuer name — renaming in the same PUT breaks the match.
+        renamed_config = json.loads(json.dumps(get_content))
+        renamed_config["issuers"][0]["name"] = f"{self.issuer_url}-mb71599-renamed"
+        renamed_config["issuers"][0]["oidcSettings"]["clientSecret"] = "********"
+        status_renamed, content_renamed = self.jwt_utils.put_jwt_config(self.rest, renamed_config)
+        self.assertEqual(
+            int(status_renamed) if status_renamed else 0, 400,
+            f"MB-71599: masked placeholder must not survive an issuer rename in the "
+            f"same PUT, got status={status_renamed} content={content_renamed}",
+        )
+        self.log.info("MB-71599: masked placeholder does not survive an issuer rename")
+
+        # DELETE removes the chronicle key entirely; GET after must be 200 default, not 404.
+        delete_api = f"{self.rest.baseUrl}settings/jwt"
+        _ok_delete, _content_delete, resp_delete = self.rest._http_request(delete_api, "DELETE")
+        delete_status = self.jwt_utils.status_code(resp_delete)
+        self.assertEqual(
+            delete_status, 200,
+            f"MB-70783 setup: expected DELETE /settings/jwt to succeed, got {delete_status}",
+        )
+        ok_get, get_status, get_content_raw = self.jwt_utils.get_jwt_config_settings(
+            self.rest, expected_status_code=200
+        )
+        self.assertTrue(
+            ok_get, f"MB-70783: expected 200 on GET after DELETE, got status={get_status}"
+        )
+        parsed_default = self.jwt_utils.parse_jwt_config_content(get_content_raw)
+        self.assertEqual(
+            parsed_default, {"enabled": False, "issuers": []},
+            f"MB-70783: expected default body after DELETE, got {parsed_default}",
+        )
+        self.log.info("MB-70783: GET after DELETE returns 200 with default body, not 404")
+
 
     def test_oidc_invalid_config_rejected(self):
         """
@@ -427,6 +547,34 @@ class JWTOIDCTest(JWTOIDCBase):
 
         config_before = self._get_parsed_jwt_config()
         enabled_before = config_before.get("enabled", False)
+
+        # A discovery-mode config with a manual-mode field intruding.
+        discovery_with_manual_field_config = self._get_oidc_jwt_config()
+        discovery_with_manual_field_config["issuers"][0]["oidcSettings"]["authorizationEndpoint"] = (
+            f"{self.issuer_url}/protocol/openid-connect/auth"
+        )
+
+        # No endpointSource at all, and no discovery/manual fields either --
+        # the original bare-absence repro this field was added to close.
+        bare_absence_config = self._get_manual_oidc_jwt_config(
+            omit_authorization_endpoint=True, omit_token_endpoint=True
+        )
+        del bare_absence_config["issuers"][0]["oidcSettings"]["endpointSource"]
+
+        # Discovery mode missing its own required oidcDiscoveryUri.
+        discovery_missing_uri_config = self._get_oidc_jwt_config()
+        del discovery_missing_uri_config["issuers"][0]["oidcSettings"]["oidcDiscoveryUri"]
+
+        # endpointSource set to a value other than discovery/manual.
+        bogus_endpoint_source_config = self._get_oidc_jwt_config()
+        bogus_endpoint_source_config["issuers"][0]["oidcSettings"]["endpointSource"] = "bogus"
+
+        # authorizationEndpoint explicitly null (not omitted) -- a different
+        # crash site than the nonceValidation/pkceEnabled null rows below.
+        null_authorization_endpoint_config = self._get_manual_oidc_jwt_config(
+            omit_authorization_endpoint=True
+        )
+        null_authorization_endpoint_config["issuers"][0]["oidcSettings"]["authorizationEndpoint"] = None
 
         invalid_cases = [
             {
@@ -494,6 +642,316 @@ class JWTOIDCTest(JWTOIDCBase):
                     }]
                 },
             },
+            # endpointSource omitted with another field present must be a
+            # clean 400, not a 500 crash.
+            {
+                "name": "endpoint_source_omitted_mb72942",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "authorizationEndpoint": "https://example.com/auth",
+                        }
+                    }]
+                },
+                "error_substring": "The value must be supplied",
+            },
+            # A wildcard host in a redirect URI must be rejected (RFC 6749 /
+            # OIDC Core prohibit wildcards in redirect URIs).
+            {
+                "name": "wildcard_redirect_uri_mb72577",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "baseRedirectUris": ["http://*.example.com/"],
+                        }
+                    }]
+                },
+                "error_substring": "Wildcards are not permitted in redirect URIs",
+            },
+            # An explicit null on a boolean-default field must be rejected,
+            # not silently coerced to the default (true).
+            {
+                "name": "nonce_validation_null_mb72557",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "nonceValidation": None,
+                        }
+                    }]
+                },
+                "error_substring": "The value must be one of the following: [true,false]",
+            },
+            {
+                "name": "pkce_enabled_null_mb72026",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "pkceEnabled": None,
+                        }
+                    }]
+                },
+                "error_substring": "The value must be one of the following: [true,false]",
+            },
+            # An unsupported customClaims field (e.g. "value") must be a
+            # clean 400, not a 500 crash.
+            {
+                "name": "custom_claim_unsupported_field_mb72555",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                        },
+                        "customClaims": [{"name": "level", "type": "number", "value": 1}],
+                    }]
+                },
+                "error_substring": "Unsupported key",
+            },
+            # Duplicate scope tokens violate RFC 6749 §3.3 and must be
+            # rejected, not forwarded to the IdP verbatim.
+            {
+                "name": "duplicate_scopes_mb72558",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "scopes": ["openid", "openid", "profile"],
+                        }
+                    }]
+                },
+                "error_substring": "scopes must not contain duplicate values",
+            },
+            # Whitespace inside a scope token must be rejected, not
+            # stored/forwarded as a distinct, unrecognised scope.
+            {
+                "name": "whitespace_in_scope_mb72559",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "scopes": ["openid ", "profile"],
+                        }
+                    }]
+                },
+                "error_substring": "Value must not contain whitespace",
+            },
+            # Manual endpointSource with authorizationEndpoint omitted.
+            {
+                "name": "manual_mode_missing_authorization_endpoint_m1",
+                "config": self._get_manual_oidc_jwt_config(omit_authorization_endpoint=True),
+                "error_substring": "authorizationEndpoint and tokenEndpoint are required "
+                                    "when endpointSource is",
+            },
+            # Manual endpointSource with tokenEndpoint omitted.
+            {
+                "name": "manual_mode_missing_token_endpoint_m2",
+                "config": self._get_manual_oidc_jwt_config(omit_token_endpoint=True),
+                "error_substring": "authorizationEndpoint and tokenEndpoint are required "
+                                    "when endpointSource is",
+            },
+            # Discovery mode with a manual field (authorizationEndpoint)
+            # intruding -- mutual exclusion must be enforced.
+            {
+                "name": "discovery_and_authorization_endpoint_conflict_m4",
+                "config": discovery_with_manual_field_config,
+                "error_substring": "must not be provided when endpointSource is",
+            },
+            # No endpointSource and no other discovery/manual field present at all.
+            {
+                "name": "bare_absence_no_endpoint_source_m3",
+                "config": bare_absence_config,
+                "error_substring": "The value must be supplied",
+            },
+            # Discovery mode missing its own required oidcDiscoveryUri.
+            {
+                "name": "discovery_missing_oidc_discovery_uri_m3",
+                "config": discovery_missing_uri_config,
+                "error_substring": "oidcDiscoveryUri is required when endpointSource is",
+            },
+            # endpointSource set to something other than discovery/manual.
+            {
+                "name": "bogus_endpoint_source_value_m3",
+                "config": bogus_endpoint_source_config,
+                "error_substring": "must be one of the following: [discovery,manual]",
+            },
+            # authorizationEndpoint explicitly null, not omitted.
+            {
+                "name": "authorization_endpoint_null_mb72557",
+                "config": null_authorization_endpoint_config,
+                "error_substring": "Value must be json string",
+            },
+            # Wildcard host in postLogoutRedirectUris, same shared validator
+            # as baseRedirectUris.
+            {
+                "name": "wildcard_post_logout_redirect_uri_mb72577",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "postLogoutRedirectUris": ["http://*.example.com/"],
+                        }
+                    }]
+                },
+                "error_substring": "Wildcards are not permitted in redirect URIs",
+            },
+            # Wildcard in the middle of the host, not just a leading subdomain.
+            {
+                "name": "wildcard_mid_host_redirect_uri_mb72577",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "baseRedirectUris": ["https://example*.com/"],
+                        }
+                    }]
+                },
+                "error_substring": "Wildcards are not permitted in redirect URIs",
+            },
+            # An empty host must also be rejected, bundled in the same fix.
+            {
+                "name": "empty_host_redirect_uri_mb72577",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                            "baseRedirectUris": ["https://"],
+                        }
+                    }]
+                },
+                "error_substring": "Missing host",
+            },
+            # The unsupported-field fix protects all customClaims types
+            # globally, not just number/boolean -- confirm array and object too.
+            {
+                "name": "custom_claim_unsupported_field_array_mb72555",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                        },
+                        "customClaims": [{"name": "tags", "type": "array", "value": 1}],
+                    }]
+                },
+                "error_substring": "Unsupported key",
+            },
+            {
+                "name": "custom_claim_unsupported_field_object_mb72555",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                        },
+                        "customClaims": [{"name": "profile", "type": "object", "value": 1}],
+                    }]
+                },
+                "error_substring": "Unsupported key",
+            },
+            # Non-PEM garbage on jwksUriTlsCa must be rejected the same way
+            # as every other cert-chain field this fix protects.
+            {
+                "name": "invalid_pem_jwks_tls_ca_mb72569",
+                "config": {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
+                        "publicKeySource": "jwks_uri",
+                        "jwksUriTlsCa": "this is not a cert",
+                        "oidcSettings": {
+                            "clientId": self.keycloak_client_id,
+                            "clientSecret": self.keycloak_client_secret,
+                            "endpointSource": "discovery",
+                            "oidcDiscoveryUri": self.issuer_url + "/.well-known/openid-configuration",
+                        },
+                    }]
+                },
+                "error_substring": "invalid certificate",
+            },
         ]
 
         for case in invalid_cases:
@@ -505,6 +963,13 @@ class JWTOIDCTest(JWTOIDCBase):
                 f"Invalid config '{case['name']}' should return 400, got {status}. "
                 f"Content: {content}"
             )
+            error_substring = case.get("error_substring")
+            if error_substring:
+                self.assertIn(
+                    error_substring, str(content),
+                    f"Invalid config '{case['name']}' should mention {error_substring!r}, "
+                    f"got: {content}",
+                )
 
         self.log.info("Verifying no partial persistence of invalid config")
         config_after = self._get_parsed_jwt_config()
@@ -1782,4 +2247,104 @@ class JWTOIDCTest(JWTOIDCBase):
         self.log.info(
             "N1QL query service Bearer token auth validated: "
             f"admin allowed, unmapped user denied (status={resp_unmapped.status_code})"
+        )
+
+    @staticmethod
+    def _decode_jwt_payload_unverified(token):
+        """Base64url-decode a JWT's payload segment without verifying the
+        signature -- used only to read back the state/nonce this test itself
+        generated via a JAR redirect, never to trust untrusted input."""
+        parts = token.split(".")
+        if len(parts) != 3:
+            return {}
+        payload_b64 = parts[1]
+        padding = "=" * (-len(payload_b64) % 4)
+        payload_bytes = base64.urlsafe_b64decode(payload_b64 + padding)
+        return json.loads(payload_bytes.decode("utf-8"))
+
+    def test_oidc_diag_skips_preauth_store(self):
+        """
+        /diag must skip the oidc_preauth_store ETS table (holds live CSRF
+        state / nonce / PKCE code_verifier for in-flight OIDC logins), the
+        same way menelaus_ui_auth is already skipped -- these are live
+        secrets, not just sensitive-at-rest config.
+
+        A single unauthenticated GET /oidc/auth?issuer=... is enough to
+        populate a real in-flight preauth entry (the write happens before the
+        redirect, no IdP round trip needed). The CSRF `state` value minted for
+        that request is then extracted from the JAR redirect and used as a
+        concrete secret to grep the /diag dump for, rather than just trusting
+        the section header.
+        """
+        self._enable_oidc_config()
+
+        cb_scheme = "https" if self.cluster_use_https else "http"
+        encoded_issuer = urllib.parse.quote(self.issuer_url, safe="")
+        oidc_auth_url = (
+            f"{cb_scheme}://{self.cluster_master_ip}:{self.cluster_port}"
+            f"/oidc/auth?issuer={encoded_issuer}"
+        )
+        resp = requests.get(oidc_auth_url, allow_redirects=False, timeout=30, verify=False)
+        self.assertEqual(
+            resp.status_code, 302,
+            f"Expected a 302 redirect to populate an oidc_preauth_store entry, "
+            f"got {resp.status_code}",
+        )
+        location = resp.headers.get("Location", "")
+        self.log.info(f"/oidc/auth redirect location: {location[:200]}...")
+
+        parsed = urllib.parse.urlparse(location)
+        query = urllib.parse.parse_qs(parsed.query)
+        state_value = None
+        if "state" in query:
+            state_value = query["state"][0]
+        elif "request" in query:
+            jar_payload = self._decode_jwt_payload_unverified(query["request"][0])
+            state_value = jar_payload.get("state")
+        self.assertTrue(
+            state_value,
+            f"MB-73401 setup: could not extract a CSRF state value from the "
+            f"redirect to use as a concrete secret to search for. location={location!r}",
+        )
+        self.log.info(f"Extracted in-flight CSRF state value (len={len(state_value)})")
+
+        diag_url = f"{cb_scheme}://{self.cluster_master_ip}:{self.cluster_port}/diag"
+        diag_resp = requests.get(
+            diag_url,
+            auth=(self.cluster.master.rest_username, self.cluster.master.rest_password),
+            timeout=120,
+            verify=False,
+        )
+        self.assertEqual(
+            diag_resp.status_code, 200,
+            f"Expected 200 from GET /diag, got {diag_resp.status_code}",
+        )
+        diag_text = diag_resp.text
+
+        # The bare table name also appears earlier in /diag as a process
+        # registry entry -- anchor on the actual ETS-table header instead.
+        header_marker = "oidc_preauth_store) ="
+        preauth_idx = diag_text.find(header_marker)
+        self.assertGreater(
+            preauth_idx, -1,
+            "MB-73401: expected a 'per_node_ets_tables(..., oidc_preauth_store) =' "
+            "section to appear in the /diag dump at all",
+        )
+        next_table_idx = diag_text.find("per_node_", preauth_idx + len(header_marker))
+        preauth_section = diag_text[preauth_idx:next_table_idx if next_table_idx != -1 else preauth_idx + 1000]
+        self.assertIn(
+            "{error,skipped}", preauth_section,
+            f"MB-73401: expected the oidc_preauth_store table to be skipped "
+            f"({{error,skipped}}), got: {preauth_section!r}",
+        )
+
+        self.assertNotIn(
+            state_value, diag_text,
+            "MB-73401: the live CSRF state value must not appear anywhere in "
+            "the /diag dump -- it's a live secret for an in-flight login, not "
+            "just sensitive-at-rest config",
+        )
+        self.log.info(
+            "MB-73401: /diag correctly skips oidc_preauth_store and the live "
+            "CSRF state value does not leak elsewhere in the dump"
         )
