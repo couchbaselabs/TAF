@@ -310,8 +310,17 @@ class CRLTest(CRLBase):
         self.log.info("GET /settings/crl (baseline)")
         status, settings = self.crl_utils.get_settings(self.rest)
         self.assertTrue(status, f"GET /settings/crl failed: {settings}")
-        self.assertIn("policyPerScope", settings)
-        self.log.info(f"Baseline settings: {settings}")
+        self.crl_utils.assert_settings_equal(
+            settings,
+            {
+                "policyPerScope": {"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+                "checkIntermediateCerts": False,
+                "dirPollIntervalMs": 60000,
+                "urlPollIntervalMs": 3600000,
+                "urls": [],
+            },
+        )
+        self.log.info(f"Baseline settings match documented defaults: {settings}")
 
         # Step 2 — POST a partial settings update, verify it applied.
         self.log.info("POST /settings/crl (partial update)")
@@ -321,6 +330,12 @@ class CRLTest(CRLBase):
         self.assertTrue(status, f"POST /settings/crl failed: {updated}")
         self.crl_utils.assert_settings_equal(
             updated, {"checkIntermediateCerts": True, "dirPollIntervalMs": 30000}
+        )
+        # SET semantics: a partial update leaves untouched fields alone.
+        self.crl_utils.assert_settings_equal(
+            updated,
+            {k: v for k, v in settings.items()
+             if k not in ("checkIntermediateCerts", "dirPollIntervalMs")},
         )
         self.log.info(f"Settings updated and verified: {updated}")
 
@@ -440,7 +455,14 @@ class CRLTest(CRLBase):
             directory="/opt/couchbase/var/lib/couchbase/inbox/crls",
         )
         self.assertTrue(status, "Failed to restore default CRL settings")
-        self.log.info(f"Defaults restored: {restored}")
+        status, verify = self.crl_utils.get_settings(self.rest)
+        self.assertTrue(status, f"GET after restore failed: {verify}")
+        self.crl_utils.assert_settings_equal(
+            verify,
+            {"checkIntermediateCerts": False, "dirPollIntervalMs": 60000,
+             "directory": "/opt/couchbase/var/lib/couchbase/inbox/crls"},
+        )
+        self.log.info(f"Defaults restored and confirmed via GET-back: {verify}")
 
         # Step 8 -- urls validation: array shape, string entries, http(s)
         # scheme, dedup, and the 100-URL cap (menelaus_web_crl.erl:121-148).
@@ -1616,6 +1638,7 @@ class CRLTest(CRLBase):
         )
 
         self._enable_client_cert_auth(state="enable")
+        shell = RemoteMachineShellConnection(self.cluster.master)
 
         # CA-1's CRL: long-lived, revokes leafRevoked's own serial.
         filename1 = "policy_matrix_crl1_revoked.pem"
@@ -1702,6 +1725,12 @@ class CRLTest(CRLBase):
             f"Expected the missing-CRL cert to classify as 'undetermined': {content}",
         )
         self.log.info("Missing-CRL cert confirmed 'undetermined' via diagnostics/validate")
+        # The permissive clause's own warning (cb_crl.erl apply_policy).
+        recent = grep_remote_log(
+            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined", lines=5
+        )
+        self.assertIn("policy=permissive, treat as valid", recent, f"log: {recent}")
+        self.assertIn("leafMissing", recent, f"log: {recent}")
 
         # Permissive fails open on an expired applicable CRL too, a
         # distinct case from "missing" above (this CRL exists, it's just
@@ -1743,6 +1772,11 @@ class CRLTest(CRLBase):
             f"expired CRL, distinct from the missing-CRL case: {content}",
         )
         self.log.info("Expired-CRL cert confirmed 'undetermined' via diagnostics/validate")
+        recent = grep_remote_log(
+            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined", lines=5
+        )
+        self.assertIn("policy=permissive, treat as valid", recent, f"log: {recent}")
+        self.assertIn("leafExpired", recent, f"log: {recent}")
 
         # Permissive -> Require: same immediate-effect check as above.
         self.crl_utils.set_settings(
@@ -1769,6 +1803,7 @@ class CRLTest(CRLBase):
             "Require: missing-CRL cert should be rejected (fail-closed)",
         )
         self.log.info("Require: missing-CRL cert rejected (fail-closed)")
+        shell.disconnect()
 
     def test_crl_tampered_duplicate_and_empty_crl_handling(self):
         """Does the server correctly handle a signature-tampered CRL, a
@@ -2503,9 +2538,11 @@ class CRLTest(CRLBase):
 
     def _test_crl_auditing_logs_and_metrics_body(self, server):
         self._enable_client_cert_auth(state="enable")
+        # Starts Disabled so the audited settings-change block below makes a
+        # real Disabled->Require transition, not a same-value re-POST.
         self.crl_utils.set_settings(
             self.rest,
-            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
         )
         revoked_cert, revoked_key, revoked_serial = self.crl_utils.generate_leaf_cert(
             self.ca_cert, self.ca_key, "auditRevoked"
@@ -2753,9 +2790,16 @@ class CRLTest(CRLBase):
                 audit_keyword_count(shell, self.AUDIT_LOG_PATH, "access forbidden"), before,
                 "Expected a new generic access-forbidden audit entry",
             )
+            # The event must name the denied actor, not just exist.
+            forbidden_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8275)
+            self.assertEqual(
+                (forbidden_event or {}).get("real_userid"),
+                {"domain": "local", "user": low_priv_user},
+                f"access-forbidden event must name the denied actor: {forbidden_event}",
+            )
             self.log.info(
                 "RBAC-denied CRL settings change audited via the generic "
-                "access-forbidden event"
+                "access-forbidden event, naming the low-privilege actor"
             )
 
             # Missing: delete every CRL file so nothing applies to this CA.
@@ -3326,6 +3370,13 @@ class CRLTest(CRLBase):
         # an authenticated-but-unauthorized user gets above.
         code = hit("GET", "/settings/crl", None)
         self.assertEqual(code, 401, f"Unauthenticated request should get 401, got {code}")
+        # Same for the diagnostics endpoints -- the fingerprinting concern
+        # this row exists for applies to them too, not just /settings/crl.
+        for method, path, body in [e for e in read_endpoints if "diagnostics" in e[1]]:
+            code = hit(method, path, None, body)
+            self.assertEqual(
+                code, 401, f"Unauthenticated {method} {path} should get 401, got {code}"
+            )
 
         # Invalid credentials (wrong password; nonexistent username) also
         # get 401, not a 403 and not a hang/500.
@@ -4420,6 +4471,27 @@ class CRLTest(CRLBase):
             f"extension, not fail for some unrelated reason, got: {content}",
         )
         self.log.info("CRL with an unrecognized critical extension rejected on upload")
+
+        # Certificate half of the same RFC 5280 rule. Enforced by OTP's own
+        # path validation during the handshake (cb_crl.erl's verify_fun
+        # returns `unknown` for extension events), so this is a handshake
+        # rejection, not an upload rejection like the CRL half above.
+        bad_ext_cert, bad_ext_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassCriticalExtCert",
+            extra_extension=(
+                x509.UnrecognizedExtension(unrecognized_oid, b"\x04\x04\xDE\xAD\xBE\xEF"),
+                True,
+            ),
+        )
+        self.assertFalse(
+            self._handshake_ok(
+                self._write_temp_pem(self.crl_utils.cert_to_pem(bad_ext_cert)),
+                self._write_temp_pem(self.crl_utils.key_to_pem(bad_ext_key)),
+            ),
+            "A client cert with an unrecognized critical extension should be "
+            "rejected at the TLS handshake",
+        )
+        self.log.info("Client cert with an unrecognized critical extension rejected")
 
         # Concurrent conflicting CRL updates never leave a transient
         # window of weaker enforcement -- a revoked cert stays rejected
@@ -5883,6 +5955,17 @@ class CRLTest(CRLBase):
                 ),
                 "Failback rebalance failed",
             )
+            # The recovered node is the likeliest to hold stale pre-failure
+            # cache -- probe it directly, not just the survivors.
+            self.assertEqual(
+                self.crl_utils.probe_mtls_state(
+                    target_server.ip, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+                ),
+                "rejected",
+                f"Recovered node {target_server.ip} must still reject the revoked "
+                f"cert after rejoining via recoveryType=full",
+            )
+            self.log.info(f"Recovered node {target_server.ip} re-probed: enforcement intact")
             shell.disconnect()
             self.rest.update_autofailover_settings(
                 orig_af.enabled, orig_af.timeout, maxCount=orig_af.maxCount,

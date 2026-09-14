@@ -150,9 +150,13 @@ class CRLFileLifecycle(CRLBase):
             f"crlNumber {metadata.get('crlNumber')} != the 42 signed into this CRL",
         )
         self.log.info("crlNumber matches the 42 signed into this CRL")
-        for label in ("thisUpdate", "nextUpdate"):
-            self.assertIn(label, metadata, f"Missing {label!r} in entry: {metadata}")
-            self.log.info(f"{label} reported as: {metadata[label]}")
+        for label, expected_dt in (("thisUpdate", this_update), ("nextUpdate", next_update)):
+            expected_str = expected_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            self.assertEqual(
+                metadata.get(label), expected_str,
+                f"{label} {metadata.get(label)!r} != the signed-in value {expected_str!r}",
+            )
+            self.log.info(f"{label} matches the signed-in value: {metadata[label]}")
 
     def test_crl_upload_malformed_rejected(self):
         """Truncated/random bytes are rejected, not listed."""
@@ -263,14 +267,24 @@ class CRLFileLifecycle(CRLBase):
         )
 
         filename = "crl_oversized.pem"
-        status, content = self.crl_utils.upload_file(
-            self.rest, filename, crl_pem, timeout=600
+        status, content, response = self.crl_utils._crl_api(self.rest).upload_crl_file(
+            filename, crl_pem, timeout=600
         )
         if status:
             self._track_uploaded_file(filename)
             self.log.info(f"Oversized CRL accepted: {content}")
         else:
-            self.log.info(f"Oversized CRL rejected (acceptable per size limit): {content}")
+            # No documented size ceiling exists to assert an exact status
+            # against, but a designed rejection (4xx) is distinguishable
+            # from a server fault (5xx) -- only the former is acceptable.
+            self.assertLess(
+                response.status_code, 500,
+                f"Oversized CRL should fail cleanly (4xx), not with a server "
+                f"error: {response.status_code} {content}",
+            )
+            self.log.info(
+                f"Oversized CRL cleanly rejected ({response.status_code}): {content}"
+            )
 
     def test_crl_file_status_field_accuracy(self):
         """Per-file status reflects valid/expired/invalid state. The

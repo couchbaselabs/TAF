@@ -266,7 +266,7 @@ class CRLUtils:
                             valid_days=825, extended_key_usage=None,
                             crl_distribution_url=None, dns_names=None,
                             email_names=None, serial=None, not_valid_before=None,
-                            not_valid_after=None):
+                            not_valid_after=None, extra_extension=None):
         """
         Generate a leaf cert signed by ca_cert/ca_key, in memory.
 
@@ -340,6 +340,10 @@ class CRLUtils:
                 relative_name=None, reasons=None, crl_issuer=None,
             )
             builder = builder.add_extension(x509.CRLDistributionPoints([dp]), critical=False)
+        if extra_extension:
+            # (extension_value, critical) -- e.g. an UnrecognizedExtension
+            # marked critical, for RFC 5280 rejection tests.
+            builder = builder.add_extension(extra_extension[0], critical=extra_extension[1])
         cert = builder.sign(ca_key, hashes.SHA256())
         return cert, key, serial
 
