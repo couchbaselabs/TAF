@@ -1437,7 +1437,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         tenant = self.primary_tenant
 
         self.compute["data"] = self.input.param("fusion_compute", "m5.4xlarge")
-        self.fusion_rebalances = []
+        self.fusion_rebalances = {}  # cluster.id -> list of rebalance IDs; see VolumeTest.setUp
 
         h_scaling = self.input.param("h_scaling", True)
         v_scaling = self.input.param("v_scaling", False)

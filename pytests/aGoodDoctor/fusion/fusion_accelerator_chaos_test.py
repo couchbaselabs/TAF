@@ -1154,7 +1154,7 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
         # rebalance is still tracked, before asserting overall completion.
         hydration_completed = self.cp_monitor.monitor_fusion_guest_volumes(
             self.tenant, self.cluster, rebalance_task,
-            self.fusion_monitor, [],
+            self.fusion_monitor, {},
             wait_for_hydration_complete=True,
             timeout=self.hydration_timeout,
             find_master_func=self.find_master,
@@ -1301,7 +1301,7 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
         with self._stage("Chaos AWS2b: guest volume hydration settles after recovery"):
             hydration_completed = self.cp_monitor.monitor_fusion_guest_volumes(
                 self.tenant, self.cluster, rebalance_task,
-                self.fusion_monitor, [],
+                self.fusion_monitor, {},
                 wait_for_hydration_complete=True,
                 timeout=self.hydration_timeout,
                 find_master_func=self.find_master,

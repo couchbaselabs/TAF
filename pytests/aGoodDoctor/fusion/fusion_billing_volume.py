@@ -349,16 +349,20 @@ class FusionBillingVolumeTest(VolumeTest):
         while self.fusion_rebalances still reflects the just-completed rebalance.
 
         :param rebalance_task: Completed rebalance task object
-        :param uuid_before: len(self.fusion_rebalances) recorded BEFORE monitor_cluster_status()
+        :param uuid_before: len(self.fusion_rebalances.get(rebalance_task.cluster.id, []))
+            recorded BEFORE monitor_cluster_status() -- scoped to this task's OWN
+            cluster, since self.fusion_rebalances is keyed per cluster.id and other
+            clusters' entries must not be mistaken for this task's plan_uuid.
         :param cost_tracker: the AcceleratorCostTracker passed into that
             monitor_cluster_status() call (if any) -- stashed under the
             newly-discovered plan_uuid so _run_billing_checks_for_batch()
             can hand it to FusionCostMonitor later.
         """
-        uuid_after = len(self.fusion_rebalances)
+        cluster_rebalances = self.fusion_rebalances.get(rebalance_task.cluster.id, [])
+        uuid_after = len(cluster_rebalances)
         if uuid_after > uuid_before:
             # A new planUUID was appended by monitor_cluster_accelerator_instances()
-            plan_uuid = self.fusion_rebalances[uuid_after - 1]
+            plan_uuid = cluster_rebalances[uuid_after - 1]
             self._pending_billing_checks.append(
                 (rebalance_task.tenant, rebalance_task.cluster, plan_uuid)
             )
@@ -596,9 +600,16 @@ class FusionBillingVolumeTest(VolumeTest):
             HourlyBillingWindowTracker for whichever wall-clock hour(s) this
             step overlaps (no-op if that cluster has no tracker)
         """
-        # Phase 1: Monitor rebalance progress (populates self.fusion_rebalances)
+        # Phase 1: Monitor rebalance progress (populates self.fusion_rebalances).
+        # Sequential (unlike VolumeTest.monitor_cluster_status_batch) --
+        # billing verification here doesn't need multiple clusters/rebalances
+        # monitored concurrently, and keeping it one-at-a-time avoids
+        # interleaving CP DB billing checks across clusters. Still safe with
+        # respect to self.fusion_rebalances/uuid_before/uuid_after being
+        # scoped per cluster.id (see _collect_billing_info_for_rebalance's
+        # docstring) rather than a single flat list shared across clusters.
         for rebalance_task in rebalance_tasks:
-            uuid_before = len(self.fusion_rebalances)
+            uuid_before = len(self.fusion_rebalances.get(rebalance_task.cluster.id, []))
             tracker = self._hourly_trackers.get(rebalance_task.cluster.id)
 
             node_count_before = None
@@ -773,7 +784,7 @@ class FusionBillingVolumeTest(VolumeTest):
         # Horizontal scaling loop
         # ---------------------------------------------------------------
         self.compute["data"] = self.input.param("fusion_compute", "m5.4xlarge")
-        self.fusion_rebalances = list()
+        self.fusion_rebalances = dict()  # cluster.id -> list of rebalance IDs; see VolumeTest.setUp
 
         h_scaling = self.input.param("h_scaling", True)
         if not h_scaling:

@@ -127,7 +127,10 @@ class FusionCPResourceMonitor:
         :param cluster: Cluster object with fusion configuration
         :param rebalance_task: Rebalance task object for status tracking
         :param fusion_monitor_util: FusionMonitorUtil instance for cluster operations
-        :param fusion_rebalances: List to collect and track fusion rebalance IDs
+        :param fusion_rebalances: dict of cluster.id -> list of fusion rebalance IDs seen
+            for that cluster. Keyed per-cluster (rather than one flat list shared by every
+            cluster in the run) so concurrent/multi-cluster monitoring can't have one
+            cluster's rebalance ID picked up by another's [-1] lookup.
         :param wait_for_hydration_complete: Whether to wait for full hydration completion (default: True)
         :param timeout: Maximum monitoring duration in seconds (default: DEFAULT_TIMEOUT)
         :param find_master_func: Optional callback function to locate master node
@@ -173,7 +176,7 @@ class FusionCPResourceMonitor:
                     filters={
                         'couchbase-cloud-cluster-id': cluster.id,
                         'couchbase-cloud-function': 'fusion-accelerator',
-                        'couchbase-cloud-fusion-rebalance': fusion_rebalances[-1] if fusion_rebalances else '',
+                        'couchbase-cloud-fusion-rebalance': (fusion_rebalances.get(cluster.id) or [''])[-1],
                         'iops': str(self.FUSION_ACCELERATOR_IOPS)
                         })
             except (ClientError, ConnectionError) as e:
@@ -261,7 +264,20 @@ class FusionCPResourceMonitor:
             fusion_monitor_util.get_hostname_public_ip_mapping(cluster, suppress_log=True)
             for node_id in list(content):
                 public_ip = cluster.hostname_public_ip_mapping.get(node_id.split("@")[1])
-                instance_id = next((instance.get('InstanceId') for instance in instances if instance.get('PublicIpAddress') == public_ip), None)
+                # public_ip is None whenever this node's hostname is missing from
+                # the (possibly stale, e.g. mid-rebalance) mapping -- guard against
+                # matching that to an unrelated instance that also happens to have
+                # no PublicIpAddress yet (freshly launching, or genuinely still
+                # unassigned), which `== public_ip` would otherwise do via a
+                # spurious None == None match. That misattributed a real
+                # instance's guest volumes onto this node's row (and again onto
+                # any other node hitting the same fallback), inflating the
+                # reported "Existing GVs" count for volumes that don't belong to
+                # that node -- and duplicating the same volumes across rows.
+                instance_id = next(
+                    (instance.get('InstanceId') for instance in instances
+                     if public_ip is not None and instance.get('PublicIpAddress') == public_ip),
+                    None)
                 volumes = volumes_by_instance.get(instance_id, [])
                 if len(volumes) > 0:
                     for volume in volumes:
@@ -509,7 +525,8 @@ class FusionCPResourceMonitor:
 
         :param cluster: Cluster object
         :param rebalance_task: Rebalance task object
-        :param fusion_rebalances: List to store fusion rebalance IDs
+        :param fusion_rebalances: dict of cluster.id -> list of fusion rebalance IDs
+            seen for that cluster (see monitor_fusion_guest_volumes docstring)
         :param timeout: Timeout in seconds (default: DEFAULT_TIMEOUT)
         :param cost_tracker: optional fusion_cost_monitor.AcceleratorCostTracker
             -- if given, every poll's instance list is fed to it via
@@ -545,14 +562,15 @@ class FusionCPResourceMonitor:
                     if instances_count > 0:
                         self.log.info(f"Acceleration process started. Fusion Accelerator instances transitioned from 0 to {instances_count} for cluster {cluster.id}")
                         transition_started = True
+                        cluster_rebalances = fusion_rebalances.setdefault(cluster.id, [])
                         for tag in instances[0].get('Tags', []):
                             if tag.get('Key') == 'couchbase-cloud-fusion-rebalance':
-                                if tag.get('Value') not in fusion_rebalances:
-                                    fusion_rebalances.append(tag.get('Value'))
-                                    self.log.info(f"Fusion Rebalance: {fusion_rebalances}")
+                                if tag.get('Value') not in cluster_rebalances:
+                                    cluster_rebalances.append(tag.get('Value'))
+                                    self.log.info(f"Fusion Rebalance for cluster {cluster.id}: {cluster_rebalances}")
                                     break
                                 else:
-                                    self.log.info(f"Fusion Rebalance already exists: {tag.get('Value')}")
+                                    self.log.info(f"Fusion Rebalance already exists for cluster {cluster.id}: {tag.get('Value')}")
                                     raise Exception(f"Fusion Rebalance already exists: {tag.get('Value')}")
                     else:
                         self.log.info(f"Waiting for Fusion Accelerator instances creation for cluster {cluster.id}")
@@ -576,7 +594,8 @@ class FusionCPResourceMonitor:
         Monitor available volumes by fusion rebalance ID.
 
         :param cluster: Cluster object
-        :param fusion_rebalances: List of fusion rebalance IDs
+        :param fusion_rebalances: dict of cluster.id -> list of fusion rebalance IDs
+            (see monitor_fusion_guest_volumes docstring)
         :param stop_run_event: Threading Event to stop monitoring
         :return: True when monitoring stops
         """
@@ -584,7 +603,7 @@ class FusionCPResourceMonitor:
             table = PrettyTable()
             table.field_names = ["Serial No", "Fusion Rebalance", "Available Volumes", "Volume IDs"]
             serial_no = 1
-            for rebalance in fusion_rebalances:
+            for rebalance in fusion_rebalances.get(cluster.id, []):
                 try:
                     volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(
                         filters={
@@ -871,7 +890,11 @@ class FusionCPResourceMonitor:
         Parse accelerator logs for all clusters.
 
         :param clusters: List of cluster objects
-        :param fusion_rebalances: List of fusion rebalance IDs
+        :param fusion_rebalances: dict of cluster.id -> list of fusion rebalance IDs
+            (see monitor_fusion_guest_volumes docstring). Each cluster's OWN last
+            entry is used -- previously this used a single global last-seen ID for
+            every cluster in `clusters`, which downloaded the wrong cluster's logs
+            whenever the batch covered more than one cluster.
         :param access_key: AWS access key
         :param secret_key: AWS secret key
         :param region: AWS region
@@ -888,8 +911,15 @@ class FusionCPResourceMonitor:
             env.pop("AWS_SESSION_TOKEN", None)
 
         for cluster in clusters:
+            cluster_rebalances = fusion_rebalances.get(cluster.id)
+            if not cluster_rebalances:
+                self.log.info(
+                    f"No fusion rebalance ID recorded for cluster {cluster.id} -- "
+                    f"skipping accelerator log download"
+                )
+                continue
             bucket_name = f"cbc-storage-{cluster.id}"
-            rebalance_id = fusion_rebalances[-1]
+            rebalance_id = cluster_rebalances[-1]
             log_script = os.path.join(os.path.dirname(__file__), "download_accelerator_logs.sh")
             cmd = [
                 log_script,

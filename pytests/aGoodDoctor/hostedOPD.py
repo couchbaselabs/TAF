@@ -236,12 +236,26 @@ class hostedOPD(OPD):
     def find_master(self, tenant, cluster):
         i = 30
         task_details = None
+        # Bounded to 5 minutes -- this used to be `while True:` with no
+        # timeout, sleep, or attempt cap, so a stale/replaced node hostname
+        # still sitting in cluster.nodes_in_cluster (e.g. left over from an
+        # earlier scale-down that random.choice() keeps re-picking) made it
+        # spin forever: MainThread would block here indefinitely with no
+        # failure ever surfacing, while background monitor threads kept
+        # logging normally and made the run look alive.
+        deadline = time.time() + 300
         while True:
             try:
                 self.refresh_cluster(tenant, cluster)
                 rest = RestConnection(random.choice(cluster.nodes_in_cluster))
                 break
-            except ServerUnavailableException:
+            except ServerUnavailableException as e:
+                if time.time() > deadline:
+                    self.fail(
+                        f"find_master timed out after 300s for cluster "
+                        f"{cluster.id}: no reachable node in "
+                        f"cluster.nodes_in_cluster ({e})")
+                time.sleep(5)
                 self.refresh_cluster(tenant, cluster)
         while i > 0 and task_details is None:
             task_details = rest.ns_server_tasks("rebalance", "rebalance")
@@ -298,7 +312,15 @@ class hostedOPD(OPD):
     def monitor_rebalance(self, tenant, cluster, rebalance_task,
                           rebl_poll_interval=60, timeout=28800):
         self.find_master(tenant, cluster)
-        self.rest = RestConnection(cluster.master)
+        # Local, not self.rest -- this runs concurrently, one thread per
+        # cluster, from VolumeTest.monitor_cluster_status_batch. self.rest
+        # is an instance attribute shared across the whole test case, so
+        # every cluster's thread was clobbering the same attribute: two
+        # threads monitoring different clusters could both end up reading
+        # whichever cluster's RestConnection last won the race, producing
+        # identical rebalance percentages (or worse, misattributed
+        # completion/failure) across unrelated clusters.
+        rest = RestConnection(cluster.master)
         state = CapellaUtils.get_cluster_state(
                     self.pod, tenant, cluster.id)
         start_time = time.time()
@@ -317,10 +339,10 @@ class hostedOPD(OPD):
                                 msg="Rebalance timed out after {}s".format(timeout))
                 return
             try:
-                result = self.rest.newMonitorRebalance(sleep_step=rebl_poll_interval,
-                                                       progress_count=1000)
+                result = rest.newMonitorRebalance(sleep_step=rebl_poll_interval,
+                                                   progress_count=1000)
                 if result is False:
-                    progress = self.rest.new_rebalance_status_and_progress()[1]
+                    progress = rest.new_rebalance_status_and_progress()[1]
                     if progress == -100:
                         raise ServerUnavailableException
                 self.assertTrue(result,
@@ -335,7 +357,7 @@ class hostedOPD(OPD):
             except ServerUnavailableException:
                 self.log.critical("Node to get rebalance progress is not part of cluster")
                 self.find_master(tenant, cluster)
-                self.rest = RestConnection(cluster.master)
+                rest = RestConnection(cluster.master)
         state = CapellaUtils.get_cluster_state(
                     self.pod, tenant, cluster.id)
         self.assertTrue(state == "healthy",

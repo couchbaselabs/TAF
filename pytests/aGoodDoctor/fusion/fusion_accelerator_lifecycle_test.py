@@ -2490,7 +2490,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                          f"Expected 0 guest volumes before rebalance, "
                          f"found {len(pre_volumes)}")
 
-        fusion_rebalances = []
+        fusion_rebalances = {}  # cluster.id -> list of rebalance IDs
         rebalance_task = self._trigger_rebalance()
         self.sleep(30, "Wait for rebalance to start")
 

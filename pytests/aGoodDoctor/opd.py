@@ -1351,6 +1351,12 @@ class OPD:
         query_monitor.start()
 
     def refresh_cluster(self, tenant, cluster, type="dedicated"):
+        # Bounded to 5 minutes -- this used to be `while True:` with no
+        # timeout/sleep in the retry branch, and never raised out to
+        # callers on failure. That silently defeated find_master()'s own
+        # timeout too: find_master can't check its deadline while blocked
+        # inside a refresh_cluster() call that never returns.
+        deadline = time.time() + 300
         while True:
             if cluster.nodes_in_cluster:
                 try:
@@ -1361,13 +1367,27 @@ class OPD:
                     pass
                 except IndexError:
                     pass
+                if time.time() > deadline:
+                    self.fail(
+                        f"refresh_cluster timed out after 300s for cluster "
+                        f"{cluster.id}: no reachable node in "
+                        f"cluster.nodes_in_cluster")
+                time.sleep(5)
             else:
                 self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
                 self.sleep(30)
-                self.servers = DedicatedUtils.get_nodes(
+                # Local, not self.servers -- this can run concurrently, one
+                # thread per cluster, via monitor_rebalance/find_master
+                # (see monitor_rebalance's self.rest fix for the same
+                # class of bug). self.servers is also a framework-wide
+                # attribute (the full node.ini server list, read by e.g.
+                # setup_backup_locations's NFS client setup) that this
+                # branch would otherwise clobber with just this one
+                # cluster's nodes.
+                servers = DedicatedUtils.get_nodes(
                     self.pod, tenant, cluster.id)
                 nodes = list()
-                for server in self.servers:
+                for server in servers:
                     temp_server = TestInputServer()
                     temp_server.ip = server.get("hostname")
                     temp_server.hostname = server.get("hostname")

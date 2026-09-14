@@ -146,7 +146,13 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.steady_state_workload_sleep = self.input.param("steady_state_workload_sleep", 1800)
         self.cloudtrail = None
         self.cloudtrail_targets = []
-        self.fusion_rebalances = list()
+        # dict of cluster.id -> list of fusion rebalance IDs seen for that
+        # cluster (NOT a flat list shared by every cluster) -- see
+        # monitor_fusion_guest_volumes's docstring for why: a single shared
+        # list's [-1]/length-based lookups silently pick up another
+        # cluster's rebalance ID whenever more than one cluster's rebalance
+        # is being monitored (multi-tenant/multi-cluster runs).
+        self.fusion_rebalances = dict()
         self.stop_run_event = threading.Event()
 
         # Fusion min_split_size / max_slots control-plane overrides (see
@@ -576,6 +582,63 @@ class VolumeTest(BaseTestCase, hostedOPD):
             f"total={elapsed_str}"
         )
 
+    def monitor_cluster_status_batch(self, rebalance_tasks, cost_tracker_map=None):
+        """Run monitor_cluster_status() + get_fusion_uploader_map() for a batch
+        of rebalance tasks concurrently, one thread per task, instead of
+        sequentially.
+
+        monitor_cluster_status() already blocks until a single cluster's
+        rebalance is fully monitored (accelerator instances, guest volumes,
+        deployment job, rebalance completion). Calling it in a plain `for
+        rebalance_task in rebalance_tasks:` loop -- the previous pattern at
+        every one of this method's call sites -- means that in a multi-tenant
+        run, every cluster after the first sits completely unmonitored (no
+        fusion accelerator/guest-volume polling at all, since that polling
+        lives inside monitor_cluster_status) until every earlier cluster's
+        rebalance has finished. Running one thread per task instead lets all
+        of a batch's clusters be monitored in parallel, matching how their
+        rebalances were already dispatched (async_rebalance_capella) in
+        parallel.
+
+        Safe to do now that self.fusion_rebalances is keyed per cluster.id
+        (not one flat list shared across every cluster) -- see
+        monitor_cluster_status's internals and monitor_fusion_guest_volumes's
+        docstring in fusion_cp_resource_monitor.py.
+
+        :param rebalance_tasks: list of rebalance task objects, one per cluster
+        :param cost_tracker_map: optional dict of rebalance_task -> AcceleratorCostTracker,
+            forwarded per-task to monitor_cluster_status()
+        """
+        errors = []
+        errors_lock = threading.Lock()
+
+        def _monitor_one(rebalance_task):
+            try:
+                cost_tracker = (cost_tracker_map or {}).get(rebalance_task)
+                self.monitor_cluster_status(
+                    rebalance_task.tenant, rebalance_task.cluster, rebalance_task,
+                    cost_tracker=cost_tracker)
+                self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(
+                    rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+            except Exception as e:
+                with errors_lock:
+                    errors.append((rebalance_task.cluster.id, e))
+
+        threads = [
+            threading.Thread(target=_monitor_one, args=(rebalance_task,), daemon=True)
+            for rebalance_task in rebalance_tasks
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        if errors:
+            summary = "; ".join(f"cluster={cid}: {err}" for cid, err in errors)
+            self.fail(
+                f"monitor_cluster_status failed for {len(errors)}/{len(rebalance_tasks)} "
+                f"cluster(s) in batch: {summary}")
+
     def check_ebs_cleanup_for_cluster(self, cluster, tenant=None):
         """Check EBS cleanup for a specific cluster.
 
@@ -935,7 +998,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self._init_ops_stop_event.set()
 
         self.compute["data"] = self.input.param("fusion_compute", "m5.4xlarge")
-        self.fusion_rebalances = list()
+        self.fusion_rebalances = dict()  # cluster.id -> list of rebalance IDs; see setUp
 
         h_scaling = self.input.param("h_scaling", True)
         v_scaling = self.input.param("v_scaling", False)
@@ -1023,9 +1086,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                                                                 timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
                         # Start polling thread for each rebalance pass
-                        for rebalance_task in rebalance_tasks:
-                            self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                        self.monitor_cluster_status_batch(rebalance_tasks)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         # Check for fusion accelerator node to be 0
                         for rebalance_task in rebalance_tasks:
@@ -1058,9 +1119,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                                                                 config,
                                                                                 timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
-                        for rebalance_task in rebalance_tasks:
-                            self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                        self.monitor_cluster_status_batch(rebalance_tasks)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         # Check for fusion accelerator node to be 0
                         for rebalance_task in rebalance_tasks:
@@ -1106,9 +1165,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                                                                    config,
                                                                                    timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
-                        for rebalance_task in rebalance_tasks:
-                            self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                        self.monitor_cluster_status_batch(rebalance_tasks)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
                             result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
@@ -1151,9 +1208,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                                                                    config,
                                                                                    timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
-                        for rebalance_task in rebalance_tasks:
-                            self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                        self.monitor_cluster_status_batch(rebalance_tasks)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
                             result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
@@ -1204,9 +1259,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                                                                    config,
                                                                                    timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
-                        for rebalance_task in rebalance_tasks:
-                            self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                        self.monitor_cluster_status_batch(rebalance_tasks)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
                             result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
