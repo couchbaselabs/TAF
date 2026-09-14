@@ -22,6 +22,8 @@ class FusionMagmaCrashRecovery(MagmaCrashTests, FusionBase):
 
         self.test_crash_during_dedupe()
 
+        self.sleep(120, "Wait before executing fusion workflow after magma test")
+
         # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
@@ -32,6 +34,8 @@ class FusionMagmaCrashRecovery(MagmaCrashTests, FusionBase):
 
         self.test_crash_during_get_ops()
 
+        self.sleep(120, "Wait before executing fusion workflow after magma test")
+
         # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
@@ -41,6 +45,8 @@ class FusionMagmaCrashRecovery(MagmaCrashTests, FusionBase):
         self.log.info("Test fusion wal replay started")
 
         self.test_wal_replay()
+
+        self.sleep(120, "Wait before executing fusion workflow after magma test")
 
         # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
@@ -53,6 +59,8 @@ class FusionMagmaCrashRecovery(MagmaCrashTests, FusionBase):
 
         self.test_crash_recovery_large_docs()
 
+        self.sleep(120, "Wait before executing fusion workflow after magma test")
+
         # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
@@ -61,6 +69,8 @@ class FusionMagmaCrashRecovery(MagmaCrashTests, FusionBase):
         self.log.info("Test fusion crash during ops on new cluster started")
 
         self.test_crash_during_ops_new()
+
+        self.sleep(120, "Wait before executing fusion workflow after magma test")
 
         # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
@@ -71,6 +81,8 @@ class FusionMagmaCrashRecovery(MagmaCrashTests, FusionBase):
         self.log.info("Test fusion crash during recovery on new cluster started")
 
         self.test_crash_during_recovery_new()
+
+        self.sleep(120, "Wait before executing fusion workflow after magma test")
 
         # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
