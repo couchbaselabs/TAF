@@ -43,16 +43,20 @@ class CRLTest(CRLBase):
 
     # ── Shared mTLS handshake helpers ────────────────────────────────────────
 
-    def _handshake_ok(self, cert_path, key_path):
+    def _handshake_ok(self, cert_path, key_path, host=None):
         """
         True if the TLS handshake completes (any HTTP response received).
         False if it's rejected at the TLS layer (revoked/untrusted client
         cert) — a revoked cert never gets far enough to receive an HTTP
         response, so this is a connection-level check, not a status-code one.
+
+        `host` defaults to master; pass another node's IP to prove a CRL's
+        effect is (or isn't) per-node, rather than only that the file is
+        listed per-node.
         """
         try:
             self.crl_utils.perform_mtls_handshake(
-                self.cluster.master.ip, self.MGMT_PORT, cert_path, key_path,
+                host or self.cluster.master.ip, self.MGMT_PORT, cert_path, key_path,
             )
             return True
         except requests.exceptions.SSLError:
@@ -4549,6 +4553,125 @@ class CRLTest(CRLBase):
             f"probes during a concurrent CRL update race"
         )
 
+        # The two genuine write/write races, distinct from the serialized
+        # churn above: both writers are released together, so a torn or
+        # half-applied state would actually be observable.
+        self._cleanup_created_files()
+        race_a_cert, race_a_key, race_a_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassRaceA"
+        )
+        race_b_cert, race_b_key, race_b_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassRaceB"
+        )
+        a_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(race_a_cert))
+        a_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(race_a_key))
+        b_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(race_b_cert))
+        b_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(race_b_key))
+
+        # Race 1 -- two uploads of the SAME filename with different
+        # content. Exactly one must win outright: a torn file wouldn't
+        # parse, so neither serial would be revoked and (under Require)
+        # both certs would be rejected for a missing applicable CRL.
+        same_name = "bypass_race_same_name.pem"
+        pem_a = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[race_a_serial], crl_number=10
+        )
+        pem_b = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[race_b_serial], crl_number=11
+        )
+        race_errors = []
+
+        def _upload_at(barrier, pem, label):
+            try:
+                barrier.wait(timeout=30)
+                self.crl_utils.upload_file(self.rest, same_name, pem)
+            except Exception as exc:
+                race_errors.append((label, exc))
+
+        gate = threading.Barrier(2)
+        writers = [
+            threading.Thread(target=_upload_at, args=(gate, pem_a, "upload-A")),
+            threading.Thread(target=_upload_at, args=(gate, pem_b, "upload-B")),
+        ]
+        for t in writers:
+            t.start()
+        for t in writers:
+            t.join()
+        self.assertFalse(race_errors, f"Concurrent same-filename uploads raised: {race_errors}")
+        self._track_uploaded_file(same_name)
+        self.crl_utils.reload_crl(self.rest)
+
+        a_connects = self._handshake_ok(a_cert_path, a_key_path)
+        b_connects = self._handshake_ok(b_cert_path, b_key_path)
+        self.assertNotEqual(
+            a_connects, b_connects,
+            f"Exactly one of two racing same-filename uploads must win "
+            f"outright -- got A connects={a_connects}, B connects={b_connects}, "
+            f"meaning the stored CRL is neither payload intact",
+        )
+        self.log.info(
+            f"Racing same-filename uploads resolved to one winner "
+            f"(A revoked={not a_connects}, B revoked={not b_connects})"
+        )
+
+        # Race 2 -- an upload and a reload in flight together from separate
+        # sessions. Neither may error, and the upload's revocation must end
+        # up actually applied rather than half-committed.
+        race_c_cert, race_c_key, race_c_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassRaceC"
+        )
+        c_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(race_c_cert))
+        c_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(race_c_key))
+        pem_c = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[race_c_serial], crl_number=12
+        )
+        race_errors = []
+
+        def _reload_at(barrier):
+            try:
+                barrier.wait(timeout=30)
+                self.crl_utils.reload_crl(self.rest)
+            except Exception as exc:
+                race_errors.append(("reload", exc))
+
+        gate = threading.Barrier(2)
+        mixed = [
+            threading.Thread(target=_upload_at, args=(gate, pem_c, "upload-C")),
+            threading.Thread(target=_reload_at, args=(gate,)),
+        ]
+        for t in mixed:
+            t.start()
+        for t in mixed:
+            t.join()
+        self.assertFalse(race_errors, f"Concurrent upload+reload raised: {race_errors}")
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(c_cert_path, c_key_path),
+            "After a concurrent upload+reload, the uploaded CRL's revocation "
+            "must be in effect, not left half-applied",
+        )
+        status, content = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status, f"diagnostics/status broken after the race: {content}")
+        self.log.info("Concurrent upload+reload converged with no error or half-applied state")
+
+        # Restore what these races consumed: they cleared the uploaded
+        # files and left the shared CA's CRL revoking only their own
+        # serials, but the scope-independence check below needs the
+        # original race_cert to still be revoked.
+        self.crl_utils.delete_file(self.rest, same_name)
+        if same_name in self._created_files:
+            self._created_files.remove(same_name)
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [race_serial], race_filename, crl_number=20,
+        )
+        self.assertTrue(status, f"Race-fixture restore failed: {content}")
+        self._track_uploaded_file(race_filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(race_cert_path, race_key_path),
+            "Race fixture restore should leave the original race cert revoked",
+        )
+
         # clientAuth and nodeToNode each enforce from their own policy
         # setting only -- flipping the other scope to the opposite
         # extreme must not change this scope's own enforcement outcome.
@@ -4941,7 +5064,28 @@ class CRLTest(CRLBase):
         )
         self.assertTrue(status, f"Directory setting update failed: {content}")
         dir_filename = "hot_reload_dir_poll.pem"
-        dir_crl_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=3)
+        # -- Give the directory-polled CRL its own leaf to revoke, so the
+        # per-node claim can be proved by enforcement (who actually gets
+        # rejected) and not merely by which node lists the filename. --
+        dir_leaf_cert, dir_leaf_key, dir_leaf_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "hotReloadDirPollLeaf"
+        )
+        dir_leaf_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(dir_leaf_cert)
+        )
+        dir_leaf_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(dir_leaf_key)
+        )
+        self.assertTrue(
+            self._handshake_ok(dir_leaf_cert_path, dir_leaf_key_path),
+            "Baseline: this leaf must connect on master before the "
+            "directory-polled CRL revoking it is dropped -- otherwise the "
+            "rejection below wouldn't be attributable to that file",
+        )
+        dir_crl_pem = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[dir_leaf_serial],
+            crl_number=3,
+        )
 
         shell = RemoteMachineShellConnection(self.cluster.master)
         try:
@@ -4965,6 +5109,24 @@ class CRLTest(CRLBase):
                 "Second node never had this file written to its own disk "
                 "and was never told to reload -- it must not see it",
             )
+            # -- The listing above is metadata; this is the part that
+            # matters operationally. Same leaf, same cluster-wide policy
+            # (Require), two nodes: master enforces the directory-polled
+            # revocation, the second node -- which never received the file
+            # -- still lets the same cert in. --
+            self.assertFalse(
+                self._handshake_ok(dir_leaf_cert_path, dir_leaf_key_path),
+                "Master must reject the leaf revoked by the CRL dropped "
+                "into its own polled directory",
+            )
+            self.assertTrue(
+                self._handshake_ok(
+                    dir_leaf_cert_path, dir_leaf_key_path, host=second.ip
+                ),
+                f"Second node ({second.ip}) never saw that file, so it must "
+                f"still accept the same cert -- a rejection here would mean "
+                f"a directory-polled CRL leaks cluster-wide",
+            )
         finally:
             try:
                 shell.execute_command(f"rm -rf {poll_dir}")
@@ -4973,7 +5135,8 @@ class CRLTest(CRLBase):
             shell.disconnect()
         self.log.info(
             "reloadCrl and directory-polled files are per-node -- "
-            "second node saw neither the file nor its effect"
+            "second node saw neither the file, its listing, nor its "
+            "enforcement effect"
         )
 
         # -- Removing the (only) revoking CRL and reloading
@@ -6030,6 +6193,64 @@ class CRLTest(CRLBase):
             "Both newly-added nodes correctly enforce CRL once the "
             "unequal add-2/remove-1 rebalance completes -- consistent "
             "enforcement through a single unequal rebalance operation"
+        )
+
+        # -- Swap rebalance: one node in, one node out in a single
+        # operation (equal counts), distinct from both the sequential
+        # out-then-in cycle and the unequal add-2/remove-1 above. The
+        # incoming node must enforce CRL from the moment it serves
+        # traffic, with no unenforced window during the swap itself.
+        # Driven through add_node + cluster_util.rebalance (the same
+        # REST path swaprebalancetests.py uses) rather than
+        # task.rebalance: that reads live cluster state, whereas
+        # task.rebalance's cached view no longer survives a sixth
+        # topology change after everything above.
+        swap_in, swap_out = target_server, unequal_spare
+        swap_result = []
+
+        def _swap():
+            self.rest.add_node(
+                user=swap_in.rest_username, password=swap_in.rest_password,
+                remoteIp=swap_in.ip, services=["kv"],
+            )
+            swap_result.append(self.cluster_util.rebalance(
+                self.cluster, wait_for_completion=True,
+                ejected_nodes=[f"ns_1@{swap_out.ip}"],
+                validate_bucket_ranking=False,
+            ))
+
+        states = self.crl_utils.probe_during(
+            _swap, [master_ip], self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+        )
+        self.assertTrue(
+            swap_result and swap_result[0],
+            f"Swap rebalance ({swap_in.ip} in, {swap_out.ip} out) failed -- "
+            f"any CRL assertion below would be about a node outside the cluster",
+        )
+        self.assertNotIn(
+            "connected", states[master_ip],
+            f"Revoked cert must never connect on {master_ip} throughout the "
+            f"swap rebalance, got: {states[master_ip]}",
+        )
+        self.assertEqual(
+            self.crl_utils.probe_mtls_state(
+                swap_in.ip, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+            ),
+            "rejected",
+            f"Swapped-in node {swap_in.ip} must reject the revoked cert as "
+            f"soon as the swap completes -- no unenforced window",
+        )
+        self.assertEqual(
+            self.crl_utils.probe_mtls_state(
+                swap_in.ip, self.MGMT_PORT, valid_cert_path, valid_key_path,
+            ),
+            "connected",
+            f"Swapped-in node {swap_in.ip} should accept the valid cert",
+        )
+        self.log.info(
+            f"Swap rebalance ({swap_in.ip} in, {swap_out.ip} out): incoming "
+            f"node enforces CRL immediately, zero gap on the master "
+            f"throughout ({len(states[master_ip])} samples)"
         )
 
     def test_crl_n2n_dual_certificate_enforcement(self):
