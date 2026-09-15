@@ -1034,6 +1034,15 @@ class MagmaRollbackTests(MagmaBaseTest):
                         self.log.info("state files == {}".format(
                                      self.get_state_files(self.buckets[0])))
 
+                # Slide 'start' past the range just loaded on this node, else
+                # the next node reseeds compute_docs() with the same stale
+                # 'start' and recreates keys that were never rolled back on
+                # every node (DocumentExistsException). compute_docs derives
+                # create_start=start, delete_start=start//ops_len,
+                # update_start=(ops_len-1)*start//ops_len -- advancing by
+                # ops_len covers every one of those divisors.
+                start += itr * mem_only_items * ops_len
+
                 ep_queue_size_map = {node:
                                      mem_item_count}
                 if self.durability_level:
@@ -1078,13 +1087,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                     ep_queue_size_map.update({nod: 0})
                     vb_replica_queue_size_map.update({nod: 0})
                 self.log.info("Iteration-{}, node-{}, check for wait for stats".format(i, x+1))
-                #for bucket in self.cluster.buckets:
-                #    self.bucket_util._wait_for_stat(bucket,
-                #                                    ep_queue_size_map, timeout=300)
-                #    self.bucket_util._wait_for_stat(bucket,
-                #                                    vb_replica_queue_size_map,
-                #                                    cbstat_cmd="all",
-                #                                    stat_name="vb_replica_queue_size", timeout=300)
+                for bucket in self.cluster.buckets:
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    ep_queue_size_map, timeout=300)
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    vb_replica_queue_size_map,
+                                                    cbstat_cmd="all",
+                                                    stat_name="vb_replica_queue_size", timeout=300)
 
                 shell.disconnect()
 
@@ -1207,6 +1216,15 @@ class MagmaRollbackTests(MagmaBaseTest):
                         self.log.info("state files == {}".format(
                                      self.get_state_files(self.buckets[0])))
 
+                # Slide 'start' past the range just loaded on this node, else
+                # the next node reseeds compute_docs() with the same stale
+                # 'start' and recreates keys that were never rolled back on
+                # every node (DocumentExistsException). compute_docs derives
+                # create_start=start, delete_start=start//ops_len,
+                # update_start=(ops_len-1)*start//ops_len -- advancing by
+                # ops_len covers every one of those divisors.
+                start += itr * mem_only_items * ops_len
+
                 ep_queue_size_map = {node:
                                      mem_item_count}
                 if self.durability_level:
@@ -1252,13 +1270,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                     ep_queue_size_map.update({nod: 0})
                     vb_replica_queue_size_map.update({nod: 0})
                 self.log.info("Iteration-{}, node-{}, check for wait for stats".format(i, x+1))
-                #for bucket in self.cluster.buckets:
-                #    self.bucket_util._wait_for_stat(bucket,
-                #                                    ep_queue_size_map, timeout=600)
-                #    self.bucket_util._wait_for_stat(bucket,
-                #                                    vb_replica_queue_size_map,
-                #                                    cbstat_cmd="all",
-                #                                    stat_name="vb_replica_queue_size", timeout=600)
+                for bucket in self.cluster.buckets:
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    ep_queue_size_map, timeout=600)
+                    self.bucket_util._wait_for_stat(bucket,
+                                                    vb_replica_queue_size_map,
+                                                    cbstat_cmd="all",
+                                                    stat_name="vb_replica_queue_size", timeout=600)
                 shell.disconnect()
             ###################################################################
             '''
