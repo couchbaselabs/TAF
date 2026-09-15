@@ -47,9 +47,11 @@ class ContinuousBackupBase(CollectionBase):
 
         # Verify the on-disk encryption state of both backup locations matches
         # what ear_bk / ear_contbk declared. CollectionBase.collection_setup()
-        # has already taken the initial cbbackupmgr backup and waited one
+        # has normally taken the initial cbbackupmgr backup and waited one
         # continuous-backup interval by this point, so both locations have
-        # content to scan.
+        # content to scan. With initial_load=False it takes neither -- the
+        # test owns its own load and backup -- so the archive surface has no
+        # repo yet and self-skips; see _check_location_encryption().
         self._verify_backup_file_encryption_state()
 
     def tearDown(self):
@@ -253,6 +255,8 @@ class ContinuousBackupBase(CollectionBase):
         The file-format validator's remote scan uses shell commands (`find`, `head -c`) that don't reach into
         object-store URLs (s3://, gs://, az://).
         A surface backed by cloud storage is skipped with a per-surface warning while the other surface is still checked.
+        So is a surface whose backup content doesn't exist yet -- see `content_subpath` below and in
+        _check_location_encryption().
         """
         if not (self.ear_bk or self.ear_contbk):
             return
@@ -262,13 +266,26 @@ class ContinuousBackupBase(CollectionBase):
         def _is_scannable(location):
             return bool(location) and location.startswith("/")
 
+        # (location, expected_encrypted, flag_name, content_subpath), where
+        # content_subpath narrows the scan to the sub-path that actually holds
+        # backup data. The cbbackupmgr archive root also carries the tool's own
+        # plaintext bookkeeping, which survives the between-test cleanup in
+        # OnPremBaseTest.setUp (`rm -rf <archive>/*` leaves hidden entries
+        # behind), so scanning the root cannot tell "nothing backed up here
+        # yet" from "encryption did not take effect" -- both read as
+        # `unencrypted`. The repo directory can tell them apart: cbbackupmgr
+        # config creates it, so its absence means no backup has been taken.
+        # The continuous-backup location has no such wrapper; its root is its
+        # content, so it stays at None.
         surfaces = [
-            (self.backup_archive_dir, self.ear_bk, "ear_bk"),
-            (self.continuous_backup_location, self.ear_contbk, "ear_contbk"),
+            (self.backup_archive_dir, self.ear_bk, "ear_bk",
+             self.backup_repo_name),
+            (self.continuous_backup_location, self.ear_contbk, "ear_contbk",
+             None),
         ]
-        scannable = [(loc, expected, name) for loc, expected, name in surfaces
-                     if _is_scannable(loc)]
-        for loc, expected, name in surfaces:
+        scannable = [surface for surface in surfaces
+                     if _is_scannable(surface[0])]
+        for loc, expected, name, _ in surfaces:
             if not _is_scannable(loc):
                 self.log.warning(
                     f"_verify_backup_file_encryption_state: {name} surface "
@@ -281,38 +298,68 @@ class ContinuousBackupBase(CollectionBase):
 
         shell = RemoteMachineShellConnection(self.cluster.master)
         try:
-            for location, expected_encrypted, flag_name in scannable:
+            for location, expected_encrypted, flag_name, content_subpath \
+                    in scannable:
                 self._check_location_encryption(
                     shell, location,
                     expected_encrypted=expected_encrypted,
-                    flag_name=flag_name)
+                    flag_name=flag_name,
+                    content_subpath=content_subpath)
         finally:
             shell.disconnect()
 
     def _check_location_encryption(self, shell, location, expected_encrypted,
-                                   flag_name):
+                                   flag_name, content_subpath=None):
         """
-        Scan `location` on the given shell and assert its aggregate encryption
-        state matches `expected_encrypted`. When expected_encrypted is True,
-        we require at least one file to carry the Couchbase Encrypted magic
-        (partial or full — metadata files in a valid encrypted archive stay
-        plaintext, so "full" is not always achievable). When False, we
-        require zero encrypted files.
+        Scan `location` -- or `location/content_subpath`, when given -- on the
+        given shell and assert its aggregate encryption state matches
+        `expected_encrypted`. When expected_encrypted is True, we require at
+        least one file to carry the Couchbase Encrypted magic (partial or full
+        — metadata files in a valid encrypted archive stay plaintext, so
+        "full" is not always achievable). When False, we require zero
+        encrypted files.
+
+        A `content_subpath` that doesn't exist means no backup has been taken
+        on this surface yet, so there is nothing to assert about and the check
+        is skipped with a warning. That is a real state rather than a failure:
+        the tests configured with initial_load=False create their repo in the
+        test body instead of in CollectionBase.collection_setup(), so they
+        reach setUp with an archive holding nothing but cbbackupmgr's own
+        plaintext bookkeeping. Scanning the archive root there reported
+        `unencrypted` and failed the test with "the encryption flag did not
+        take effect", which was never true -- the flag simply hadn't been
+        applied yet. An absent repo is unambiguous in a way an empty scan is
+        not, and it stays strict about the case that matters: a broken
+        --encrypted produces a plaintext repo, not a missing one.
         """
-        scan = scan_remote_directory(shell, location)
+        scan_root = f"{location}/{content_subpath}" if content_subpath \
+            else location
+        # Probed via stdout rather than an exit code: execute_command only
+        # plumbs one through on the non-pty branch, and stderr is merged into
+        # stdout on the pty (use_sudo) branch, so an echo is what reads the
+        # same either way.
+        probe, _ = shell.execute_command(
+            f"test -d {scan_root} && echo PRESENT || echo ABSENT")
+        if not any("PRESENT" in line for line in probe):
+            self.log.warning(
+                f"_check_location_encryption: {scan_root} does not exist, so "
+                f"no backup has been taken on this surface yet; skipping the "
+                f"{flag_name}={expected_encrypted} check")
+            return
+        scan = scan_remote_directory(shell, scan_root)
         status = aggregate_status(scan)
         self.log.info(
             f"_check_location_encryption: {flag_name}={expected_encrypted}, "
-            f"location={location}, aggregate_status={status}, "
+            f"location={scan_root}, aggregate_status={status}, "
             f"files_scanned={len(scan)}")
         if expected_encrypted and status == "unencrypted":
             self.fail(
-                f"{flag_name}=True but no files under {location} carry the "
+                f"{flag_name}=True but no files under {scan_root} carry the "
                 f"Couchbase Encrypted magic. The encryption flag did not "
                 f"take effect on this surface.")
         if not expected_encrypted and status != "unencrypted":
             self.fail(
-                f"{flag_name}=False but files under {location} carry the "
+                f"{flag_name}=False but files under {scan_root} carry the "
                 f"Couchbase Encrypted magic (state: {status}). The "
                 f"unencrypted-side surface was accidentally encrypted.")
 
