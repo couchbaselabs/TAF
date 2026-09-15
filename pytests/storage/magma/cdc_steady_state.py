@@ -1,3 +1,4 @@
+import os
 import random
 from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -354,3 +355,130 @@ class SteadyStateTests(MagmaBaseTest):
                                                                                                                     bucket.name, key)
                     self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] < history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
             seq_count = self.get_seqnumber_count()
+
+    def magma_dump_count(self, bucket, label, with_history=False, kvstore=0):
+        """Count on-disk seq-index docs for `self.key` on vb/kvstore 0,
+        logging a per-key version count (e.g. "test_docs000002969 1")
+        instead of dumping raw magma_dump entries.
+
+        magma_dump reads from the last stable checkpoint by default and
+        misses writes still in the WAL -- --replay-wal is required.
+        """
+        mode = "history" if with_history else "live"
+        total = 0
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            magma = os.path.join(self.data_path, bucket.uuid, "magma.{}".format(kvstore))
+            cmd = ('/opt/couchbase/bin/magma_dump {} docs '
+                  '--index seq --kvstore {} --replay-wal').format(magma, kvstore)
+            if with_history:
+                cmd += ' --history'
+            cmd += (' | grep -oP \'"ascii":"\\K{}[^"]*\' | sort | uniq -c'
+                    .format(self.key))
+            self.log.info("magma_dump_count [%s/%s] cmd on %s: %s"
+                           % (label, mode, node.ip, cmd))
+            key_counts, _ = shell.execute_command(cmd)
+            for line in key_counts:
+                line = line.strip()
+                if not line:
+                    continue
+                key_count, key = line.split(None, 1)
+                self.log.info("magma_dump_count [%s/%s]: %s %s"
+                               % (label, mode, key, key_count))
+                total += int(key_count)
+            shell.disconnect()
+        return total
+
+    def log_checkpoint(self, bucket, label, kvstore=0):
+        live = self.magma_dump_count(bucket, label, with_history=False, kvstore=kvstore)
+        hist = self.magma_dump_count(bucket, label, with_history=True, kvstore=kvstore)
+        self.log.info(
+            "magma_dump [%s]: seq_live=%s seq_history=%s"
+            % (label, live, hist))
+        history_start_seq = self.get_history_start_seq_for_each_vb()
+        self.log.info("history_start_seqno [%s]: vb0=%s"
+                       % (label, history_start_seq[bucket][0]))
+        return live, hist
+
+    def test_disabling_retention_purges_history_on_compaction(self):
+        """
+        MB-66960: retention on -> update -> retention off -> compact must
+        purge stale on-disk history versions, not just drop the
+        history_start_seqno stat. Verified via magma_dump directly.
+
+        All docs are pinned to vbucket 0 (target_vbs=[0]), so every check
+        reads only magma.0/kvstore-0 (kvstore ID == vbucket number), and
+        every count is filtered to self.key -- kvstore 0 also holds a few
+        internal _collection/_scope metadata docs an unfiltered count
+        would include.
+        """
+        self.PrintStep("test_disabling_retention_purges_history_on_compaction starts")
+        num_items = self.input.param("num_items", 10)
+        update_iterations = self.input.param("update_iterations", 2)
+        bucket = self.cluster.buckets[0]
+
+        self.PrintStep("Step 1: Create %s items with history retention off" % num_items)
+        self.create_start = 0
+        self.create_end = num_items
+        # skip_default=False: this test loads into the bucket's default
+        # collection only, unlike other tests in this file.
+        self.java_doc_loader(wait=True, doc_ops="create", skip_default=False,
+                             target_vbs=[0])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+        live_count, _ = self.log_checkpoint(bucket, "after Step 1 create")
+        self.assertEqual(
+            live_count, num_items,
+            "Expected %s on-disk docs before retention was ever enabled, "
+            "found %s" % (num_items, live_count))
+
+        self.PrintStep("Step 2: Enable history retention (1 day)")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, bucket,
+            history_retention_seconds=86400, history_retention_bytes=1000000000000)
+        self.sleep(10, "sleep after enabling history retention")
+        self.log_checkpoint(bucket, "after Step 2 enable retention, before any update")
+
+        self.PrintStep("Step 3: Update all %s items %s times" % (num_items, update_iterations))
+        self.update_start = 0
+        self.update_end = num_items
+        # java_doc_loader() never resets create_perc for a call whose
+        # doc_ops doesn't include "create" -- it stays at the 100 set in
+        # setUp(), so an update-only call still tells Sirius Create=100,
+        # Update=100 and it silently starts no worker at all (MB-66960
+        # repro investigation, 2026-09-15).
+        self.create_perc = 0
+        for iteration in range(update_iterations):
+            self.java_doc_loader(wait=True, doc_ops="update", skip_default=False,
+                                 target_vbs=[0])
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self.log_checkpoint(bucket, "after Step 3 update iteration %s" % (iteration + 1))
+
+        expected_versions_with_history = num_items * (update_iterations + 1)
+        seq_count_without_history, seq_count_with_history = self.log_checkpoint(
+            bucket, "after Step 3 updates, before any compaction")
+        self.assertEqual(
+            seq_count_without_history, num_items,
+            "Live doc count changed unexpectedly: %s" % seq_count_without_history)
+        self.assertEqual(
+            seq_count_with_history, expected_versions_with_history,
+            "History was not retained as expected: got %s, wanted %s"
+            % (seq_count_with_history, expected_versions_with_history))
+
+        self.PrintStep("Step 4: Disable history retention and compact")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, bucket,
+            history_retention_seconds=0, history_retention_bytes=0)
+        self.sleep(10, "sleep after disabling history retention")
+        self.log_checkpoint(bucket, "after Step 4 disable retention, before compaction")
+        self.bucket_util._run_compaction(self.cluster)
+
+        self.PrintStep("Step 5: Validate only the latest version remains (MB-66960)")
+        seq_count_without_history, seq_count_with_history = self.log_checkpoint(
+            bucket, "after Step 4 compaction")
+        self.assertEqual(
+            seq_count_with_history, seq_count_without_history,
+            "MB-66960: magma_dump still shows %s on-disk versions after "
+            "retention was disabled and compaction ran; expected only the "
+            "latest version per key (%s)"
+            % (seq_count_with_history, seq_count_without_history))
