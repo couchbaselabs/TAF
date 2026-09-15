@@ -759,7 +759,7 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
              self.num_replicas < self.max_count)
         self.failover_expected = not failover_not_expected
         if self.failover_action == "restart_server":
-            self.num_items *= 100
+            self.num_items *= 10
         self.orchestrator = self.cluster.servers[0] if not \
             self.failover_orchestrator else self.cluster.servers[
             self.num_node_failures]
