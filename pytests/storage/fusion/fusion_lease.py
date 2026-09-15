@@ -218,12 +218,20 @@ class FusionLease(MagmaBaseTest, FusionBase):
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         try:
-            rebalance_thread = threading.Thread(
-                target=self.run_rebalance,
-                kwargs={"output_dir": self.fusion_output_dir, "rebalance_count": 1,
-                        "rebalance_sleep_time": 900, "force_sync_during_sleep": True,
-                        "snapshot_lifetime_sec": snapshot_lifetime_sec}
-            )
+            # run_rebalance() calls self.fail() on failure, raised inside this
+            # thread -- threading.Thread.join() never re-raises a target's
+            # exception, so it has to be captured here and checked after join().
+            rebalance_error = list()
+
+            def _run_rebalance():
+                try:
+                    self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1,
+                                       rebalance_sleep_time=900, force_sync_during_sleep=True,
+                                       snapshot_lifetime_sec=snapshot_lifetime_sec)
+                except Exception as ex:
+                    rebalance_error.append(ex)
+
+            rebalance_thread = threading.Thread(target=_run_rebalance)
             rebalance_thread.start()
 
             plan_file = self.wait_for_plan(ssh, rebalance_count=1)
@@ -246,12 +254,10 @@ class FusionLease(MagmaBaseTest, FusionBase):
             for task in compaction_tasks:
                 self.task_manager.get_task_result(task)
 
-            rebalance_result = True
-            try:
-                rebalance_thread.join()
-            except Exception as ex:
-                self.log.info(f"Rebalance failed as expected: {ex}")
-                rebalance_result = False
+            rebalance_thread.join()
+            rebalance_result = not rebalance_error
+            if rebalance_error:
+                self.log.info(f"Rebalance failed as expected: {rebalance_error[0]}")
 
             self.assertFalse(rebalance_result,
                            "Rebalance should have failed due to deleted snapshot")
