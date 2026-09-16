@@ -50,32 +50,67 @@ class audit:
 
     def getAuditConfigPathInitial(self):
         shell = RemoteMachineShellConnection(self.host)
-        os_type = shell.extract_remote_info().distribution_type
-        dist_ver = (shell.extract_remote_info().distribution_version).rstrip()
-        self.log.info ("OS type is {0}".format(os_type))
-        if os_type == 'windows':
-            auditconfigpath = audit.WINCONFIFFILEPATH
-            self.currentLogFile = audit.WINLOGFILEPATH
-        elif os_type == 'Mac':
-            if ('10.12' == dist_ver):
-                auditconfigpath = "/Users/admin/Library/Application Support/Couchbase/var/lib/couchbase/config/"
-                self.currentLogFile = "/Users/admin/Library/Application Support/Couchbase/var/lib/couchbase/logs"
+        try:
+            os_type = shell.extract_remote_info().distribution_type
+            dist_ver = (shell.extract_remote_info().distribution_version).rstrip()
+            self.log.info ("OS type is {0}".format(os_type))
+            if os_type == 'windows':
+                auditconfigpath = audit.WINCONFIFFILEPATH
+                self.currentLogFile = audit.WINLOGFILEPATH
+            elif os_type == 'Mac':
+                if ('10.12' == dist_ver):
+                    auditconfigpath = "/Users/admin/Library/Application Support/Couchbase/var/lib/couchbase/config/"
+                    self.currentLogFile = "/Users/admin/Library/Application Support/Couchbase/var/lib/couchbase/logs"
+                else:
+                    auditconfigpath = audit.MACCONFIGFILEPATH
+                    self.currentLogFile = audit.MACLOGFILEPATH
             else:
-                auditconfigpath = audit.MACCONFIGFILEPATH
-                self.currentLogFile = audit.MACLOGFILEPATH
-        else:
-            if self.nonroot:
-                auditconfigpath = "/home/%s%s" % (self.host.ssh_username,
-                                                  audit.LINCONFIGFILEPATH)
-                self.currentLogFile = "/home/%s%s" % (self.host.ssh_username,
-                                                      audit.LINLOGFILEPATH)
-            elif self.host.type == "analytics":
-                auditconfigpath = audit.LINCONFIGFILEPATH_EA
-                self.currentLogFile = audit.LINLOGFILEPATH_EA
-            else:
-                auditconfigpath = audit.LINCONFIGFILEPATH
-                self.currentLogFile = audit.LINLOGFILEPATH
-        return auditconfigpath
+                if self.nonroot:
+                    auditconfigpath = "/home/%s%s" % (self.host.ssh_username,
+                                                      audit.LINCONFIGFILEPATH)
+                    self.currentLogFile = "/home/%s%s" % (self.host.ssh_username,
+                                                          audit.LINLOGFILEPATH)
+                else:
+                    # Don't rely on self.host.type == "analytics" to choose
+                    # EA vs. classic Couchbase Server -- verified live
+                    # 2026-09-14 that this can't be confirmed reliably on
+                    # every agent, and guessing wrong here left
+                    # getRemoteFile silently fetching nothing (see its own
+                    # fix below, and PYTHON_UDF_SUITE_FINDINGS.md E2). Check
+                    # which location actually has the file instead of
+                    # guessing from host metadata.
+                    #
+                    # Deliberately not shell.file_exists(): on a zero-byte
+                    # match it runs `rm -rf {path}*{filename}*` and sleeps
+                    # 30s (common_api.py) -- fine for its original one-path
+                    # callers, but this now probes two candidate paths
+                    # speculatively, and a zero-byte audit.json on either
+                    # one would be deleted by the probe itself. `test -f`
+                    # only checks existence.
+                    auditconfigpath = None
+                    for candidate_config, candidate_log in (
+                            (audit.LINCONFIGFILEPATH_EA, audit.LINLOGFILEPATH_EA),
+                            (audit.LINCONFIGFILEPATH, audit.LINLOGFILEPATH)):
+                        out, _ = shell.execute_command(
+                            "test -f {0}{1} && echo present".format(
+                                candidate_config, audit.AUDITCONFIGFILENAME))
+                        if out and "present" in out[0]:
+                            auditconfigpath = candidate_config
+                            self.currentLogFile = candidate_log
+                            break
+                    if auditconfigpath is None:
+                        raise Exception(
+                            "Could not find {0} under either {1} or {2} on {3}".format(
+                                audit.AUDITCONFIGFILENAME, audit.LINCONFIGFILEPATH_EA,
+                                audit.LINCONFIGFILEPATH, self.host.ip))
+            return auditconfigpath
+        finally:
+            # This now does two extra sftp round-trips (the file
+            # existence probes above) on top of the pre-existing
+            # extract_remote_info calls, and runs already log
+            # "CRITICAL :: Shell disconnection mismatch" -- disconnect
+            # explicitly rather than leaving one more connection open.
+            shell.disconnect()
 
     '''
     setAuditConfigPath - External function to set configPATH
@@ -104,7 +139,16 @@ class audit:
     '''
     def getRemoteFile(self, host, remotepath, filename):
         shell = RemoteMachineShellConnection(host)
-        shell.get_file(remotepath, filename, audit.DOWNLOADPATH)
+        # get_file returned False silently on a wrong path (see
+        # getAuditConfigPathInitial's fix above) and the caller never
+        # checked it, so json.load ended up five frames away reading a
+        # stale or absent local file with no indication the fetch itself
+        # was the actual failure. Verified live 2026-09-14: zero
+        # "Copying ... to ..." lines in the log meant sftp.get never ran.
+        if not shell.get_file(remotepath, filename, audit.DOWNLOADPATH):
+            raise Exception(
+                "Could not fetch {0}{1} from {2} into {3}".format(
+                    remotepath, filename, host.ip, audit.DOWNLOADPATH))
 
     def readFile(self, pathAuditFile, fileName):
         self.getRemoteFile(self.host, pathAuditFile, fileName)
@@ -187,7 +231,10 @@ class audit:
     def getAuditConfigElement(self, element):
         data = []
         self.readFile(self.getAuditConfigPathInitial(), audit.AUDITCONFIGFILENAME)
-        json_data = open (audit.DOWNLOADPATH + audit.AUDITCONFIGFILENAME)
+        # errors='replace': verified live 2026-09-13 against an EA node --
+        # audit.json there carries a stray non-UTF-8 byte that otherwise
+        # crashes json.load before any caller gets a chance to react.
+        json_data = open(audit.DOWNLOADPATH + audit.AUDITCONFIGFILENAME, encoding='utf-8', errors='replace')
         data = json.load(json_data)
         if (element == 'all'):
             return data

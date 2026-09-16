@@ -250,7 +250,8 @@ class CBAS_UDF(object):
     """
 
     def __init__(self, name, dataverse_name, parameters, body,
-                 referenced_entities):
+                 referenced_entities, library=None, module=None,
+                 entry_point=None, with_options=None):
         """
         :param name str, name of the User defined fucntion
         :param dataverse str, name of the dataverse where the UDF is
@@ -259,6 +260,12 @@ class CBAS_UDF(object):
         :param body str function body
         :param referenced_entities list list of datasets or UDF referenced in
         the function body
+        :param library str, name of the library backing an external
+        (Python) function; None for an inline-body function.
+        :param module str, module name inside the library, e.g. "mylib".
+        :param entry_point str, "Class.method" or bare function name.
+        :param with_options dict, e.g. {"null-call": False,
+        "deterministic": True}.
         """
         self.name = CBASHelper.format_name(name)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
@@ -268,6 +275,11 @@ class CBAS_UDF(object):
         else:
             self.arity = len(parameters)
         self.body = body
+        self.library = library
+        self.module = module
+        self.entry_point = entry_point
+        self.with_options = with_options
+        self.is_external = library is not None
         self.dataset_dependencies = list()
         self.udf_dependencies = list()
         self.synonym_dependencies = list()

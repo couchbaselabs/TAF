@@ -3420,7 +3420,8 @@ class UDFUtil(Index_Util):
                    query_context=False, use_statement=False,
                    validate_error_msg=False, expected_error=None,
                    username=None, password=None, timeout=120,
-                   analytics_timeout=120):
+                   analytics_timeout=120, library=None, module=None,
+                   entry_point=None, with_options=None):
         """
         Create CBAS User Defined Functions
         :param name str, name of the UDF to be created.
@@ -3429,6 +3430,7 @@ class UDFUtil(Index_Util):
         :param parameters list/None, if None then the create UDF is passed
         without function parenthesis.
         :param body str/None, if None then no function body braces are passed.
+        Ignored when `library` is given.
         :param if_not_exists bool, whether to use "if not exists" flag
         :param query_context bool, whether to use query_context while
         executing query using REST API calls
@@ -3440,6 +3442,14 @@ class UDFUtil(Index_Util):
         :param password : str
         :param timeout : int
         :param analytics_timeout : int
+        :param library str/None, name of the uploaded library backing an
+        external (Python) function. When set, creates
+        `AS "module", "entry_point" AT library [WITH {...}]` instead of the
+        inline-body form, and `body` is ignored.
+        :param module str, module name inside the library.
+        :param entry_point str, "Class.method" or bare function name.
+        :param with_options dict/None, e.g. {"null-call": False,
+        "deterministic": True}.
         """
         param = {}
         create_udf_statement = ""
@@ -3448,7 +3458,13 @@ class UDFUtil(Index_Util):
         create_udf_statement += "create"
         if or_replace:
             create_udf_statement += " or replace"
-        create_udf_statement += " analytics function "
+        if library is not None:
+            # External (library-backed) function. Enterprise Analytics is no
+            # longer tethered to Couchbase Server's Query service, so the
+            # optional "analytics" keyword is deliberately omitted here.
+            create_udf_statement += " function "
+        else:
+            create_udf_statement += " analytics function "
         if dataverse and not query_context and not use_statement:
             create_udf_statement += "{0}.".format(dataverse)
         create_udf_statement += name
@@ -3459,7 +3475,13 @@ class UDFUtil(Index_Util):
             create_udf_statement += "({0})".format(param_string)
         if if_not_exists:
             create_udf_statement += " if not exists "
-        if body:
+        if library is not None:
+            create_udf_statement += ' as "{0}", "{1}" at {2}'.format(
+                module, entry_point, library)
+            if with_options is not None:
+                create_udf_statement += " with {0}".format(
+                    json.dumps(with_options))
+        elif body:
             create_udf_statement += "{" + body + "}"
 
         if query_context:
@@ -3672,6 +3694,75 @@ class UDFUtil(Index_Util):
                 return False
         else:
             return False
+
+    def get_udf_metadata_row(self, cluster, udf_name, udf_dataverse_name,
+                              udf_database_name=None):
+        """
+        Fetches the raw Metadata.Function row for a UDF (external or
+        inline). Returns the row dict, or None if not found.
+        :param udf_database_name: str/None, optional -- accepted for
+        signature parity with the columnar variant of this method; when
+        given, narrows the query by DatabaseName too.
+        """
+        cmd = "select value func from Metadata.`Function` as func where " \
+              "Name=\"{0}\" and DataverseName=\"{1}\"".format(
+                  CBASHelper.unformat_name(udf_name),
+                  CBASHelper.metadata_format(udf_dataverse_name))
+        if udf_database_name is not None:
+            cmd += " and DatabaseName=\"{0}\"".format(
+                CBASHelper.metadata_format(udf_database_name))
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, \
+            _ = self.execute_statement_on_cbas_util(cluster, cmd)
+        if status == "success" and results:
+            self.log.info("Metadata.Function row for {0}: {1}".format(
+                udf_name, results[0]))
+            return results[0]
+        return None
+
+    def validate_external_udf_in_metadata(
+            self, cluster, udf_name, udf_dataverse_name, udf_database_name,
+            parameters, expected_library=None, expected_module=None,
+            expected_entry_point=None):
+        """
+        Validates an external (library-backed) UDF's Metadata.Function row.
+        The exact column names Enterprise Analytics uses to record the
+        library/module/entry point are not documented anywhere (an open
+        question in the Python UDF test plan), so this logs the raw row via
+        get_udf_metadata_row() and asserts Arity plus, for each of
+        expected_library/expected_module/expected_entry_point that is
+        given, that the value appears somewhere in the serialized row.
+        Tighten this to specific field names once they are confirmed
+        against a live cluster.
+        :param udf_database_name: str/None, optional -- accepted for
+        signature parity with the columnar variant of this method.
+        """
+        result = self.get_udf_metadata_row(
+            cluster, udf_name, udf_dataverse_name, udf_database_name)
+        if result is None:
+            self.log.error(
+                "No Metadata.Function entry found for {0}".format(udf_name))
+            return False
+
+        if parameters and parameters[0] == "...":
+            arity = -1
+        else:
+            arity = len(parameters)
+        if int(result["Arity"]) != arity:
+            self.log.error("Expected Arity : {0}\tActual Value : {1}".format(
+                arity, result["Arity"]))
+            return False
+
+        row_text = json.dumps(result)
+        for label, expected in (("library", expected_library),
+                                 ("module", expected_module),
+                                 ("entry_point", expected_entry_point)):
+            if expected is not None and expected not in row_text:
+                self.log.error(
+                    "Expected {0} {1} not found anywhere in Metadata.Function"
+                    " row {2}".format(label, expected, result))
+                return False
+        return True
 
     def verify_function_execution_result(
             self, cluster, func_name, func_parameters, expected_result=None,
@@ -4825,8 +4916,11 @@ class CbasUtil(CBOUtil):
                     self.log.error("Unable to drop Synonym {0}".format(syn))
 
             # Disconnect all links
-            links = [".".join(l["scope"].split("/") + [l["name"]]) for l in self.get_link_info(
-                cluster)]
+            # get_link_info returns None (not []) when the REST call fails --
+            # which it does whenever cleanup runs against a cluster that is
+            # mid-rebalance, exactly when cleanup is most likely to be called.
+            links = [".".join(l["scope"].split("/") + [l["name"]])
+                     for l in (self.get_link_info(cluster) or [])]
             for lnk in links:
                 if not self.disconnect_link(cluster, lnk):
                     self.log.error("Unable to disconnect Link {0}".format(lnk))
@@ -4845,7 +4939,11 @@ class CbasUtil(CBOUtil):
                     if not self.drop_dataverse(cluster, dv):
                         self.log.error("Unable to drop Dataverse {0}".format(dv))
         except Exception as e:
-            self.log.info(e.message)
+            # `e.message` is a Python-2 idiom: on Python 3 it raises
+            # AttributeError from inside the handler, so the one construct
+            # meant to keep a cleanup failure non-fatal was instead turning
+            # every one of them into an opaque crash in setUp.
+            self.log.info(str(e))
 
     def get_replica_number_from_settings(
             self, node, method="GET", param="", username=None, password=None,
