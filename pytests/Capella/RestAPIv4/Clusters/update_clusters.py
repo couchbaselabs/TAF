@@ -3,7 +3,8 @@ Created on August 31, 2023
 
 @author: Vipul Bhardwaj
 """
-
+import copy
+import time
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
@@ -75,6 +76,26 @@ class UpdateCluster(GetProject):
                 "version": None
             }
         }
+        cluster_template = self.input.param("cluster_template",
+                                                    "AWS_r5_xlarge")
+        self.expected_res.update(self.cluster_templates[cluster_template])
+        if cluster_template == "Azure_E4s_v5":
+            self.expected_res["serviceGroups"][0]["node"][
+                "disk"]["storage"] = 64
+            self.expected_res["serviceGroups"][0]["node"][
+                "disk"]["iops"] = 240
+
+        # Wait for the deployment request in APIBase to complete.
+        self.log.info("Checking for CLUSTER {} to be stable."
+                        .format(self.cluster_id))
+        start_time = time.time()
+        resp,_ = self.validate_onoff_state(["healthy", "turnedOff"])
+        while not resp:
+            if time.time() > 1800 + start_time:
+                self.tearDown()
+                self.fail("!!!...Cluster didn't deploy within 30mins...!!!")
+            resp,_ = self.validate_onoff_state(["healthy", "turnedOff"])
+        self.log.info("Successfully deployed Cluster.")
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -82,6 +103,10 @@ class UpdateCluster(GetProject):
 
     def test_api_path(self):
         testcases = [
+            {
+                "description": "Update cluster description and verify "
+                               "it got updated"
+            }, 
             {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters",
@@ -143,6 +168,59 @@ class UpdateCluster(GetProject):
                 org = testcase["invalid_organizationID"]
             elif "invalid_projectID" in testcase:
                 proj = testcase["invalid_projectID"]
+
+            if testcase["description"] == (
+                    "Update cluster description and verify it got "
+                    "updated"):
+                clus = self.cluster_id
+                # UpdateCluster inherits GetProject, not GetCluster, so
+                # setUp never waited for the cluster to be stable - the
+                # backend rejects updates while it's still "deploying"
+                # (only Draft/Healthy are allowed).
+                self.log.info("Checking for CLUSTER {} to be stable."
+                              .format(clus))
+                start_time = time.time()
+                resp, _ = self.validate_onoff_state(["healthy", "turnedOff"])
+                while not resp:
+                    if time.time() > 1800 + start_time:
+                        self.fail("!!!...Cluster didn't stabilize within "
+                                  "half an hour...!!!")
+                    resp, _ = self.validate_onoff_state(
+                        ["healthy", "turnedOff"])
+                cluster_info = self.capellaAPI.cluster_ops_apis.\
+                    fetch_cluster_info(org, proj, clus).json()
+                new_description = "Updated description via test_api_path"
+                service_groups = copy.deepcopy(cluster_info["serviceGroups"])
+                if cluster_info["cloudProvider"]["type"] == "azure":
+                    # Azure's fixed-tier disk types (e.g. P6) have their
+                    # storage/iops implied by the tier - the update API
+                    # rejects the request if they're specified explicitly,
+                    # even though fetch_cluster_info's GET response
+                    # includes them for informational purposes.
+                    for group in service_groups:
+                        group["node"]["disk"].pop("storage", None)
+                        group["node"]["disk"].pop("iops", None)
+                result = self.capellaAPI.cluster_ops_apis.update_cluster(
+                    org, proj, clus, cluster_info["name"], new_description,
+                    cluster_info["support"], service_groups, False)
+                if result.status_code == 429:
+                    self.handle_rate_limit(
+                        int(result.headers["Retry-After"]))
+                    result = self.capellaAPI.cluster_ops_apis.update_cluster(
+                        org, proj, clus, cluster_info["name"],
+                        new_description, cluster_info["support"],
+                        service_groups, False)
+                if self.validate_testcase(result, [204], testcase, failures):
+                    updated_info = self.capellaAPI.cluster_ops_apis.\
+                        fetch_cluster_info(org, proj, clus).json()
+                    if updated_info.get("description") != new_description:
+                        self.log.warning(
+                            "Description was not updated. Expected: {}, "
+                            "Actual: {}".format(
+                                new_description,
+                                updated_info.get("description")))
+                        failures.append(testcase["description"])
+                continue
 
             result = self.capellaAPI.cluster_ops_apis.update_cluster(
                 org, proj, clus, self.expected_result["name"],
