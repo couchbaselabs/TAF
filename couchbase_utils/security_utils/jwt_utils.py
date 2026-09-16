@@ -959,6 +959,77 @@ class JWTUtils:
                 self.log.warn(f"Error deleting external user {user_name}: {e}")
             return False, None, str(e)
 
+    def create_group(self, rest_connection, group_name, roles,
+                     description=None):
+        """
+        Create (or overwrite) an RBAC group, for use as the
+        create_groups_callback of setup_jwt_config().
+
+        RestConnection.add_set_bulitin_group does NOT raise when the PUT fails -
+        it logs and returns the parsed error body - so the result is inspected
+        here rather than trusted. Every JWT suite needs this and each one was
+        rolling its own copy.
+        """
+        payload = urllib.parse.urlencode(
+            {"description": description or f"JWT test group {group_name}",
+             "roles": roles})
+        self.delete_group(rest_connection, group_name)
+        try:
+            result = rest_connection.add_set_bulitin_group(group_name, payload)
+        except Exception as e:
+            raise Exception(
+                f"Failed to create group {group_name} with roles "
+                f"{roles}: {e}")
+        if isinstance(result, dict) and "errors" in result:
+            raise Exception(
+                f"Failed to create group {group_name} with roles {roles}: "
+                f"{result}")
+        if self.log:
+            self.log.info(f"Created RBAC group {group_name} roles={roles}")
+        return result
+
+    def delete_group(self, rest_connection, group_name):
+        """Delete an RBAC group. Never raises - safe in teardown."""
+        if not group_name:
+            return None
+        try:
+            return rest_connection.delete_builtin_group(group_name)
+        except Exception as e:
+            if self.log:
+                self.log.warn(f"Error deleting group {group_name}: {e}")
+            return None
+
+    @staticmethod
+    def request_with_bearer_url(rest_connection, url, token=None,
+                                username=None, password=None, method="POST",
+                                body=None, content_type="application/json",
+                                extra_headers=None, timeout=120):
+        """
+        Send a request to an absolute URL, authenticated by a bearer token or
+        by basic auth, and return (status_code, body_text).
+
+        request_with_jwt()/JWTAPI.request_with_bearer hardcode the ns_server
+        base URL, so neither can reach a service port. This takes the full URL
+        instead, which is what a Query/FTS/Analytics JWT test needs.
+
+        rest_connection is any CBRestConnection (used only for its request()
+        and header helpers); url decides where the request actually goes.
+        """
+        if token is not None:
+            headers = {"Authorization": f"Bearer {token}",
+                       "Content-Type": content_type,
+                       "Accept": "*/*"}
+        else:
+            headers = rest_connection.create_headers(username, password,
+                                                     content_type)
+        if extra_headers:
+            headers.update(extra_headers)
+
+        _, content, response = rest_connection.request(
+            url, method, params=body or "", headers=headers, timeout=timeout)
+        text = content if isinstance(content, str) else str(content)
+        return response.status_code, text
+
 
     def setup_jwt_config(self, rest_connection, config, create_groups_callback=None, sleep_callback=None):
         """
