@@ -955,9 +955,26 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
 
 
 class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
+    # failover_action values that deliberately break the data disk, and so
+    # are expected to produce CRASH/CRITICAL entries in the server logs.
+    disk_failure_actions = ("disk_failure", "disk_full")
+
     def setUp(self):
         super(DiskAutoFailoverBasetest, self).bareSetUp()
         self.log.info("=========Starting Diskautofailover base setup=========")
+        # Disk failure/full injection makes the data path unreadable or
+        # unwritable on purpose, so KV logs CRITICAL/ERROR entries (magma
+        # IOError, ns_server disk monitor) as a direct result of the test
+        # action. Failing the test on those in tearDown reports an expected
+        # side-effect as a product defect, so downgrade the cb_log validation
+        # to a warning for these scenarios unless the conf asks otherwise.
+        if "crash_warning" not in self.input.test_params \
+                and self.failover_action in self.disk_failure_actions:
+            self.crash_warning = True
+            self.log.info("crash_warning defaulted to True for "
+                          "failover_action=%s: CRASH/CRITICAL entries are "
+                          "expected from the injected disk failure"
+                          % self.failover_action)
         self.original_data_path = self.cluster_util.fetch_data_path(self.orchestrator)
         self.reset_cluster()
         self.disk_location = self.input.param("data_location", "/data")
