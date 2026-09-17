@@ -853,10 +853,27 @@ class CBASCRLBase(CBASBaseTest):
     # Statuses the diagnostics endpoint uses for a certificate it is happy
     # with. Anything else means it would refuse, which is how the section 6
     # consistency check maps a verdict onto expected runtime behaviour.
-    # Determined empirically against 8.5.0-1009 rather than taken from the
-    # plan, whose status list ("not_revoked", "unknown_missing_crl", ...) does
-    # not match what the server actually returns.
-    DIAGNOSTICS_OK_STATUSES = ("valid", "not_revoked", "ok")
+    #
+    # Determined empirically rather than taken from the plan, whose status
+    # list ("not_revoked", "unknown_missing_crl", ...) does not match what the
+    # server returns. The previous value here -- ("valid", "not_revoked",
+    # "ok") -- was equally invented: none of those three are ever emitted, so
+    # a healthy certificate was judged unacceptable and every run of
+    # test_diagnostics_verdict_matches_live_analytics_enforcement failed on
+    # the test's vocabulary rather than on any product disagreement.
+    #
+    # The full vocabulary, measured on 8.5.0-1142 across the four cases that
+    # test drives -- and note the endpoint and the live connection agree in
+    # every one of them:
+    #
+    #   valid                   -> good           live HTTP 200
+    #   revoked                 -> revoked        live SSLError
+    #   untrusted issuer        -> undetermined   live SSLError
+    #   trusted issuer, no CRL  -> undetermined   live SSLError
+    #
+    # Only 'good' is acceptable. 'undetermined' must NOT be added: under
+    # Require it fails closed, which is why its live outcome is an SSLError.
+    DIAGNOSTICS_OK_STATUSES = ("good",)
 
     def _diagnostics_verdict(self, pem_bytes, policy="Require"):
         """

@@ -1579,22 +1579,49 @@ class CBASCRLLifecycle(CBASCRLBase):
 
         lines = self._read_audit_log()
         new_lines = [ln for ln in lines if ln not in before_lines]
-        text = "\n".join(lines)
-        lowered = text.lower()
+        lowered = "\n".join(lines).lower()
 
-        # Whatever else it does, the audit log must not carry key material.
-        for leak in ("-----begin certificate-----",
-                     "-----begin private key-----",
+        # A private key must never appear anywhere in the audit log, no
+        # matter which event wrote it, so this one is checked against the
+        # whole file.
+        for leak in ("-----begin private key-----",
                      "-----begin rsa private key-----"):
             self.assertNotIn(
                 leak, lowered,
                 f"The audit log must not contain {leak!r}"
             )
+
+        # Certificate material and the raw serial are checked against the
+        # DIFF, not the whole log, for the same reason the diff is taken at
+        # all: this test uploads a CRL, changes CRL settings and enables
+        # client cert auth before the snapshot, and ns_server audits each of
+        # those. A CRL contains the serials it revokes, so the serial legit-
+        # imately appears in the upload's own admin event -- recording which
+        # serial an administrator revoked is what an audit trail is for.
+        # Asserting over the whole file therefore failed on the test's own
+        # footprint rather than on anything the rejection leaked, which is
+        # exactly what before_lines/new_lines exist to exclude.
+        new_text = "\n".join(new_lines)
+        new_lowered = new_text.lower()
         self.assertNotIn(
-            str(serial), text,
-            f"The audit log must not carry the unmasked certificate serial "
-            f"{serial}"
+            "-----begin certificate-----", new_lowered,
+            "The rejection's audit events must not contain a certificate PEM"
         )
+        if str(serial) in new_text:
+            carriers = []
+            for line in new_lines:
+                if str(serial) not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                    carriers.append(
+                        f"id={event.get('id')} name={event.get('name')!r}")
+                except ValueError:
+                    carriers.append(line[:160])
+            self.fail(
+                f"The rejection's audit events must not carry the unmasked "
+                f"certificate serial {serial}. Carried by: {carriers}"
+            )
 
         # Administrative actions this suite performs are audited under these
         # names; they are not evidence that a rejection was recorded.
