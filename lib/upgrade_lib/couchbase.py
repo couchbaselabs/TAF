@@ -46,6 +46,16 @@ upgrade_chains = {
     "7.1.5_7.2.3_7.2.9": ["7.1.5", "7.2.3", "7.2.9"],
     "7.1.6_7.2.3_7.2.9": ["7.1.6", "7.2.3", "7.2.9"],
 
+    # NOTE: The 6.x chains below are intentionally retained, but they are no
+    # longer driven by regression jobs. Every 6.0.5 / 6.6.5 subcomponent was
+    # deleted from the QE test-suite DB, so conf/upgrade/*.conf carries no
+    # GROUP entry that dispatches to them (the sole exception is
+    # upgrade_with_retry_rebalance_failure_6_6_5, whose job still exists).
+    # Reasons: 6.x is below min_compatible_version (7.1), and 6.0.5 ships no
+    # debian10+ build artifacts (debian10 support starts at 6.6.5), so the
+    # installer cannot fetch a build for those base versions on current QE
+    # slaves. Keep the entries for manual/ad-hoc runs and for reference when
+    # an older supported path has to be reconstructed.
     # 6.6.x → 7.2.3 → 7.2.9 → 8.5
     "6.6.0_7.2.3_7.2.9": ["6.6.0", "7.2.3", "7.2.9"],
     "6.6.1_7.2.3_7.2.9": ["6.6.1", "7.2.3", "7.2.9"],
