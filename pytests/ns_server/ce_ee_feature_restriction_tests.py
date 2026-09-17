@@ -712,6 +712,35 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
                 "indexer storageMode=%s (EE-only)" % mode)
 
     # ------------------------------------------------------------------
+    # File-based rebalance (FBR) EE-only rejection
+    # ticket: FBR - make file-based rebalance EE only
+    # ------------------------------------------------------------------
+
+    def test_data_service_file_based_rebalance_blocked(self):
+        """CE must reject enabling data-service file-based rebalance.
+
+        The KV/data-service variant of file-based rebalance is toggled via
+        the dataServiceFileBasedRebalanceEnabled internal setting on the
+        /internalSettings endpoint. On EE the key is accepted (HTTP 200,
+        body "[]"); on CE the key does not exist, so ns_server rejects it
+        with HTTP 400 and
+        {"errors":["Unknown key dataServiceFileBasedRebalanceEnabled"]}.
+        Requires nodes_init=1.
+        """
+        setting_key = "dataServiceFileBasedRebalanceEnabled"
+        status, content = self._make_request(
+            "/internalSettings", "POST", {setting_key: "true"})
+        self._assert_blocked(status, content,
+                             "data-service file-based rebalance (EE-only)")
+        self.assertIn(
+            "unknown key", content.lower(),
+            "Expected 'Unknown key' error for %s on CE. Got: %s"
+            % (setting_key, content))
+        self.assertIn(
+            setting_key, content,
+            "Expected rejected key name in the CE error. Got: %s" % content)
+
+    # ------------------------------------------------------------------
     # CRL + JWT: both a simple EE gate on their settings handler, combined
     # into one test to share a single nodes_init=1 setup.
     # ------------------------------------------------------------------
