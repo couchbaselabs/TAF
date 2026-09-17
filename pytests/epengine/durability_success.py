@@ -86,11 +86,14 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Perform CRUDs with induced error scenario is active
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
-                                   self.num_items+self.crud_batch_size)
+                                   self.num_items+self.crud_batch_size,
+                                   key_size=self.key_size)
         gen_delete = doc_generator(self.key, 0,
-                                   int(self.num_items/3))
+                                   int(self.num_items/3),
+                                   key_size=self.key_size)
         gen_update = doc_generator(self.key, int(self.num_items/2),
-                                   self.num_items)
+                                   self.num_items,
+                                   key_size=self.key_size)
 
         self.log.info("Starting parallel doc_ops - Create/Read/Update/Delete")
         tasks.append(self.task.async_load_gen_docs(
