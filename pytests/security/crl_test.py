@@ -6638,10 +6638,11 @@ class CRLTest(CRLBase):
             shell.start_couchbase()
         finally:
             shell.disconnect()
-        # Generous timeout: 180s was seen live to be too tight for node C's
-        # 4th restart in this test.
+        # This revoke/un-revoke/restart-with-no-delay sequence is MB-73852's
+        # shape (fixed by 283ed90d3+39408be31); 90s replaces the old 300s
+        # tolerance now that 6/6 live attempts recovered in 20.8-23.9s.
         self.assertTrue(
-            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=300),
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=90),
             "Teardown: node C failed to rejoin after restoring its certs "
             "-- pool may be left in a bad state for later tests",
         )
@@ -6725,8 +6726,9 @@ class CRLTest(CRLBase):
             shell.start_couchbase()
         finally:
             shell.disconnect()
+        # Same MB-73852 shape as the teardown above -- see that comment.
         self.assertTrue(
-            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=300),
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=90),
             "Sub-case D teardown: node C failed to rejoin after restoring "
             "its certs and clientCertVerification",
         )
@@ -6839,8 +6841,9 @@ class CRLTest(CRLBase):
             shell.start_couchbase()
         finally:
             shell.disconnect()
+        # Same MB-73852 shape again -- see the first teardown's comment.
         self.assertTrue(
-            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=300),
+            self._n2n_wait_for_healthy_active(master, node_c.ip, timeout=90),
             "Sub-case E teardown: node C failed to rejoin on self.ca_cert-signed "
             "certs -- pool may be left in a bad state for later tests",
         )
