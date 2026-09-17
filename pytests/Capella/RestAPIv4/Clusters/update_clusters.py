@@ -97,6 +97,25 @@ class UpdateCluster(GetProject):
             resp,_ = self.validate_onoff_state(["healthy", "turnedOff"])
         self.log.info("Successfully deployed Cluster.")
 
+        # Also wait for any associated App Service to be stable - cluster
+        # update calls can be rejected while it's still "deploying" too,
+        # the same way they are while the cluster itself isn't stable.
+        app_id = self.capella["clusters"].get("app_id")
+        if app_id and not isinstance(app_id, bool):
+            self.log.info("Checking for APP SVC {} to be stable."
+                          .format(app_id))
+            start_time = time.time()
+            resp, _ = self.validate_onoff_state(
+                ["healthy", "turnedOff"], app=app_id)
+            while not resp:
+                if time.time() > 1800 + start_time:
+                    self.tearDown()
+                    self.fail("!!!...App Service didn't stabilize within "
+                              "30mins...!!!")
+                resp, _ = self.validate_onoff_state(
+                    ["healthy", "turnedOff"], app=app_id)
+            self.log.info("Successfully deployed App Service.")
+
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
         super(UpdateCluster, self).tearDown()
