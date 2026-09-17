@@ -493,22 +493,14 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             healthy_future.result()
             self.log.info(f"{tgt_label} Target cluster {target_cluster.id} healthy after restore")
 
-            # Apply the memcached speed-up settings only once the restore is
-            # fully complete and the cluster reports healthy -- applying this
-            # immediately after triggering the restore (as before) can land
-            # on a target instance that's still bootstrapping from the
-            # restore's node-topology replacement and isn't SSM-ready yet,
-            # failing outright with no retry.
+            # Apply settings only once healthy -- earlier can hit a
+            # not-yet-SSM-ready instance and fail outright.
             if target_is_fusion:
-                settings = {}
-                if self.fusion_num_uploader_threads:
-                    settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
-                if self.fusion_sync_rate_limit:
-                    settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
-                if settings:
-                    self.fusion_monitor.apply_settings_once_ready(
-                        target_cluster, settings, old_instance_ids=old_instance_ids,
-                    )
+                self.apply_fusion_cp_settings(self.primary_tenant, target_cluster)
+                self.apply_fusion_memcached_settings(
+                    self.primary_tenant, target_cluster,
+                    wait_for_new_instances=True, old_instance_ids=old_instance_ids,
+                )
 
             if fusion_future is not None:
                 fusion_future.result()
@@ -771,19 +763,8 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         clone_target.master = TestInputServer()
         self.fusion_monitor.set_admin_credentials(clone_target)
 
-        # Same speed-up settings as the per-cycle restore (_restore_snapshot_backup) --
-        # no old_instance_ids to diff against here since this cluster is
-        # brand new (every instance found is, by definition, new). Applied
-        # opportunistically as soon as new instances exist (up to ~10 min:
-        # apply_settings_once_ready's default max_wait=600s + settle buffer),
-        # BEFORE the restore/healthy wait below -- applying it only after
-        # those complete (as before) means the S3 hydration window this is
-        # meant to speed up may already be over.
-        settings = {}
-        if self.fusion_num_uploader_threads:
-            settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
-        if self.fusion_sync_rate_limit:
-            settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
+        # Apply before the restore/healthy wait, so the S3 hydration
+        # window this speeds up hasn't already passed.
 
         # Poll fusion state + snapshot-pending-bytes table via SSM (curl on
         # localhost:8091 on one of the cluster's own EC2 instances -- the IP
@@ -809,7 +790,9 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         fusion_status_thread.start()
 
         try:
-            self.fusion_monitor.apply_settings_once_ready(clone_target, settings)
+            self.apply_fusion_cp_settings(self.primary_tenant, clone_target)
+            self.apply_fusion_memcached_settings(
+                self.primary_tenant, clone_target, wait_for_new_instances=True)
 
             # Scoped by the NEW cluster's id, not primary's -- a clone-created
             # restore record's ClusterID is the new cluster, so list-restores
@@ -867,15 +850,8 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.log.info(f"[secondary] Cluster ready: {self.secondary_cluster.id}")
         self.fusion_monitor.set_admin_credentials(self.secondary_cluster)
 
-        # Same speed-up settings as the per-cycle restore (_restore_snapshot_backup) --
-        # no old_instance_ids to diff against here since this cluster is
-        # brand new (every instance found is, by definition, new).
-        settings = {}
-        if self.fusion_num_uploader_threads:
-            settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
-        if self.fusion_sync_rate_limit:
-            settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
-        self.fusion_monitor.apply_settings_once_ready(self.secondary_cluster, settings)
+        # No re-apply here: same cluster as clone_target above, no
+        # instance replacement in between -- already handled.
 
         # Force the latest on-disk snapshot to sync to the S3 log store now,
         # rather than waiting for it to happen on its own schedule -- the
@@ -961,19 +937,12 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"{self.secondary_cluster.id} from .ini -- skipping "
                 f"clone-from-primary bootstrap"
             )
-            # Same memcached speed-up settings applied to a freshly
-            # clone-created secondary (_create_secondary_cluster_from_clone)
-            # -- a pre-provisioned secondary would otherwise not get them
-            # until its first per-cycle restore lands, leaving the initial
-            # scale-up rebalance below (_configure_secondary_fusion()) to
-            # build guest volumes / sync at default speed.
-            settings = {}
-            if self.fusion_num_uploader_threads:
-                settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
-            if self.fusion_sync_rate_limit:
-                settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
-            if settings:
-                self.fusion_monitor.apply_settings_once_ready(self.secondary_cluster, settings)
+            # A pre-provisioned secondary needs these applied here --
+            # unlike a clone-created one, it never went through
+            # _create_secondary_cluster_from_clone.
+            self.apply_fusion_cp_settings(self.primary_tenant, self.secondary_cluster)
+            self.apply_fusion_memcached_settings(
+                self.primary_tenant, self.secondary_cluster, wait_for_new_instances=True)
         self._configure_secondary_fusion()
 
         secondary = self.secondary_cluster

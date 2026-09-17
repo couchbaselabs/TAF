@@ -204,6 +204,13 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", None)
         self.fusion_num_migrator_threads = self.input.param("fusion_num_migrator_threads", None)
 
+        # Fusion pending-upload backpressure threshold (bytes of not-yet-
+        # uploaded S3 log-store data memcached will buffer before throttling
+        # writes) -- same set_memcached_global_setting mechanism as the
+        # uploader/sync/migration settings above. Set to None to leave the
+        # cluster's default untouched.
+        self.fusion_max_pending_upload_bytes = self.input.param("fusion_max_pending_upload_bytes", None)
+
     def tearDown(self):
         if hasattr(self, "stop_run_event"):
             self.stop_run_event.set()
@@ -327,28 +334,21 @@ class VolumeTest(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             self._cp_monitor_for_tenant(tenant).check_asg_cleanup_after_rebalance(tenant.clusters)
 
-    def apply_fusion_config_overrides(self):
+    def apply_fusion_cp_settings(self, tenant, cluster):
         """
-        Override the fusion min_split_size (and optionally max_slots /
-        download_rate_limit) per cluster via the internal support config API
-        (CapellaUtils.patch_fusion_config), so accelerator expansion up to
-        the maxSlots cap (default 22 guest-volume slots per KV host) can be
-        driven with a much smaller loaded dataset than the stock 50GB-per-
-        shard default would otherwise require, and/or the accelerator-cli
-        S3 download rate can be throttled (accelerator.download.rateLimit,
-        see couchbase-cloud PR #54025, AV-134867) for scale testing with
-        many accelerators.
-
-        Controlled by the fusion_min_split_size_mb / fusion_max_slots_override
-        / fusion_download_rate_limit test params set in setUp; a no-op if
-        none are set. The pre-override config for each resource is captured
-        here and tracked in self.fusion_config_override_resources, so
-        cleanup_fusion_config_overrides() can restore it exactly at
-        teardown instead of deleting the resource's config outright.
+        Apply fusion_min_split_size_mb/fusion_max_slots_override/
+        fusion_download_rate_limit via the CP config API. Per-cluster
+        resource setting, not per-node -- applied once per cluster ever
+        (guarded via self.fusion_config_override_resources), safe to call
+        repeatedly across restores/clones.
         """
         if (self.fusion_min_split_size_mb is None
                 and self.fusion_max_slots_override is None
                 and self.fusion_download_rate_limit is None):
+            return
+        already_applied = any(
+            cid == cluster.id for _, cid, _ in self.fusion_config_override_resources)
+        if already_applied:
             return
         min_split_size_bytes = (
             int(self.fusion_min_split_size_mb) * 1024 * 1024
@@ -362,63 +362,88 @@ class VolumeTest(BaseTestCase, hostedOPD):
         max_slots = (
             self.fusion_max_slots_override
             if self.fusion_max_slots_override is not None else 22)
-        for tenant in self.tenants:
-            for cluster in tenant.clusters:
-                original_config = CapellaAPI.get_fusion_config(self.pod, tenant, cluster.id)
-                self.log.info(
-                    f"Overriding fusion config for cluster {cluster.id} "
-                    f"(pre-override config: {original_config}): "
-                    f"min_split_size={min_split_size_bytes} bytes, "
-                    f"max_slots={max_slots}, "
-                    f"download_rate_limit={self.fusion_download_rate_limit}")
-                if original_config is None:
-                    # PATCH merges into an existing config and 500s if the
-                    # resource has none yet (confirmed against a live
-                    # cluster) -- PUT unconditionally creates it, so it's
-                    # the only safe choice for this resource's first-ever
-                    # fusion config.
-                    CapellaAPI.set_fusion_config(
-                        self.pod, tenant, cluster.id,
-                        min_split_size=min_split_size_bytes,
-                        max_slots=max_slots,
-                        download_rate_limit=self.fusion_download_rate_limit)
-                else:
-                    CapellaAPI.patch_fusion_config(
-                        self.pod, tenant, cluster.id,
-                        min_split_size=min_split_size_bytes,
-                        max_slots=max_slots,
-                        download_rate_limit=self.fusion_download_rate_limit)
-                self.fusion_config_override_resources.append((tenant, cluster.id, original_config))
+        original_config = CapellaAPI.get_fusion_config(self.pod, tenant, cluster.id)
+        self.log.info(
+            f"Overriding fusion config for cluster {cluster.id} "
+            f"(pre-override config: {original_config}): "
+            f"min_split_size={min_split_size_bytes} bytes, "
+            f"max_slots={max_slots}, "
+            f"download_rate_limit={self.fusion_download_rate_limit}")
+        if original_config is None:
+            # PATCH merges into an existing config and 500s if the
+            # resource has none yet (confirmed against a live cluster) --
+            # PUT unconditionally creates it, so it's the only safe choice
+            # for this resource's first-ever fusion config.
+            CapellaAPI.set_fusion_config(
+                self.pod, tenant, cluster.id,
+                min_split_size=min_split_size_bytes,
+                max_slots=max_slots,
+                download_rate_limit=self.fusion_download_rate_limit)
+        else:
+            CapellaAPI.patch_fusion_config(
+                self.pod, tenant, cluster.id,
+                min_split_size=min_split_size_bytes,
+                max_slots=max_slots,
+                download_rate_limit=self.fusion_download_rate_limit)
+        self.fusion_config_override_resources.append((tenant, cluster.id, original_config))
 
-                applied_config = CapellaAPI.get_fusion_config(self.pod, tenant, cluster.id)
-                self.log.info(
-                    f"Confirmed fusion config for cluster {cluster.id} "
-                    f"after override: {applied_config}")
-                manifest = applied_config.get("manifest", {})
-                accelerator = applied_config.get("accelerator", {})
-                if min_split_size_bytes is not None:
-                    self.assertEqual(
-                        manifest.get("minSplitSize"), min_split_size_bytes,
-                        f"Fusion config min_split_size not applied for cluster "
-                        f"{cluster.id}: expected {min_split_size_bytes}, "
-                        f"got {manifest.get('minSplitSize')} ({applied_config})")
-                self.assertEqual(
-                    manifest.get("maxSlots"), max_slots,
-                    f"Fusion config max_slots not applied for cluster "
-                    f"{cluster.id}: expected {max_slots}, "
-                    f"got {manifest.get('maxSlots')} ({applied_config})")
-                if self.fusion_download_rate_limit is not None:
-                    self.assertEqual(
-                        accelerator.get("download", {}).get("rateLimit"),
-                        self.fusion_download_rate_limit,
-                        f"Fusion config download_rate_limit not applied for cluster "
-                        f"{cluster.id}: expected {self.fusion_download_rate_limit}, "
-                        f"got {accelerator.get('download', {}).get('rateLimit')} "
-                        f"({applied_config})")
+        applied_config = CapellaAPI.get_fusion_config(self.pod, tenant, cluster.id)
+        self.log.info(
+            f"Confirmed fusion config for cluster {cluster.id} "
+            f"after override: {applied_config}")
+        manifest = applied_config.get("manifest", {})
+        accelerator = applied_config.get("accelerator", {})
+        if min_split_size_bytes is not None:
+            self.assertEqual(
+                manifest.get("minSplitSize"), min_split_size_bytes,
+                f"Fusion config min_split_size not applied for cluster "
+                f"{cluster.id}: expected {min_split_size_bytes}, "
+                f"got {manifest.get('minSplitSize')} ({applied_config})")
+        self.assertEqual(
+            manifest.get("maxSlots"), max_slots,
+            f"Fusion config max_slots not applied for cluster "
+            f"{cluster.id}: expected {max_slots}, "
+            f"got {manifest.get('maxSlots')} ({applied_config})")
+        if self.fusion_download_rate_limit is not None:
+            self.assertEqual(
+                accelerator.get("download", {}).get("rateLimit"),
+                self.fusion_download_rate_limit,
+                f"Fusion config download_rate_limit not applied for cluster "
+                f"{cluster.id}: expected {self.fusion_download_rate_limit}, "
+                f"got {accelerator.get('download', {}).get('rateLimit')} "
+                f"({applied_config})")
+
+    def apply_fusion_memcached_settings(self, tenant, cluster, wait_for_new_instances=False,
+                                         old_instance_ids=None):
+        """
+        Apply fusion_num_uploader_threads/fusion_sync_rate_limit/
+        fusion_migration_rate_limit/fusion_num_migrator_threads/
+        fusion_max_pending_upload_bytes directly on memcached. Per-node,
+        so unlike apply_fusion_cp_settings it must be re-run after every
+        restore/clone (wait_for_new_instances=True waits for the new
+        instances first, via apply_settings_once_ready).
+        """
+        settings = {
+            "fusion_num_uploader_threads": self.fusion_num_uploader_threads,
+            "fusion_sync_rate_limit": self.fusion_sync_rate_limit,
+            "fusion_migration_rate_limit": self.fusion_migration_rate_limit,
+            "fusion_num_migrator_threads": self.fusion_num_migrator_threads,
+            "fusion_max_pending_upload_bytes": self.fusion_max_pending_upload_bytes,
+        }
+        settings = {k: v for k, v in settings.items() if v is not None}
+        if not settings:
+            return
+        fusion_monitor = self._fusion_monitor_for_tenant(tenant)
+        if wait_for_new_instances:
+            fusion_monitor.apply_settings_once_ready(
+                cluster, settings, old_instance_ids=old_instance_ids)
+        else:
+            for key, value in settings.items():
+                fusion_monitor.set_memcached_global_setting(cluster, key, value)
 
     def cleanup_fusion_config_overrides(self):
         """
-        Revert fusion config overrides applied by apply_fusion_config_overrides,
+        Revert fusion config overrides applied by apply_fusion_cp_settings,
         restoring each resource's exact pre-override config (captured there)
         via a raw PUT -- rather than deleting the config outright, which
         would leave the resource with no config at all (and PATCH 500s, not
@@ -444,30 +469,6 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 self.log.warning(
                     f"Failed to restore fusion config for resource {resource_id}: {e}")
         self.fusion_config_override_resources = list()
-
-    def apply_fusion_memcached_settings(self):
-        """
-        Apply fusion_num_uploader_threads/fusion_sync_rate_limit (S3
-        upload/sync pipeline) and fusion_migration_rate_limit/
-        fusion_num_migrator_threads (post-rebalance background-migration
-        pipeline) -- whichever are configured -- via
-        FusionMonitorUtil.set_memcached_global_setting. A no-op if none of
-        the four params are set. Best-effort: failures are logged by
-        set_memcached_global_setting, not raised.
-        """
-        settings = {
-            "fusion_num_uploader_threads": self.fusion_num_uploader_threads,
-            "fusion_sync_rate_limit": self.fusion_sync_rate_limit,
-            "fusion_migration_rate_limit": self.fusion_migration_rate_limit,
-            "fusion_num_migrator_threads": self.fusion_num_migrator_threads,
-        }
-        settings = {k: v for k, v in settings.items() if v is not None}
-        if not settings:
-            return
-        for tenant in self.tenants:
-            for cluster in tenant.clusters:
-                for key, value in settings.items():
-                    self._fusion_monitor_for_tenant(tenant).set_memcached_global_setting(cluster, key, value)
 
     def assert_max_guest_volume_slots_reached(self, cluster):
         """
@@ -697,17 +698,11 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 fusion_monitor.wait_for_fusion_status(cluster, state="enabled")
                 self.get_hostname_public_ip_mapping(cluster, tenant=tenant)
 
-        # Apply min_split_size/max_slots overrides (if configured) before any
-        # scaling rebalance runs, so the very first fusion rebalance already
-        # splits into the overridden shard count.
-        self.apply_fusion_config_overrides()
-
-        # Apply fusion_num_uploader_threads/fusion_sync_rate_limit (if
-        # configured) directly, unlike FusionBackupRestoreVolumeTest's use of
-        # apply_settings_once_ready() -- there's no restore here replacing
-        # node instances underneath us, so no need to wait for/diff against
-        # new instance IDs; the cluster's nodes are already up at this point.
-        self.apply_fusion_memcached_settings()
+        # Apply configured fusion_* overrides before any rebalance runs.
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                self.apply_fusion_cp_settings(tenant, cluster)
+                self.apply_fusion_memcached_settings(tenant, cluster)
 
         self.cpu_monitor_threads = list()
         for tenant in self.tenants:
