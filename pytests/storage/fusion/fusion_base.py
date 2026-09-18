@@ -579,8 +579,15 @@ class FusionBase(BaseTestCase):
                             if time_diff > self.fusion_upload_interval:
                                 self.kvstore_violations[bucket][kvstore_num]["file_creation"].append([file, prev_timestamp, curr_timestamp, time_diff])
 
-                            # Log Size Validation
-                            if log_file_size > 104857600:
+                            # Log Size Validation. A segment may overshoot
+                            # MaxLogSize only to absorb a trailing extent,
+                            # never past 2x (config.h :: Config::MaxLogSize).
+                            # min() with the standing 100MB ceiling keeps that
+                            # ceiling unchanged at the 1GB default and only
+                            # ever tightens it for a smaller MaxLogSize.
+                            size_limit = min(2 * self.fusion_max_log_size,
+                                             104857600)
+                            if log_file_size > size_limit:
                                 self.kvstore_violations[bucket][kvstore_num]["file_size"].append([file, log_file_size])
 
                             # Log file naming validation

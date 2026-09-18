@@ -1508,3 +1508,273 @@ class FusionSync(MagmaBaseTest, FusionBase):
             du_cmd = f"du -sh /data/nfs/{self.client_share_dir}/guest_storage/ns_1@{node.ip}/reb{rebalance_count}/guest*"
             o, e = ssh.execute_command(du_cmd)
             self.log.info(f"Server: {node.ip}, Guest Volume Distribution: {o}, {e}")
+
+
+    def get_log_store_segments(self, bucket):
+        """{kvstore_dir: {log_file_name: size_in_bytes}}"""
+        # find, not get_timestamp_dirs(): this also runs against a kvstore
+        # whose segments were just wiped, and stat on an empty directory
+        # returns an error line rather than no rows.
+        segments = dict()
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+        try:
+            for kvstore_dir in self.get_kvstore_directories(bucket):
+                cmd = (f"find {kvstore_dir} -maxdepth 1 -type f "
+                       f"-name 'log-*' -printf '%s %f\\n'")
+                output, _ = ssh.execute_command(cmd)
+                files = dict()
+                for line in output:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    size, name = line.split(" ", 1)
+                    files[name] = int(size)
+                segments[kvstore_dir] = files
+        finally:
+            ssh.disconnect()
+
+        return segments
+
+
+    def verify_log_segment_size_bound(self, bucket, phase):
+        # include/fusion/config.h :: Config::MaxLogSize - a sync too large for
+        # one segment is split across part logs, and only the last may
+        # overshoot, up to 2x. Blind to which path wrote the bytes, so it
+        # covers log cleaning and extent merging (CBSS-977) as well.
+        bound = 2 * self.fusion_max_log_size
+        segments = self.get_log_store_segments(bucket)
+
+        offenders = list()
+        num_segments = 0
+        for kvstore_dir, files in segments.items():
+            num_segments += len(files)
+            for name, size in sorted(files.items()):
+                if size > bound:
+                    offenders.append(
+                        f"{kvstore_dir}/{name} = {size} bytes "
+                        f"({size / float(self.fusion_max_log_size):.1f}x "
+                        f"MaxLogSize, {size / float(bound):.1f}x the bound)")
+
+        self.log.info(f"[{phase}] Bucket {bucket.name}: checked {num_segments} "
+                      f"segment(s) against MaxLogSize="
+                      f"{self.fusion_max_log_size} (bound {bound} bytes), "
+                      f"{len(offenders)} violation(s)")
+
+        return offenders
+
+
+    def delete_log_store_segments(self, kvstore_dirs):
+        # Takes resolved paths, not a bucket: the caller has to look these up
+        # while the REST API is still reachable, since this runs with
+        # Couchbase stopped.
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+        try:
+            for kvstore_dir in kvstore_dirs:
+                ssh.execute_command(f"rm -f {kvstore_dir}/log-*")
+        finally:
+            ssh.disconnect()
+
+        self.log.info(f"Deleted log-store segments in {len(kvstore_dirs)} "
+                      f"kvstore dir(s)")
+
+
+    def delete_chronicle_volume_state(self, bucket):
+        # volumeState holds the Fusion term and the checkpoint LogID.
+        bucket_uuid = self.get_bucket_uuid(bucket.name)
+        # Trailing slash before the query string is load-bearing - ns_server
+        # answers 404 for .../<uuid>?recursive=true and 200 with it.
+        url = (f"http://localhost:8091/_metakv2/fusion/kv/{bucket_uuid}/"
+               f"?recursive=true")
+        cmd = (f"curl -s -u {self.cluster.master.rest_username}:"
+               f"{self.cluster.master.rest_password} -X DELETE '{url}'")
+
+        ssh = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            o, e = ssh.execute_command(cmd)
+        finally:
+            ssh.disconnect()
+
+        self.log.info(f"Deleted chronicle volumeState for {bucket.name}: "
+                      f"O = {o}, E = {e}")
+
+
+    def get_fusion_recovery_log_lines(self, tail=20):
+        # Orphan lines are grepped separately from the checkpoint lines, and
+        # sized per kvstore. Sharing one tail loses them: every kvstore logs a
+        # createFusionCheckpoint line on each sync, so on a bucket with more
+        # than a handful of vbuckets those evict the orphanExtentSize lines
+        # that make a failure diagnosable.
+        per_kvstore = max((int(bucket.numVBuckets)
+                           for bucket in self.cluster.buckets), default=1)
+        greps = [("orphanExtentSize|Orphan extent recovery needed",
+                  tail * per_kvstore),
+                 ("createFusionCheckpoint", tail)]
+
+        lines = list()
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            try:
+                o = list()
+                for pattern, count in greps:
+                    out, _ = ssh.execute_command(
+                        f"grep -hE '{pattern}' "
+                        f"/opt/couchbase/var/lib/couchbase/logs/memcached.log* "
+                        f"| tail -{count}")
+                    o.extend(out)
+            finally:
+                ssh.disconnect()
+            lines.extend(f"{server.ip}: {line.strip()}" for line in o)
+
+        return lines
+
+
+    def restart_couchbase_and_wait(self, reason):
+
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            ssh.execute_command("systemctl restart couchbase-server")
+            ssh.disconnect()
+
+        self.sleep(30, f"Wait after restarting Couchbase ({reason})")
+
+        for bucket in self.cluster.buckets:
+            self.bucket_util._wait_warmup_completed(bucket, wait_time=600)
+
+
+    def test_orphan_resync_respects_max_log_size(self):
+        """
+        MB-74045 - a Fusion log segment must never exceed 2 * MaxLogSize,
+        whichever internal path produced its bytes.
+
+        Phase 1 asserts the bound on the normal Sync path, and passes on
+        fixed and unfixed builds alike - if it fails, the sizing params or
+        the cluster are wrong, not the product. Phase 2 forces orphan-extent
+        recovery. Phase 3 re-asserts the same bound, which
+        resyncOrphanExtentsForRecovery breaks by appending every orphan into
+        the current log builder with no MaxLogSize accounting, unlike the
+        Sync split loop which meters only the new bytes.
+
+        Both injection steps are required - do not drop either:
+          * wiping the log store makes getLogs() return nothing, so
+            recoverFSMapsForSync enters the logSegmentMap reconstruction
+            block and takes the checkpoint branch rather than the latest-log
+            branch. Alone it makes EnableSync fail outright, since the
+            surviving checkpoint names a deleted log and getLogSummary then
+            returns NotFound, tolerated only for Status::Code::Invalid.
+          * clearing the chronicle volumeState empties GetCheckpointLogID(),
+            leaving an empty logSegmentMap so every extent is orphaned.
+            Alone it is a no-op, since latestLogStoreLogID ==
+            lastSyncedLogID leaves the reconstruction block skipped.
+
+        Asserts the size bound and not orphanExtentSize == 0 - orphan resync
+        is legitimate and required, and asserting no orphans would also go
+        green on a build where recovery silently stopped working. Passes
+        unchanged once MB-74045 is fixed; only logStorePuts goes 1 -> n.
+        """
+        self.log.info("Starting initial load")
+        self.initial_load()
+
+        self.log.info(f"Applying fusion_max_log_size="
+                      f"{self.fusion_max_log_size} bytes")
+        self.override_fusion_settings()
+
+        self.log.info("Enabling Fusion")
+        self.configure_fusion()
+        self.enable_fusion()
+
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Wait for the initial upload to reach the log store")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Phase 1: control - the normal Sync path honours the bound
+        bound = 2 * self.fusion_max_log_size
+        for bucket in self.cluster.buckets:
+            segments = self.get_log_store_segments(bucket)
+            total_bytes = sum(sum(files.values()) for files in segments.values())
+
+            if total_bytes <= bound:
+                self.fail(
+                    f"Control precondition not met for bucket {bucket.name}: "
+                    f"only {total_bytes} bytes reached the log store, which "
+                    f"fits inside the {bound} byte bound, so the split path "
+                    f"was never exercised and Phase 3 would prove nothing. "
+                    f"Raise num_items/doc_size, lower fusion_max_log_size, or "
+                    f"lower the vbucket count so a single volume holds more "
+                    f"than {bound} bytes.")
+
+            offenders = self.verify_log_segment_size_bound(bucket, "control")
+            if offenders:
+                self.fail(
+                    f"Control failed for bucket {bucket.name}: the normal Sync "
+                    f"path already breached the 2 * MaxLogSize bound ({bound} "
+                    f"bytes) before any fault injection. This is a harness or "
+                    f"cluster problem, not MB-74045.\nViolations:\n  "
+                    + "\n  ".join(offenders))
+
+        # Phase 2: injection - force orphan-extent recovery
+        # Resolve the log-store paths first: get_kvstore_directories() reads
+        # the bucket uuid over REST, which is gone once Couchbase stops.
+        kvstore_dirs = list()
+        for bucket in self.cluster.buckets:
+            kvstore_dirs.extend(self.get_kvstore_directories(bucket))
+
+        self.log.info("Stopping Couchbase before wiping the log store")
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            ssh.stop_couchbase()
+            ssh.disconnect()
+
+        try:
+            self.sleep(20, "Wait after stopping Couchbase")
+            self.delete_log_store_segments(kvstore_dirs)
+        finally:
+            # Always bring the cluster back - a failure inside this window
+            # otherwise leaves every later step and tearDown reporting
+            # ServerUnavailableException instead of the real cause.
+            for server in self.cluster.nodes_in_cluster:
+                ssh = RemoteMachineShellConnection(server)
+                ssh.start_couchbase()
+                ssh.disconnect()
+            self.sleep(60, "Wait after starting Couchbase")
+
+        # Chronicle is only reachable once ns_server is back up, so this
+        # cannot fold into the stopped window above.
+        for bucket in self.cluster.buckets:
+            self.delete_chronicle_volume_state(bucket)
+
+        self.restart_couchbase_and_wait(
+            "trigger EnableSync against an empty checkpoint")
+
+        self.sleep(sleep_time,
+                   "Wait for the orphan resync to reach the log store")
+
+        # Phase 3: the same bound, now across the orphan resync
+        recovery_lines = self.get_fusion_recovery_log_lines()
+        self.log.info("Fusion recovery log lines:\n  "
+                      + "\n  ".join(recovery_lines))
+
+        offenders = list()
+        for bucket in self.cluster.buckets:
+            offenders.extend(
+                self.verify_log_segment_size_bound(bucket, "post-orphan-resync"))
+
+        if offenders:
+            # Logged before the item-count check, which may raise first.
+            self.log.error("MB-74045 segment size violations:\n  "
+                           + "\n  ".join(offenders))
+
+        self.log.info("Validating item count survived the orphan resync")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+        if offenders:
+            self.fail(
+                f"MB-74045: orphan-extent resync wrote log segment(s) past the "
+                f"documented 2 * MaxLogSize bound ({bound} bytes). "
+                f"resyncOrphanExtentsForRecovery appends every orphan into the "
+                f"current log builder without MaxLogSize accounting, unlike "
+                f"the Sync split loop which meters only the new bytes.\n"
+                f"Violations:\n  " + "\n  ".join(offenders)
+                + "\nFusion recovery log lines:\n  "
+                + "\n  ".join(recovery_lines))
