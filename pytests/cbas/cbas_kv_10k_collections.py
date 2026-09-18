@@ -122,7 +122,7 @@ class CBASKVCollectionScale(CBASBaseTest):
                             analytics_collection_name, kv_entity))
 
             self.log.info("Connecting link Local")
-            if not self.cbas_util.connect_link(self.cluster, "Local"):
+            if not self.cbas_util.connect_link(self.cluster, "Local", timeout=600, analytics_timeout=600):
                 self.fail("Failed to connect link Local")
 
             for analytics_collection_name in analytics_collection_names:
