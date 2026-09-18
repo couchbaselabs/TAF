@@ -135,10 +135,15 @@ class FusionMonitorUtil():
         """
         if timeout is None:
             timeout = self.DEFAULT_TIMEOUT
-        self.set_admin_credentials(cluster)
         import time
         start_time = time.time()
         while time.time() - start_time < timeout:
+            # Re-fetch/re-apply credentials on every poll, not just once
+            # up front -- cluster.master can be mutated by a concurrent
+            # scale/rebalance operation elsewhere in the test, which would
+            # otherwise leave this loop hammering the endpoint with stale
+            # credentials for the rest of its (up to 30 min) timeout.
+            self.set_admin_credentials(cluster)
             # The master may be briefly unreachable (e.g. ns_server restart
             # injected by a test) — retry instead of crashing on the response.
             try:

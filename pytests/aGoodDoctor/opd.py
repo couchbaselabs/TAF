@@ -1393,8 +1393,21 @@ class OPD:
                     temp_server.hostname = server.get("hostname")
                     temp_server.services = server.get("services")
                     temp_server.port = "18091"
-                    temp_server.rest_username = cluster.username
-                    temp_server.rest_password = cluster.password
+                    # cluster.username/password are CouchbaseCluster's
+                    # generic on-prem defaults ("Administrator"/"password",
+                    # class_definitions.py) -- never the real per-cluster
+                    # Capella admin credentials, which set_admin_credentials
+                    # (fusion_monitor_util.py) stores on cluster.rest_username/
+                    # rest_password instead. Using cluster.username/password
+                    # here silently downgraded every node rebuilt after a
+                    # rebalance-triggered nodes_in_cluster reset to a
+                    # generic bootstrap login that authenticates fine but
+                    # lacks Capella-specific scopes (e.g. fusion status
+                    # checks failed with "Forbidden: cluster.admin.fusion!
+                    # read" for the rest of the run) -- fall back to the
+                    # class defaults only if the real ones were never set.
+                    temp_server.rest_username = getattr(cluster, 'rest_username', None) or cluster.username
+                    temp_server.rest_password = getattr(cluster, 'rest_password', None) or cluster.password
                     temp_server.hosted_on_cloud = True
                     temp_server.memcached_port = "11207"
                     temp_server.type = type

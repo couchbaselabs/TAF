@@ -493,10 +493,13 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             healthy_future.result()
             self.log.info(f"{tgt_label} Target cluster {target_cluster.id} healthy after restore")
 
-            # Apply settings only once healthy -- earlier can hit a
-            # not-yet-SSM-ready instance and fail outright.
+            # Re-apply memcached settings only once healthy -- earlier can
+            # hit a not-yet-SSM-ready instance and fail outright. CP
+            # settings are NOT re-applied here -- those are a one-time,
+            # per-cluster resource setting already applied when the target
+            # was first created (primary: initial_setup; secondary:
+            # _create_secondary_cluster_from_clone/_ensure_secondary_ready).
             if target_is_fusion:
-                self.apply_fusion_cp_settings(self.primary_tenant, target_cluster)
                 self.apply_fusion_memcached_settings(
                     self.primary_tenant, target_cluster,
                     wait_for_new_instances=True, old_instance_ids=old_instance_ids,
@@ -763,9 +766,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         clone_target.master = TestInputServer()
         self.fusion_monitor.set_admin_credentials(clone_target)
 
-        # Apply before the restore/healthy wait, so the S3 hydration
-        # window this speeds up hasn't already passed.
-
         # Poll fusion state + snapshot-pending-bytes table via SSM (curl on
         # localhost:8091 on one of the cluster's own EC2 instances -- the IP
         # allowlist stays closed until allow_my_ip() below runs, well after
@@ -790,10 +790,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         fusion_status_thread.start()
 
         try:
-            self.apply_fusion_cp_settings(self.primary_tenant, clone_target)
-            self.apply_fusion_memcached_settings(
-                self.primary_tenant, clone_target, wait_for_new_instances=True)
-
             # Scoped by the NEW cluster's id, not primary's -- a clone-created
             # restore record's ClusterID is the new cluster, so list-restores
             # scoped by primary would never find it (see docstring above).
@@ -850,8 +846,16 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.log.info(f"[secondary] Cluster ready: {self.secondary_cluster.id}")
         self.fusion_monitor.set_admin_credentials(self.secondary_cluster)
 
-        # No re-apply here: same cluster as clone_target above, no
-        # instance replacement in between -- already handled.
+        # Apply once the clone-restore is complete and the cluster is
+        # healthy, not before -- pending bytes on a clone-created secondary
+        # can stay essentially flat for 30+ minutes otherwise (observed
+        # live: build 965, cluster 11427976-5a92-474e-ade5-a1e0f75dad84).
+        # CP settings only need this once, ever, per cluster (guarded via
+        # self.fusion_config_override_resources); memcached settings are
+        # per-node and get re-applied again after every subsequent restore
+        # (see _restore_snapshot_backup).
+        self.apply_fusion_cp_settings(self.primary_tenant, self.secondary_cluster)
+        self.apply_fusion_memcached_settings(self.primary_tenant, self.secondary_cluster)
 
         # Force the latest on-disk snapshot to sync to the S3 log store now,
         # rather than waiting for it to happen on its own schedule -- the
@@ -939,10 +943,10 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             )
             # A pre-provisioned secondary needs these applied here --
             # unlike a clone-created one, it never went through
-            # _create_secondary_cluster_from_clone.
+            # _create_secondary_cluster_from_clone. Already an established,
+            # healthy cluster from .ini -- no new-instance wait needed.
             self.apply_fusion_cp_settings(self.primary_tenant, self.secondary_cluster)
-            self.apply_fusion_memcached_settings(
-                self.primary_tenant, self.secondary_cluster, wait_for_new_instances=True)
+            self.apply_fusion_memcached_settings(self.primary_tenant, self.secondary_cluster)
         self._configure_secondary_fusion()
 
         secondary = self.secondary_cluster
@@ -1071,6 +1075,17 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 resp.status_code == 200,
                 f"Failed to enable Fusion on primary {primary.id}: {resp.status_code}",
             )
+
+        # Apply before waiting for "enabled" -- not after. These settings
+        # are what let fusion actually converge to "enabled" (e.g.
+        # fusion_max_pending_upload_bytes unsticking a pending-bytes
+        # deadlock, see MB-74064); gating them behind that same wait would
+        # be circular. Primary never goes through _restore_snapshot_backup/
+        # _create_secondary_cluster_from_clone as a target when
+        # restore_to=="secondary", so this is its only application point.
+        self.apply_fusion_cp_settings(tenant, primary)
+        self.apply_fusion_memcached_settings(tenant, primary)
+
         self.fusion_monitor.wait_for_fusion_status(primary, state="enabled")
         self.get_hostname_public_ip_mapping(primary)
         self.log.info(f"Fusion enabled on primary cluster {primary.id}")

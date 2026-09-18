@@ -204,11 +204,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", None)
         self.fusion_num_migrator_threads = self.input.param("fusion_num_migrator_threads", None)
 
-        # Fusion pending-upload backpressure threshold (bytes of not-yet-
-        # uploaded S3 log-store data memcached will buffer before throttling
-        # writes) -- same set_memcached_global_setting mechanism as the
-        # uploader/sync/migration settings above. Set to None to leave the
-        # cluster's default untouched.
+        # Pending-upload backpressure threshold (bytes); None leaves default.
         self.fusion_max_pending_upload_bytes = self.input.param("fusion_max_pending_upload_bytes", None)
 
     def tearDown(self):
