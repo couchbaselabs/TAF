@@ -246,6 +246,196 @@ _ID_MATRIX = [
     ("valid/folder/key", 201, "Valid hierarchical ID with slashes"),
 ]
 
+# ── T15: Admin input-validation matrix ──────────────────────────────────────
+# Run with -p test_validation_rows=True.  Keys: id, why, method (POST by
+# default), body (sent verbatim — the builders drop None kwargs), exp_status,
+# exp_err (substring), base (created first, for PUT/PATCH), xfail (known bug:
+# a mismatch is logged rather than failed).
+_AWS_FIELDS = {"accessKeyId": "AK", "secretAccessKey": "SK", "region": "us-east-1"}
+_AWS_BODY = {"type": "aws", "fields": _AWS_FIELDS}
+_GCP_BODY = {"type": "gcp", "fields": {"jsonCredentials": '{"type":"service_account"}'}}
+
+
+def _aws_with(**overrides):
+    """An otherwise-valid aws body with individual fields overridden."""
+    fields = dict(_AWS_FIELDS)
+    fields.update(overrides)
+    return {"type": "aws", "fields": fields}
+
+
+def _aws_without(field):
+    """An aws body missing one required field."""
+    return {"type": "aws",
+            "fields": {k: v for k, v in _AWS_FIELDS.items() if k != field}}
+
+
+_VALIDATION_ROWS = (
+    # ── Envelope ──────────────────────────────────────────────────────────
+    {"id": "unknown-type", "why": "unsupported credential type",
+     "body": {"type": "s3", "fields": _AWS_FIELDS},
+     "exp_status": 400, "exp_err": "must be one of the following"},
+    {"id": "extra-key", "why": "unknown field inside fields",
+     "body": _aws_with(foo="bar"),
+     "exp_status": 400, "exp_err": "unsupported key"},
+    {"id": "empty-body", "why": "neither type nor fields supplied",
+     "body": {}, "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "null-fields-obj", "why": "fields explicitly null",
+     "body": {"type": "aws", "fields": None},
+     "exp_status": 400, "exp_err": "unexpected json"},
+    {"id": "schemaversion-in-body", "why": "schemaVersion is server-stamped",
+     "body": dict(_AWS_BODY, schemaVersion=99),
+     "exp_status": 400, "exp_err": "unsupported key"},
+    # The server returns this key twice in one object; a parser keeps the last
+    # value, so that is the message a client actually sees.
+    {"id": "payloadversion-on-post", "why": "no prior revision exists on create",
+     "body": dict(_AWS_BODY, payloadVersion="abc"),
+     "exp_status": 400, "exp_err": "must not be supplied"},
+    {"id": "meta-in-body", "why": "meta is server-stamped, not writable",
+     "body": dict(_AWS_BODY, meta={"guardrails": {"allowedServices": ["n1ql"]}}),
+     "exp_status": 400, "exp_err": "unsupported key"},
+
+    # ── Required fields, per type ─────────────────────────────────────────
+    {"id": "aws-no-accesskeyid", "why": "aws requires accessKeyId",
+     "body": _aws_without("accessKeyId"),
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "aws-no-secretaccesskey", "why": "aws requires secretAccessKey",
+     "body": _aws_without("secretAccessKey"),
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "aws-no-region", "why": "aws requires region",
+     "body": _aws_without("region"),
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "aim-no-region", "why": "awsInstanceMetadata requires region",
+     "body": {"type": "awsInstanceMetadata", "fields": {}},
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "azshared-no-accountname", "why": "azureShared requires accountName",
+     "body": {"type": "azureShared", "fields": {"accountKey": "K"}},
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "azsas-no-accountname", "why": "azureSas requires accountName",
+     "body": {"type": "azureSas", "fields": {"sharedAccessSignature": "S"}},
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "cb-no-encryptiontype", "why": "couchbase requires encryptionType",
+     "body": {"type": "couchbase", "fields": {"username": "u"}},
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "gcpadc-no-fields-key", "why": "gcpAdc has no fields but still needs the key",
+     "body": {"type": "gcpAdc"},
+     "exp_status": 400, "exp_err": "the value must be supplied"},
+    {"id": "gcpadc-extra-field", "why": "gcpAdc takes no fields at all",
+     "body": {"type": "gcpAdc", "fields": {"accessKeyId": "A"}},
+     "exp_status": 400, "exp_err": "unsupported key"},
+
+    # ── Cross-field rules ─────────────────────────────────────────────────
+    {"id": "azad-neither", "why": "azureAd needs clientSecret or certificate",
+     "body": {"type": "azureAd", "fields": {"clientId": "c", "tenantId": "t"}},
+     "exp_status": 400,
+     "exp_err": "either clientsecret or certificate must be provided"},
+    {"id": "gcp-neither-mode", "why": "gcp needs service-account or HMAC mode",
+     "body": {"type": "gcp", "fields": {"region": "us-east-1"}},
+     "exp_status": 400, "exp_err": "either jsoncredentials"},
+    {"id": "gcp-both-modes", "why": "gcp modes are mutually exclusive",
+     "body": {"type": "gcp", "fields": {"jsonCredentials": "{}",
+                                        "accessKeyId": "A", "secretAccessKey": "S"}},
+     "exp_status": 400, "exp_err": "only one of jsoncredentials"},
+    {"id": "gcp-hmac-partial", "why": "HMAC mode needs both halves",
+     "body": {"type": "gcp", "fields": {"accessKeyId": "A"}},
+     "exp_status": 400, "exp_err": "missing required field(s): secretaccesskey"},
+    {"id": "http-basic-missing", "why": "basic needs username and password",
+     "body": {"type": "http", "fields": {"authScheme": "basic"}},
+     "exp_status": 400, "exp_err": "missing required field(s): username, password"},
+    {"id": "http-bearer-missing", "why": "bearer needs token",
+     "body": {"type": "http", "fields": {"authScheme": "bearer"}},
+     "exp_status": 400, "exp_err": "missing required field(s): token"},
+    {"id": "http-mtls-missing", "why": "mtls needs certificate and privateKey",
+     "body": {"type": "http", "fields": {"authScheme": "mtls"}},
+     "exp_status": 400,
+     "exp_err": "missing required field(s): certificate, privatekey"},
+
+    # ── Enums and value validation ────────────────────────────────────────
+    {"id": "http-digest-scheme", "why": "digest is offered by the UI but not the server",
+     "body": {"type": "http", "fields": {"authScheme": "digest"}},
+     "exp_status": 400, "exp_err": "[basic,bearer,mtls]"},
+    {"id": "cb-bad-encryptiontype", "why": "encryptionType is a closed enum",
+     "body": {"type": "couchbase", "fields": {"encryptionType": "tls"}},
+     "exp_status": 400, "exp_err": "[none,half,full]"},
+    {"id": "http-garbage-rootca", "why": "PEM fields must hold a real certificate",
+     "body": {"type": "http", "fields": {"authScheme": "bearer", "token": "t",
+                                         "rootCertificate": "this is not a cert"}},
+     "exp_status": 400, "exp_err": "invalid certificate"},
+    {"id": "null-field-value", "why": "null is not a string",
+     "body": _aws_with(accessKeyId=None),
+     "exp_status": 400, "exp_err": "value must be json string"},
+    {"id": "empty-field-value", "why": "empty string is rejected",
+     "body": _aws_with(accessKeyId=""),
+     "exp_status": 400, "exp_err": "value must not be empty"},
+    # Known open bug: the non-empty check does not trim, so a whitespace-only
+    # value is stored.  Asserts the correct behaviour and starts passing once
+    # the server is fixed.
+    {"id": "whitespace-field-value", "why": "whitespace-only should be rejected like empty",
+     "body": _aws_with(accessKeyId="   "),
+     "exp_status": 400, "exp_err": "value must not be empty", "xfail": True},
+
+    # ── Guardrails ────────────────────────────────────────────────────────
+    {"id": "gr-allowedresources", "why": "allowedResources was removed from the API",
+     "body": dict(_AWS_BODY, guardrails={"allowedServices": ["n1ql"],
+                                         "allowedResources": ["bucket1"]}),
+     "exp_status": 400, "exp_err": "unsupported key"},
+    {"id": "gr-allowedoperations", "why": "allowedOperations was removed from the API",
+     "body": dict(_AWS_BODY, guardrails={"allowedServices": ["n1ql"],
+                                         "allowedOperations": ["READ"]}),
+     "exp_status": 400, "exp_err": "unsupported key"},
+    {"id": "gr-services-empty", "why": "guardrail arrays must be non-empty",
+     "body": dict(_AWS_BODY, guardrails={"allowedServices": []}),
+     "exp_status": 400, "exp_err": "length (0) must be in the range"},
+    {"id": "gr-allowedurls-empty", "why": "guardrail arrays must be non-empty",
+     "body": dict(_AWS_BODY, guardrails={"allowedServices": ["n1ql"],
+                                         "urlWhitelist": {"allowedUrls": []}}),
+     "exp_status": 400, "exp_err": "length (0) must be in the range"},
+    {"id": "gr-service-uppercase", "why": "service names are case-sensitive",
+     "body": dict(_AWS_BODY, guardrails={"allowedServices": ["N1QL"]}),
+     "exp_status": 400, "exp_err": "unknown service: n1ql"},
+    {"id": "gr-service-unknown", "why": "only the seven consumer services are valid",
+     "body": dict(_AWS_BODY, guardrails={"allowedServices": ["s3"]}),
+     "exp_status": 400, "exp_err": "unknown service: s3"},
+
+    # ── PUT semantics ─────────────────────────────────────────────────────
+    # Immutability is checked both ways, including the field-less types.
+    {"id": "immutable-aws-to-gcp", "why": "type cannot change on update",
+     "method": "PUT", "base": _AWS_BODY, "body": _GCP_BODY,
+     "exp_status": 400, "exp_err": "immutable"},
+    {"id": "immutable-gcpadc-to-gcp", "why": "type cannot change on update",
+     "method": "PUT", "base": {"type": "gcpAdc", "fields": {}}, "body": _GCP_BODY,
+     "exp_status": 400, "exp_err": "immutable"},
+    {"id": "immutable-gcp-to-gcpadc", "why": "type cannot change on update",
+     "method": "PUT", "base": _GCP_BODY, "body": {"type": "gcpAdc", "fields": {}},
+     "exp_status": 400, "exp_err": "immutable"},
+    {"id": "put-nonexistent", "why": "PUT is update-only, never upsert",
+     "method": "PUT", "body": _AWS_BODY,
+     "exp_status": 404, "exp_err": "not found"},
+)
+
+# ── T15b: expiresAt matrix ──────────────────────────────────────────────────
+# Separate because the values are time-relative and must be computed at send
+# time.  (id, offset_ms_or_literal, exp_status, exp_err, why) — a callable
+# offset is given the current epoch-ms; anything else is sent verbatim.
+#
+# The minimum is exclusive and the server uses its own clock, so a value near
+# the boundary is decided by clock skew rather than by the rule under test.
+# The accepted row sits well clear of it; do not tighten it.
+_EXPIRES_AT_ROWS = (
+    ("past", lambda now: now - 3600000, 400,
+     "at least 5 minutes", "a past expiry is rejected"),
+    ("plus-299s", lambda now: now + 299000, 400,
+     "at least 5 minutes", "just under the minimum"),
+    ("exact-300s", lambda now: now + 300000, 400,
+     "at least 5 minutes", "the boundary itself is exclusive"),
+    ("plus-360s", lambda now: now + 360000, 201,
+     None, "comfortably past the minimum — the only accepted row"),
+    ("zero", 0, 400, "at least 5 minutes", "epoch 0 is a valid integer but past"),
+    ("negative", -1, 400, "must be in range", "rejected by the unsigned range check"),
+    ("float", 1.5, 400, "must be an integer", "non-integer number"),
+    ("string", "1782482266570", 400, "must be an integer", "numeric string"),
+    ("null", None, 400, "must be an integer", "null is not an integer"),
+)
+
 
 class CredentialStoreTest(CredentialStoreBase):
     """
@@ -421,6 +611,25 @@ class CredentialStoreTest(CredentialStoreBase):
         self.log.info("GET deleted credential correctly returned 404")
 
         self.log.info("Admin CRUD, redaction, and validation verified")
+
+        # Input-validation matrices — off by default to keep the P0 line fast.
+        if not self.input.param("test_validation_rows", False):
+            self.log.info(
+                f"Skipping T15 validation rows ({len(_VALIDATION_ROWS)}) and T15b "
+                f"expiresAt rows ({len(_EXPIRES_AT_ROWS)}) — "
+                "set test_validation_rows=True to run them"
+            )
+            return
+
+        self.log.info(f"Running {len(_VALIDATION_ROWS)} T15 input-validation rows")
+        for row in _VALIDATION_ROWS:
+            with self.subTest(row=row["id"]):
+                self._run_validation_row(row)
+
+        self.log.info(f"Running {len(_EXPIRES_AT_ROWS)} T15b expiresAt rows")
+        for row_id, offset, exp_status, exp_err, why in _EXPIRES_AT_ROWS:
+            with self.subTest(row=f"expiresAt-{row_id}"):
+                self._run_expires_at_row(row_id, offset, exp_status, exp_err, why)
 
     def test_pattern_a_end_user_consumption(self):
         """

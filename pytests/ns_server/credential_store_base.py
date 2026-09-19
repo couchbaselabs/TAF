@@ -1124,6 +1124,100 @@ class CredentialStoreBase(ClusterSetup):
         finally:
             self._teardown_grant_row(resolved_row)
 
+    # ── T15 input-validation helpers ──────────────────────────────────────────
+
+    def _run_validation_row(self, row):
+        """
+        Execute one input-validation row: optional base create → call → assert.
+
+        An xfail row asserts the correct behaviour but only logs a mismatch, so
+        it starts passing by itself once the server is fixed.
+        """
+        row_id = row["id"]
+        cred_id = f"p1-t15-{row_id}"
+        method = row.get("method", "POST")
+
+        base = row.get("base")
+        if base is not None:
+            status, content = self._create_tracked_credential(cred_id, base)
+            self.assertEqual(
+                int(status) if status else 0, 201,
+                f"[T15 {row_id}] base credential setup failed: {status} {content}",
+            )
+
+        caller = {
+            "POST": lambda: self.cs_utils.create_credential(self.rest, cred_id, row["body"]),
+            "PUT": lambda: self.cs_utils.update_credential(self.rest, cred_id, row["body"]),
+            "PATCH": lambda: self.cs_utils.patch_credential(self.rest, cred_id, row["body"]),
+            "DELETE": lambda: self.cs_utils.delete_credential(self.rest, cred_id),
+        }.get(method)
+        if caller is None:
+            self.fail(f"[T15 {row_id}] Unknown method: {method!r}")
+
+        status, content = caller()
+        actual = int(status) if status else 0
+        # Clean up anything a row unexpectedly created.
+        if method == "POST" and self.cs_utils._is_success_status(actual):
+            if cred_id not in self._created_creds:
+                self._created_creds.append(cred_id)
+
+        body_text = str(self.cs_utils.parse_content(content) or content).lower()
+        exp_status = row["exp_status"]
+        exp_err = row.get("exp_err")
+        mismatch = None
+        if actual != exp_status:
+            mismatch = (f"expected {exp_status}, got {actual}. "
+                        f"content={content}")
+        elif exp_err and exp_err.lower() not in body_text:
+            mismatch = (f"expected message containing {exp_err!r}. "
+                        f"content={content}")
+
+        if row.get("xfail"):
+            if mismatch:
+                self.log.warning(
+                    f"[T15 {row_id}] XFAIL (known bug) — {row['why']}: {mismatch}"
+                )
+            else:
+                self.log.warning(
+                    f"[T15 {row_id}] XPASS — this row is marked xfail but now "
+                    "behaves correctly. The underlying bug looks fixed; remove "
+                    "the xfail flag so it guards against a regression."
+                )
+            return
+
+        self.assertIsNone(mismatch, f"[T15 {row_id}] {row['why']}: {mismatch}")
+        self.log.info(f"[T15 {row_id}] PASSED — {row['why']}")
+
+    def _run_expires_at_row(self, row_id, offset, exp_status, exp_err, why):
+        """
+        Execute one expiresAt row.  A callable offset is resolved against the
+        current epoch-ms; any other value is sent verbatim.
+        """
+        cred_id = f"p1-t15b-{row_id}"
+        value = offset(int(time.time() * 1000)) if callable(offset) else offset
+        body = {"type": "aws",
+                "fields": {"accessKeyId": "AK", "secretAccessKey": "SK",
+                           "region": "us-east-1"},
+                "expiresAt": value}
+        status, content = self.cs_utils.create_credential(self.rest, cred_id, body)
+        actual = int(status) if status else 0
+        if self.cs_utils._is_success_status(actual) and cred_id not in self._created_creds:
+            self._created_creds.append(cred_id)
+
+        self.assertEqual(
+            actual, exp_status,
+            f"[T15b {row_id}] {why}: expected {exp_status}, got {actual}. "
+            f"expiresAt={value!r} content={content}",
+        )
+        if exp_err:
+            body_text = str(self.cs_utils.parse_content(content) or content).lower()
+            self.assertIn(
+                exp_err.lower(), body_text,
+                f"[T15b {row_id}] {why}: expected message containing {exp_err!r}. "
+                f"content={content}",
+            )
+        self.log.info(f"[T15b {row_id}] PASSED — {why}")
+
     def _assert_denied_permission(self, content, expected_permission, context=""):
         """
         Assert a 403 body names `expected_permission` in its "permissions" array.
