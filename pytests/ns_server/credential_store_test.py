@@ -46,6 +46,14 @@ _TYPE_SMOKE_ROWS = (
      {"encryptionType": "none", "username": "smokeuser", "password": "T08_CB_PASSWORD"},
      "T08_CB_PASSWORD",
      {"encryptionType": "none", "username": "smokeuser"}),
+    ("awsInstanceMetadata",
+     {"region": "us-east-1"},
+     None,
+     {"region": "us-east-1"}),
+    ("gcpAdc",
+     {},
+     None,
+     {}),
 )
 
 # ── T11: Consume auth matrix ────────────────────────────────────────────────
@@ -137,6 +145,95 @@ _GRANT_MATRIX = (
     {"id": "G10", "actor": "cs_user_admin", "api": "user_role",
      "target": "cs_alice",  "role": "credential_consumer[no/prefix/*]",
      "exp_status": 400, "verify": None},
+
+    # G11: wildcard grant with a leading '*' is rejected at grant time.
+    # Folded in from the deleted test_wildcard_role_boundaries phase 2 — it was
+    # never a consume assertion, and _run_grant_row already carries the
+    # undefined/unknown/malformed message check this row wants.
+    {"id": "G11", "actor": "cs_user_admin", "api": "user_role",
+     "target": "cs_alice",  "role": "credential_consumer[*prod/key]",
+     "exp_status": 400, "verify": None},
+
+    # ── R1-R20: [admin, credentials] RBAC re-baseline (MB-71919) ──────────────
+    # Credential CRUD moved off [admin, security] onto its own
+    # [admin, credentials] vertex, and a new credential_admin role holds that
+    # lane alone.  /settings/credentialStore deliberately stayed on
+    # [admin, security], so a credential manager cannot switch off the
+    # encryption protecting the secrets they manage.
+    #
+    # Every status and every exp_permission below was captured live on
+    # 8.5.0-1163-enterprise (2026-09-19), not derived from the source.
+    #
+    # exp_permission is the point of these rows.  All the denials are 403
+    # whatever the gate is, so a status-only assertion would not notice
+    # credential CRUD being re-gated back onto cluster.admin.security.
+    #
+    # Appended AFTER G1-G10 deliberately: the store_put row writes setUp's own
+    # override values back verbatim, but only a later row can depend on that.
+
+    # credential_admin — owns CRUD, denied the store settings entirely.
+    {"id": "R1", "actor": "cs_cred_admin", "api": "cred_read",
+     "target": "{cred_id}", "role": None, "exp_status": 200, "verify": None},
+    {"id": "R2", "actor": "cs_cred_admin", "api": "cred_list",
+     "target": None, "role": None, "exp_status": 200, "verify": None},
+    {"id": "R3", "actor": "cs_cred_admin", "api": "cred_post",
+     "target": "p1-rbac-r3-credadmin", "role": None,
+     "exp_status": 201, "verify": None},
+    {"id": "R4", "actor": "cs_cred_admin", "api": "store_get",
+     "target": None, "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.security!read", "verify": None},
+    {"id": "R5", "actor": "cs_cred_admin", "api": "store_put",
+     "target": None, "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.security!write", "verify": None},
+
+    # ro_security_admin — reads credentials and store settings, writes neither.
+    {"id": "R6", "actor": "cs_ro_sec_admin", "api": "cred_read",
+     "target": "{cred_id}", "role": None, "exp_status": 200, "verify": None},
+    {"id": "R7", "actor": "cs_ro_sec_admin", "api": "cred_list",
+     "target": None, "role": None, "exp_status": 200, "verify": None},
+    {"id": "R8", "actor": "cs_ro_sec_admin", "api": "cred_post",
+     "target": "p1-rbac-r8-rosec", "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.credentials!write", "verify": None},
+    {"id": "R9", "actor": "cs_ro_sec_admin", "api": "store_get",
+     "target": None, "role": None, "exp_status": 200, "verify": None},
+    {"id": "R10", "actor": "cs_ro_sec_admin", "api": "store_put",
+     "target": None, "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.security!write", "verify": None},
+
+    # user_admin_local — the delegation lane only; no credential access at all.
+    {"id": "R11", "actor": "cs_user_admin", "api": "cred_read",
+     "target": "{cred_id}", "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.credentials!read", "verify": None},
+    {"id": "R12", "actor": "cs_user_admin", "api": "cred_list",
+     "target": None, "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.credentials!read", "verify": None},
+    {"id": "R13", "actor": "cs_user_admin", "api": "cred_post",
+     "target": "p1-rbac-r13-uadmin", "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.credentials!write", "verify": None},
+    {"id": "R14", "actor": "cs_user_admin", "api": "store_get",
+     "target": None, "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.security!read", "verify": None},
+    {"id": "R15", "actor": "cs_user_admin", "api": "store_put",
+     "target": None, "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.security!write", "verify": None},
+
+    # security_admin — retains everything it had before the vertex split.
+    {"id": "R16", "actor": "cs_sec_admin", "api": "cred_read",
+     "target": "{cred_id}", "role": None, "exp_status": 200, "verify": None},
+    {"id": "R17", "actor": "cs_sec_admin", "api": "cred_list",
+     "target": None, "role": None, "exp_status": 200, "verify": None},
+    {"id": "R18", "actor": "cs_sec_admin", "api": "cred_post",
+     "target": "p1-rbac-r18-secadmin", "role": None,
+     "exp_status": 201, "verify": None},
+    {"id": "R19", "actor": "cs_sec_admin", "api": "store_get",
+     "target": None, "role": None, "exp_status": 200, "verify": None},
+    {"id": "R20", "actor": "cs_sec_admin", "api": "store_put",
+     "target": None, "role": None, "exp_status": 200, "verify": None},
+
+    # Service identities consume via cbauth, never via REST CRUD.
+    {"id": "R21", "actor": "cbq_engine", "api": "cred_read",
+     "target": "{cred_id}", "role": None, "exp_status": 403,
+     "verify": None, "requires_cbq_password": True},
 )
 
 # ── T14: Credential ID validation matrix ────────────────────────────────────
@@ -1233,9 +1330,23 @@ class CredentialStoreTest(CredentialStoreBase):
                         f"expected={expected!r} got={got_fields.get(field)!r}",
                     )
 
+                # schemaVersion is server-stamped and must stay 1 for every type.
+                self.assertEqual(
+                    parsed_get.get("schemaVersion"), 1,
+                    f"[T08 {cred_type}] schemaVersion should be 1. body={parsed_get}",
+                )
+
+                # missingSensitiveFields marks a credential with no secret
+                # material; it must never appear on a healthy one.
+                self.assertNotIn(
+                    "missingSensitiveFields", parsed_get,
+                    f"[T08 {cred_type}] missingSensitiveFields must be absent on a "
+                    f"normally created credential. body={parsed_get}",
+                )
+
                 self.log.info(
                     f"[T08 {cred_type}] PASSED — POST 201, GET 200, "
-                    "type/id/redaction/fields verified"
+                    "type/id/redaction/fields/schemaVersion verified"
                 )
 
     def test_rbac_grant_matrix(self):

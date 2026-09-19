@@ -103,6 +103,26 @@ class CredentialStoreAPI(CBRestConnection):
         body = json.dumps(payload)
         return self.request(api, self.PUT, body, headers=headers)
 
+    def patch_credential(self, cred_id, payload):
+        """
+        PATCH /settings/credentials/:id — partial metadata update.
+
+        Accepts only description, expiresAt, guardrails and (optionally)
+        payloadVersion as a CAS token.  `type` and `fields` are rejected with
+        400 "Unsupported key" -- PATCH never touches credential material, which
+        is also why it does not advance secretSetAt/secretSetBy.
+
+        An explicit JSON null clears a key (e.g. {"expiresAt": None} removes the
+        expiry); omitted keys are preserved.  An empty body is rejected with 400.
+
+        Returns:
+            tuple: (status_bool, content, response)
+        """
+        api = f"{self.base_url}{ENDPOINT_CREDENTIALS}/{self._encode_id(cred_id)}"
+        headers = self.get_headers_for_content_type_json()
+        body = json.dumps(payload)
+        return self.request(api, self.PATCH, body, headers=headers)
+
     def delete_credential(self, cred_id):
         """
         DELETE /settings/credentials/:id.

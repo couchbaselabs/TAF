@@ -38,11 +38,13 @@ __all__ = [
 # Fields listed here must NEVER appear as plaintext in admin (non-consume) API responses.
 SENSITIVE_FIELDS_BY_TYPE = {
     "aws": {"secretAccessKey", "sessionToken"},
+    "awsInstanceMetadata": set(),
     "azureShared": {"accountKey"},
     "azureAd": {"clientSecret", "certPassword"},
     "azureSas": {"sharedAccessSignature"},
     "azureManaged": set(),
     "gcp": {"jsonCredentials", "secretAccessKey"},
+    "gcpAdc": set(),
     "http": {"password", "token", "privateKey", "passphrase"},
     "couchbase": {"password", "privateKey", "passphrase"},
 }
@@ -505,6 +507,35 @@ class CredentialStoreUtils:
         )
         _, content, resp = rest._http_request(
             url, "PUT", json.dumps(payload), headers=headers
+        )
+        return self.status_code(resp), content
+
+    def patch_credential(self, rest, cred_id, payload, username=None, password=None):
+        """
+        PATCH /settings/credentials/:id (metadata-only partial update).
+
+        Accepts description, expiresAt, guardrails and optionally payloadVersion
+        as a CAS token.  Sending `type` or `fields` is a 400 "Unsupported key".
+        An explicit None value clears that key (json.dumps renders it as JSON
+        null), which is how an existing expiresAt is removed.
+
+        Returns:
+            tuple: (status_code, content)
+        """
+        try:
+            api = self._cs_api(rest, username=username, password=password)
+            _, content, response = api.patch_credential(cred_id, payload)
+            return self.status_code(response), content
+        except Exception as _cs_err:
+            if self.log:
+                self.log.debug(f"CredentialStoreAPI path unavailable, using fallback: {_cs_err}")
+        encoded_id = self._encode_path_segment(cred_id)
+        url = f"{self._base_url(rest)}/{ENDPOINT_CREDENTIALS.lstrip('/')}/{encoded_id}"
+        headers = rest._create_capi_headers(
+            username=username, password=password, contentType="application/json"
+        )
+        _, content, resp = rest._http_request(
+            url, "PATCH", json.dumps(payload), headers=headers
         )
         return self.status_code(resp), content
 

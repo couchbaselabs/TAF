@@ -1,4 +1,6 @@
 import os
+import secrets
+import string
 import time
 import urllib.parse
 
@@ -38,18 +40,30 @@ class CredentialStoreBase(ClusterSetup):
     If neither is set, consume assertions are skipped with a clear log message.
     """
 
-    # Local test user configuration
+    # Usernames only — passwords are generated per run; see _init_user_passwords.
     SEC_ADMIN_USER = "cs_sec_admin"
-    SEC_ADMIN_PASS = "Couchbase@1234"
-
     USER_ADMIN_USER = "cs_user_admin"
-    USER_ADMIN_PASS = "UserAdmin@1234"
-
     ALICE_USER = "cs_alice"
-    ALICE_PASS = "Alice@1234"
-
     BOB_USER = "cs_bob"
-    BOB_PASS = "Bob@1234"
+
+    # Actors for the [admin, credentials] RBAC re-baseline (MB-71919).
+    # Credential CRUD moved off [admin, security] onto its own vertex in
+    # Totoro; credential_admin holds that lane and nothing else, and
+    # ro_security_admin gets read on it.  Both roles are newer than the rest of
+    # this suite, hence the advisory provisioning in _provision_test_users.
+    CRED_ADMIN_USER = "cs_cred_admin"
+    RO_SEC_ADMIN_USER = "cs_ro_sec_admin"
+
+    # (attribute, username, roles, required) — the password for each is
+    # resolved at run time into self.<attribute>.
+    TEST_USER_SPECS = (
+        ("SEC_ADMIN_PASS", SEC_ADMIN_USER, "security_admin", True),
+        ("USER_ADMIN_PASS", USER_ADMIN_USER, "user_admin_local", True),
+        ("ALICE_PASS", ALICE_USER, "", True),
+        ("BOB_PASS", BOB_USER, "", True),
+        ("CRED_ADMIN_PASS", CRED_ADMIN_USER, "credential_admin", False),
+        ("RO_SEC_ADMIN_PASS", RO_SEC_ADMIN_USER, "ro_security_admin", False),
+    )
 
     def setUp(self):
         super().setUp()
@@ -83,7 +97,9 @@ class CredentialStoreBase(ClusterSetup):
         # Service names whose roles were modified — reset in tearDown
         self._modified_services = []
 
-        # Provision test users and initialise store settings
+        # Provision test users and initialise store settings.
+        # Passwords are generated per run; see _init_user_passwords.
+        self._init_user_passwords()
         self._provision_test_users()
         self._enable_n2n_override()
 
@@ -264,33 +280,89 @@ class CredentialStoreBase(ClusterSetup):
 
     # ── Test user provisioning ────────────────────────────────────────────────
 
+    @staticmethod
+    def _generate_password():
+        """
+        Generate a random password that satisfies the server's complexity rules.
+
+        Built from the `secrets` module rather than `random` — these are real
+        credentials on a live cluster for the duration of the run, even if it is
+        only a test cluster.  The fixed "Aa1@" prefix guarantees the upper /
+        lower / digit / special classes the server requires regardless of what
+        the random body happens to contain.
+        """
+        alphabet = string.ascii_letters + string.digits
+        return "Aa1@" + "".join(secrets.choice(alphabet) for _ in range(16))
+
+    def _init_user_passwords(self):
+        """
+        Resolve a password for each test user into self.<ATTRIBUTE>.
+
+        Order: -p <username>_password=<value>, then the <USERNAME>_PASSWORD env
+        var, then a freshly generated value.  Nothing is hard-coded, so no
+        credential literal lives in the repo; the override path exists for the
+        rare case where a run needs a password that outlives the process (e.g.
+        reproducing a failure by hand against the same cluster).
+        """
+        for attribute, username, _roles, _required in self.TEST_USER_SPECS:
+            value = self.input.param(
+                f"{username}_password",
+                os.environ.get(f"{username.upper()}_PASSWORD"),
+            ) or self._generate_password()
+            setattr(self, attribute, value)
+
+    def _test_users(self):
+        """
+        Users created by _provision_test_users, as (username, password, roles,
+        required) tuples with passwords resolved by _init_user_passwords.
+
+        required=True  → setUp fails if the user cannot be created.
+        required=False → the user is recorded in self._unavailable_actors and
+                         only the matrix rows naming it fail.
+        """
+        return tuple(
+            (username, getattr(self, attribute), roles, required)
+            for attribute, username, roles, required in self.TEST_USER_SPECS
+        )
+
     def _provision_test_users(self):
         """
-        Create sec_admin, alice, and bob local users.
+        Create the local users every test in this suite depends on.
 
-        Fails the test immediately if any user cannot be created — consume-path
-        tests depend on alice and bob existing with known passwords.
+        The first four are REQUIRED — consume-path tests cannot run without
+        alice and bob, and _actor_credentials() resolves sec_admin/user_admin.
+
+        credential_admin and ro_security_admin are ADVISORY.  credential_admin
+        is a new role in Totoro (MB-71919); on a build that has not shipped it,
+        create_local_user returns 400.  Failing hard there would take down all
+        twelve tests in this suite from setUp, so instead the actor is recorded
+        as unavailable and only the grant-matrix rows naming it fail, with a
+        message that says why.
         """
-        for username, password, roles in (
-            (self.SEC_ADMIN_USER, self.SEC_ADMIN_PASS, "security_admin"),
-            (self.USER_ADMIN_USER, self.USER_ADMIN_PASS, "user_admin_local"),
-            (self.ALICE_USER, self.ALICE_PASS, ""),
-            (self.BOB_USER, self.BOB_PASS, ""),
-        ):
+        self._unavailable_actors = set()
+        for username, password, roles, required in self._test_users():
             status, content = self.cs_utils.create_local_user(
                 self.rest, username, password, roles
             )
-            if not self.cs_utils._is_success_status(status):
+            if self.cs_utils._is_success_status(status):
+                self.log.info(f"Test user provisioned: {username}")
+                continue
+            if required:
                 self.fail(
                     f"Failed to provision test user '{username}': "
                     f"status={status} content={content}. "
                     "Tests cannot proceed without required users."
                 )
-            self.log.info(f"Test user provisioned: {username}")
+            self._unavailable_actors.add(username)
+            self.log.warning(
+                f"Optional test user '{username}' (role '{roles}') could not be "
+                f"created: status={status} content={content}. Grant-matrix rows "
+                "naming this actor will fail; the rest of the suite is unaffected."
+            )
 
     def _deprovision_test_users(self):
         """Delete all provisioned test users."""
-        for username in (self.SEC_ADMIN_USER, self.USER_ADMIN_USER, self.ALICE_USER, self.BOB_USER):
+        for username, _password, _roles, _required in self._test_users():
             self.cs_utils.delete_local_user(self.rest, username)
 
     # ── Credential lifecycle helpers ──────────────────────────────────────────
@@ -849,12 +921,7 @@ class CredentialStoreBase(ClusterSetup):
 
     def _get_test_user_password(self, username):
         """Return the known password for a provisioned test user, or None if unknown."""
-        return {
-            self.ALICE_USER: self.ALICE_PASS,
-            self.BOB_USER: self.BOB_PASS,
-            self.SEC_ADMIN_USER: self.SEC_ADMIN_PASS,
-            self.USER_ADMIN_USER: self.USER_ADMIN_PASS,
-        }.get(username)
+        return {u: p for u, p, _roles, _req in self._test_users()}.get(username)
 
     def _set_user_roles(self, username, roles_str):
         """
@@ -890,16 +957,32 @@ class CredentialStoreBase(ClusterSetup):
 
         "Administrator" returns (None, None) — self.rest uses its own admin credentials.
         "cbq_engine"   returns ("@cbq-engine", self.cbq_engine_password).
+
+        Never returns a None password for a named local actor: _cs_api falls
+        back to the connection's own admin credentials when the password is
+        None, which would silently turn an intended 403 into a 200 (or a 401)
+        and make the row pass for the wrong reason.
         """
-        if actor_name == "cs_sec_admin":
-            return self.SEC_ADMIN_USER, self.SEC_ADMIN_PASS
-        if actor_name == "cs_user_admin":
-            return self.USER_ADMIN_USER, self.USER_ADMIN_PASS
-        if actor_name == "cbq_engine":
-            return "@cbq-engine", self.cbq_engine_password
         if actor_name == "Administrator":
             return None, None
-        self.fail(f"[T12] Unknown actor: {actor_name!r}")
+        if actor_name == "cbq_engine":
+            if not self.cbq_engine_password:
+                self.fail(
+                    "[T12] Actor 'cbq_engine' needs the cbauth special password — "
+                    "use services_init=kv:n1ql or pass cbq_engine_password"
+                )
+            return "@cbq-engine", self.cbq_engine_password
+
+        password = self._get_test_user_password(actor_name)
+        if password is None:
+            self.fail(f"[T12] Unknown actor: {actor_name!r}")
+        if actor_name in getattr(self, "_unavailable_actors", set()):
+            self.fail(
+                f"[T12] Actor '{actor_name}' was not provisioned — its role does "
+                "not exist on this build. See the setUp warning. This row cannot "
+                "run; the rest of the suite is unaffected."
+            )
+        return actor_name, password
 
     def _call_grant_api(self, row):
         """
@@ -956,7 +1039,7 @@ class CredentialStoreBase(ClusterSetup):
                 username=username, password=password,
             )
 
-        if api == "credential_create":
+        if api in ("credential_create", "cred_post"):
             payload = self.cs_utils.build_aws_payload(
                 access_key_id="AKIAG4EXAMPLE",
                 secret_access_key="G4_SECRET_VALUE",
@@ -970,6 +1053,32 @@ class CredentialStoreBase(ClusterSetup):
                 self._created_creds.append(target)
             return status, content
 
+        # Credential CRUD is gated by cluster.admin.credentials; the store
+        # settings stay on cluster.admin.security.
+        if api == "cred_read":
+            return self.cs_utils.get_credential(
+                self.rest, target, username=username, password=password,
+            )
+
+        if api == "cred_list":
+            return self.cs_utils.list_credentials(
+                self.rest, username=username, password=password,
+            )
+
+        if api == "store_get":
+            return self.cs_utils.get_store_settings(
+                self.rest, username=username, password=password,
+            )
+
+        if api == "store_put":
+            # Write setUp's own values back, so this leaves no state behind.
+            return self.cs_utils.put_store_settings(
+                self.rest,
+                config_encryption_override=False,
+                n2n_encryption_override=True,
+                username=username, password=password,
+            )
+
         self.fail(f"[T12] Unknown API type: {api!r}")
 
     def _run_grant_row(self, row, cred_id):
@@ -977,8 +1086,14 @@ class CredentialStoreBase(ClusterSetup):
         row_id = row["id"]
         exp_status = row["exp_status"]
         raw_role = row.get("role") or ""
+        raw_target = row.get("target") or ""
         resolved_row = dict(row)
         resolved_row["role"] = raw_role.format(cred_id=cred_id) if raw_role else None
+        # target is templated too, so a row can address the shared credential
+        # ("{cred_id}") without hard-coding the id the test happens to use.
+        resolved_row["target"] = (
+            raw_target.format(cred_id=cred_id) if raw_target else row.get("target")
+        )
         try:
             status, content = self._call_grant_api(resolved_row)
             actual = int(status) if status else 0
@@ -996,7 +1111,11 @@ class CredentialStoreBase(ClusterSetup):
                         f"[T12 {row_id}] 400 error should mention undefined/unknown/malformed. "
                         f"roles_error={err!r}",
                     )
-            if actual == 200 and row.get("verify"):
+            if actual == 403 and row.get("exp_permission"):
+                self._assert_denied_permission(
+                    content, row["exp_permission"], context=f"T12 {row_id}"
+                )
+            if self.cs_utils._is_success_status(actual) and row.get("verify"):
                 if row["verify"] == "user_role":
                     self._verify_user_has_consume_role(row["target"], cred_id)
                 elif row["verify"] == "service_role":
@@ -1004,6 +1123,30 @@ class CredentialStoreBase(ClusterSetup):
             self.log.info(f"[T12 {row_id}] PASSED")
         finally:
             self._teardown_grant_row(resolved_row)
+
+    def _assert_denied_permission(self, content, expected_permission, context=""):
+        """
+        Assert a 403 body names `expected_permission` in its "permissions" array.
+
+        This is the regression guard that a status-code-only assertion cannot
+        give you.  Credential CRUD moved from cluster.admin.security onto
+        cluster.admin.credentials in Totoro (MB-71919); if it were ever re-gated
+        back, every row here would still return 403 and the change would pass
+        unnoticed.  Pinning the permission string is what catches it.
+
+        Body shape:
+            {"message": "Forbidden. User needs the following permissions",
+             "permissions": ["cluster.admin.credentials!write"]}
+        """
+        parsed = self.cs_utils.parse_content(content)
+        permissions = []
+        if isinstance(parsed, dict):
+            permissions = parsed.get("permissions") or []
+        self.assertIn(
+            expected_permission, permissions,
+            f"[{context}] 403 body should name '{expected_permission}'. "
+            f"Got permissions={permissions!r}, body={parsed!r}",
+        )
 
     def _verify_service_has_role(self, service_name, cred_id):
         """
@@ -1049,8 +1192,13 @@ class CredentialStoreBase(ClusterSetup):
         )
 
     def _teardown_grant_row(self, row):
-        """Best-effort cleanup after a T12 grant-matrix row (only needed on 200 rows)."""
-        if row["exp_status"] != 200:
+        """
+        Best-effort cleanup after a T12 grant-matrix row.
+
+        Only rows expected to succeed changed any state; the gate covers 201
+        as well as 200, so creates are not skipped.
+        """
+        if not self.cs_utils._is_success_status(row["exp_status"]):
             return
         api = row["api"]
         target = row["target"]
