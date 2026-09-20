@@ -56,10 +56,38 @@ _TYPE_SMOKE_ROWS = (
      {}),
 )
 
+# Credentials pre-created by test_consume_auth_matrix: (key, id, allowed_services).
+# allowed_services None means the credential is created with NO guardrails key at
+# all, which is the only way to reach the default-deny path — an empty list is
+# rejected at creation.
+_T11_MAIN = "p1-t11-1"
+_T11_NOGUARD = "p1-t11-noguard"
+_T11_PROD = "p1-t11/prod/aws"
+_T11_DEEP = "p1-t11/prod/sub/deep"
+_T11_TEST = "p1-t11/test/aws"
+_T11_PRODUCTION = "p1-t11/production/key"
+_T11_UNION_B = "p1-t11-union-b"
+
+_CONSUME_CREDS = (
+    ("main", _T11_MAIN, ["n1ql"]),
+    ("noguard", _T11_NOGUARD, None),
+    ("prod", _T11_PROD, ["n1ql"]),
+    ("deep", _T11_DEEP, ["n1ql"]),
+    ("test", _T11_TEST, ["n1ql"]),
+    ("production", _T11_PRODUCTION, ["n1ql"]),
+    ("union_b", _T11_UNION_B, ["n1ql"]),
+)
+
 # ── T11: Consume auth matrix ────────────────────────────────────────────────
 # Fields: id, pattern (A|B), caller (service without @), user (on_behalf),
 # domain, guardrail, setup, exp_status, exp_error,
-# use_missing_id (optional bool), requires_expiry (optional bool)
+# use_missing_id (optional bool), requires_expiry (optional bool),
+# cred (optional key from _CONSUME_CREDS, default "main"),
+# user_role (optional roles string applied to alice for this row only).
+#
+# A row without a "guardrail" key leaves its credential's guardrails alone.
+# Membership is tested, not truthiness, so "no guardrails at all" stays
+# distinguishable from "some guardrails".
 _CONSUME_AUTH_MATRIX = (
     # — Pattern A: @cbq-engine on behalf of end user ——————————————————————
     {"id": "A1", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
@@ -92,6 +120,57 @@ _CONSUME_AUTH_MATRIX = (
     {"id": "B6", "pattern": "B", "caller": "backup",      "user": "@backup",     "domain": "admin",
      "guardrail": ["n1ql"],   "setup": "no_service_role", "exp_status": 403, "exp_error": ERROR_INSUFFICIENT_PERMISSIONS,
      "use_missing_id": True},
+
+    # — Default deny: a credential with no guardrails is consumable by nobody ——
+    # The user holds the consume role, so a 403 here is the guardrail talking,
+    # not RBAC.
+    {"id": "D1", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "noguard", "user_role": f"credential_consumer[{_T11_NOGUARD}]",
+     "setup": "alice_role", "exp_status": 403,
+     "exp_error": ERROR_SERVICE_GUARDRAIL_BLOCKED},
+
+    # — Wildcard role patterns ————————————————————————————————————————————
+    # The wildcard is a prefix match with the slash as a literal boundary, so it
+    # spans any depth but must not leak sideways into a sibling path or into a
+    # longer path that merely starts with the same characters.
+    {"id": "W1", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "prod", "user_role": "credential_consumer[p1-t11/prod/*]",
+     "setup": "alice_role", "exp_status": 200, "exp_error": None},
+    {"id": "W2", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "deep", "user_role": "credential_consumer[p1-t11/prod/*]",
+     "setup": "alice_role", "exp_status": 200, "exp_error": None},
+    {"id": "W3", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "test", "user_role": "credential_consumer[p1-t11/prod/*]",
+     "setup": "alice_role", "exp_status": 403,
+     "exp_error": ERROR_INSUFFICIENT_PERMISSIONS},
+    # W4 is the prefix-collision guard: "…/production/key" starts with the same
+    # characters as "…/prod" but is not under "…/prod/".
+    {"id": "W4", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "production", "user_role": "credential_consumer[p1-t11/prod/*]",
+     "setup": "alice_role", "exp_status": 403,
+     "exp_error": ERROR_INSUFFICIENT_PERMISSIONS},
+    {"id": "W5", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "test", "user_role": "credential_consumer[p1-t11/*]",
+     "setup": "alice_role", "exp_status": 200, "exp_error": None},
+    {"id": "W6", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "prod", "user_role": "credential_consumer[*]",
+     "setup": "alice_role", "exp_status": 200, "exp_error": None},
+
+    # — Union of several grants ————————————————————————————————————————————
+    # Two exact grants are evaluated together; anything outside both is denied.
+    {"id": "U1", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "prod",
+     "user_role": f"credential_consumer[{_T11_PROD}],credential_consumer[{_T11_UNION_B}]",
+     "setup": "alice_role", "exp_status": 200, "exp_error": None},
+    {"id": "U2", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "union_b",
+     "user_role": f"credential_consumer[{_T11_PROD}],credential_consumer[{_T11_UNION_B}]",
+     "setup": "alice_role", "exp_status": 200, "exp_error": None},
+    {"id": "U3", "pattern": "A", "caller": "cbq-engine", "user": "cs_alice", "domain": "local",
+     "cred": "test",
+     "user_role": f"credential_consumer[{_T11_PROD}],credential_consumer[{_T11_UNION_B}]",
+     "setup": "alice_role", "exp_status": 403,
+     "exp_error": ERROR_INSUFFICIENT_PERMISSIONS},
 )
 
 
@@ -1600,175 +1679,6 @@ class CredentialStoreTest(CredentialStoreBase):
                     )
                 self._run_grant_row(row, cred_id)
 
-    def test_wildcard_role_boundaries(self):
-        """
-        T13: Wildcard role boundary semantics for credential_consumer.
-
-        Three phases:
-
-        Phase 1 — suffix wildcard (db/*):
-          Grant alice credential_consumer[db/*].
-          Consume db/prod/1 → 200 — db/* covers this path.
-          Consume db_test/1 → 403 INSUFFICIENT_PERMISSIONS —
-            the slash is literal; db_test/1 does not share the "db/" prefix.
-
-        Phase 2 — prefix asterisk rejected (*prod/key):
-          Attempt to grant alice credential_consumer[*prod/key] → 400.
-          Wildcard is suffix-only; *prod/key is treated as a literal credential ID
-          lookup, and no such credential exists in the vault.
-
-        Phase 3 — master key (*):
-          Grant alice credential_consumer[*].
-          Consume db/prod/1 → 200 and db_test/1 → 200.
-          Standalone * matches all credential IDs, bypassing prefix checks.
-
-        Requires cbq_engine_password — Pattern A consume calls @cbq-engine.
-        """
-        self._require_cbq_password()
-
-        # ── Setup: create target (db/prod/1) and spoof (db_test/1) ──────────
-        target_cred_id = "db/prod/1"
-        target_secret = "T13_PROD_SECRET"
-        status_t, content_t = self._create_tracked_credential(
-            target_cred_id,
-            self.cs_utils.build_aws_payload(
-                access_key_id="AKIAT13PROD",
-                secret_access_key=target_secret,
-                region="us-east-1",
-                allowed_services=["n1ql"],
-            ),
-        )
-        self.assertEqual(
-            int(status_t) if status_t else 0, 201,
-            f"[T13] Setup db/prod/1: expected 201, got {status_t}. content={content_t}",
-        )
-
-        spoof_cred_id = "db_test/1"
-        spoof_secret = "T13_SPOOF_SECRET"
-        status_s, content_s = self._create_tracked_credential(
-            spoof_cred_id,
-            self.cs_utils.build_aws_payload(
-                access_key_id="AKIAT13SPOOF",
-                secret_access_key=spoof_secret,
-                region="us-east-1",
-                allowed_services=["n1ql"],
-            ),
-        )
-        self.assertEqual(
-            int(status_s) if status_s else 0, 201,
-            f"[T13] Setup db_test/1: expected 201, got {status_s}. content={content_s}",
-        )
-
-        try:
-            # ── Phase 1: suffix wildcard db/* ─────────────────────────────────
-            with self.subTest(phase="1-suffix-wildcard"):
-                self.log.info("[T13 Phase 1] Granting alice credential_consumer[db/*]")
-                status_g1, _ = self._set_user_roles(
-                    self.ALICE_USER, "credential_consumer[db/*]"
-                )
-                self.assertEqual(
-                    int(status_g1) if status_g1 else 0, 200,
-                    f"[T13 Phase 1] Grant credential_consumer[db/*] expected 200, got {status_g1}. "
-                    "Server validates prefix existence at grant time — verify db/prod/1 was created.",
-                )
-
-                self.log.info("[T13 Phase 1] Consume db/prod/1 as alice (expect 200)")
-                status_allow, body_allow = self._consume_as_cbq_on_behalf_of(
-                    target_cred_id, self.ALICE_USER, "local"
-                )
-                self._assert_consume_allowed(
-                    status_allow, body_allow,
-                    context="credential_consumer[db/*] covers db/prod/1",
-                )
-                self._assert_consume_has_secret(body_allow, target_cred_id, target_secret)
-                self.log.info("[T13 Phase 1] db/prod/1 → 200 (db/* matched)")
-
-                self.log.info(
-                    "[T13 Phase 1] Consume db_test/1 as alice "
-                    "(expect 403 — slash is literal, not a prefix glob)"
-                )
-                status_deny, body_deny = self._consume_as_cbq_on_behalf_of(
-                    spoof_cred_id, self.ALICE_USER, "local"
-                )
-                self._assert_consume_denied(
-                    status_deny, body_deny, ERROR_INSUFFICIENT_PERMISSIONS,
-                    context=(
-                        "credential_consumer[db/*] does NOT cover db_test/1 — "
-                        "the Erlang router matches 'db/' literally, not as a glob prefix"
-                    ),
-                )
-                self.log.info(
-                    "[T13 Phase 1] db_test/1 → 403 INSUFFICIENT_PERMISSIONS "
-                    "(slash boundary enforced: db_test/ ≠ db/)"
-                )
-
-            # Reset between phases — runs even when Phase 1 assertions fail because
-            # subTest swallows AssertionError and resumes after the with block.
-            self._set_user_roles(self.ALICE_USER, "")
-
-            with self.subTest(phase="2-prefix-asterisk"):
-                self.log.info(
-                    "[T13 Phase 2] Attempting grant credential_consumer[*prod/key] (expect 400)"
-                )
-                status_bad, content_bad = self._set_user_roles(
-                    self.ALICE_USER, "credential_consumer[*prod/key]"
-                )
-                actual_bad = int(status_bad) if status_bad else 0
-                self.assertEqual(
-                    actual_bad, 400,
-                    f"[T13 Phase 2] credential_consumer[*prod/key] expected 400 — "
-                    "wildcard is suffix-only; *prod/key is treated as a literal ID lookup "
-                    f"and no such credential exists. Got {actual_bad}. content={content_bad}",
-                )
-                parsed_bad = self.cs_utils.parse_content(content_bad) or {}
-                err = str((parsed_bad.get("errors") or {}).get("roles", ""))
-                if err:
-                    self.assertTrue(
-                        any(w in err.lower() for w in ("undefined", "unknown", "malformed")),
-                        f"[T13 Phase 2] 400 error should mention undefined/unknown/malformed. "
-                        f"roles_error={err!r}",
-                    )
-                self.log.info("[T13 Phase 2] credential_consumer[*prod/key] correctly rejected (400)")
-
-            with self.subTest(phase="3-master-key"):
-                self.log.info("[T13 Phase 3] Granting alice credential_consumer[*] (master key)")
-                status_g3, _ = self._set_user_roles(
-                    self.ALICE_USER, "credential_consumer[*]"
-                )
-                self.assertEqual(
-                    int(status_g3) if status_g3 else 0, 200,
-                    f"[T13 Phase 3] Grant credential_consumer[*] expected 200, got {status_g3}",
-                )
-
-                self.log.info("[T13 Phase 3] Consume db/prod/1 as alice (expect 200 — * matches all)")
-                status_m1, body_m1 = self._consume_as_cbq_on_behalf_of(
-                    target_cred_id, self.ALICE_USER, "local"
-                )
-                self._assert_consume_allowed(
-                    status_m1, body_m1,
-                    context="credential_consumer[*] covers db/prod/1",
-                )
-                self._assert_consume_has_secret(body_m1, target_cred_id, target_secret)
-
-                self.log.info("[T13 Phase 3] Consume db_test/1 as alice (expect 200 — * matches all)")
-                status_m2, body_m2 = self._consume_as_cbq_on_behalf_of(
-                    spoof_cred_id, self.ALICE_USER, "local"
-                )
-                self._assert_consume_allowed(
-                    status_m2, body_m2,
-                    context="credential_consumer[*] covers db_test/1",
-                )
-                self._assert_consume_has_secret(body_m2, spoof_cred_id, spoof_secret)
-
-                self.log.info(
-                    "[T13] All phases PASSED — "
-                    "db/* slash boundary enforced, *prod/key rejected (400), * is master key"
-                )
-
-        finally:
-            self._set_user_roles(self.ALICE_USER, "")
-            self.log.info("[T13] Alice roles cleared in finally block")
-
     def test_id_validation_matrix(self):
         """
         T14: Validate credential ID constraints (Campaign 2).
@@ -1832,24 +1742,32 @@ class CredentialStoreTest(CredentialStoreBase):
         self._require_cbq_password()
         test_expiry_wait = self.input.param("test_expiry_wait", False)
 
-        cred_id = "p1-t11-1"
+        cred_id = _T11_MAIN
         missing_id = "p1-t11-missing"
         known_secret = "T11_CONSUME_SECRET"
 
-        payload = self.cs_utils.build_aws_payload(
-            access_key_id="AKIAT11EXAMPLE",
-            secret_access_key=known_secret,
-            region="us-east-1",
-            allowed_services=["n1ql"],
-        )
-        status_create, content_create = self._create_tracked_credential(cred_id, payload)
-        self.assertEqual(
-            int(status_create) if status_create else 0, 201,
-            f"[T11] Credential create expected 201, got {status_create}. "
-            f"content={content_create}",
-        )
+        creds = {}
+        current_guardrails = {}
+        for key, key_id, allowed in _CONSUME_CREDS:
+            payload = self.cs_utils.build_aws_payload(
+                access_key_id="AKIAT11EXAMPLE",
+                secret_access_key=known_secret,
+                region="us-east-1",
+                allowed_services=allowed,
+            )
+            status_create, content_create = self._create_tracked_credential(key_id, payload)
+            self.assertEqual(
+                int(status_create) if status_create else 0, 201,
+                f"[T11] Credential create ({key}) expected 201, got {status_create}. "
+                f"content={content_create}",
+            )
+            creds[key] = key_id
+            current_guardrails[key] = allowed
 
-        # Grant alice role once — persists for all alice_role rows
+        # Baseline grant for the rows that do not set their own user_role.
+        # Rows carrying user_role replace alice's roles outright, so teardown
+        # restores this value rather than leaving the next row to inherit theirs.
+        self._t11_baseline_alice_role = f"credential_consumer[{cred_id}]"
         status_grant, _ = self.cs_utils.grant_consume_to_local_user(
             self.rest, self.ALICE_USER, cred_id
         )
@@ -1857,8 +1775,6 @@ class CredentialStoreTest(CredentialStoreBase):
             int(status_grant) if status_grant else 0, 200,
             f"[T11] Grant alice role expected 200, got {status_grant}",
         )
-
-        current_guardrail = ["n1ql"]
 
         for row in _CONSUME_AUTH_MATRIX:
             row_id = row["id"]
@@ -1872,15 +1788,22 @@ class CredentialStoreTest(CredentialStoreBase):
                 continue
 
             with self.subTest(row=row_id):
-                # Sync guardrail to what this row needs
-                target_guardrail = row["guardrail"]
-                if target_guardrail != current_guardrail:
-                    self._t11_update_guardrail(cred_id, target_guardrail, known_secret)
-                    current_guardrail = target_guardrail
+                cred_key = row.get("cred", "main")
+                row_cred_id = creds[cred_key]
 
-                self._setup_consume_matrix_rbac(row, cred_id)
+                # Sync guardrail only when the row asks for one.  Membership,
+                # not truthiness: a row that omits the key must not be able to
+                # strip the guardrails off the credential it points at.
+                if "guardrail" in row:
+                    if current_guardrails.get(cred_key) != row["guardrail"]:
+                        self._t11_update_guardrail(
+                            row_cred_id, row["guardrail"], known_secret
+                        )
+                        current_guardrails[cred_key] = row["guardrail"]
+
+                self._setup_consume_matrix_rbac(row, row_cred_id)
                 try:
-                    consume_id = missing_id if row.get("use_missing_id") else cred_id
+                    consume_id = missing_id if row.get("use_missing_id") else row_cred_id
                     if row["caller"] != "cbq-engine":
                         self.log.info(
                             f"[T11 {row_id}] Authenticating as @{row['caller']} "

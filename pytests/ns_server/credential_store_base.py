@@ -882,6 +882,18 @@ class CredentialStoreBase(ClusterSetup):
                 f"[T11 {row['id']}] Grant backup service role expected 200, got {status}. "
                 f"content={content}",
             )
+        # A row carrying user_role sets alice's roles outright, which is what
+        # makes wildcard and multi-grant patterns expressible.  _set_user_roles
+        # replaces rather than appends, so teardown puts the baseline back.
+        user_role = row.get("user_role")
+        if user_role is not None:
+            status, content = self._set_user_roles(self.ALICE_USER, user_role)
+            self.assertEqual(
+                int(status) if status else 0, 200,
+                f"[T11 {row['id']}] Setting alice roles to {user_role!r} "
+                f"expected 200, got {status}. content={content}",
+            )
+
         # A2: verify bob has no consume role before the deny assertion
         if row.get("user") == self.BOB_USER:
             self._verify_user_no_consume_role(self.BOB_USER)
@@ -894,6 +906,9 @@ class CredentialStoreBase(ClusterSetup):
                 self.cs_utils.delete_service_roles(self.rest, "n1ql")
             elif setup == "backup_service_role":
                 self.cs_utils.delete_service_roles(self.rest, "backup")
+            baseline = getattr(self, "_t11_baseline_alice_role", None)
+            if row.get("user_role") is not None and baseline:
+                self._set_user_roles(self.ALICE_USER, baseline)
         except Exception as exc:
             self.log.warning(
                 f"[T11 {row['id']}] RBAC teardown warning (non-fatal): "

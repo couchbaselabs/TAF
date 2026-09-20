@@ -339,10 +339,9 @@ nodes_init=1,services_init=kv:n1ql,GROUP=P0 \
 | `test_prerequisites_override_and_expiry` | S5 | P0 | 1 | `kv` | strict settings, n2n override, warnings, DELETE reset, expiresAt <5min=400, 6min=201 |
 | `test_cross_node_credential_consume` | S6 | P1 | 2 | `kv:n1ql` | Chronicle CREATE propagation → Node B 200; guardrail UPDATE → Node B 403 SERVICE_GUARDRAIL_BLOCKED |
 | `test_node_failure_resilience` | S6.2 | P1 | 2 | `kv` | Node A stopped via SSH; Node B must return 200 from local Chronicle replica |
-| `test_credential_type_smoke` | T08 | P1 | 1 | `kv` | POST→GET→assert secrets redacted for all 8 credential types |
-| `test_consume_auth_matrix` | T11 | P1 | 1 | `kv:n1ql` | 12-row matrix: all cbauth error codes, Pattern A (rows A1–A6) and Pattern B (rows B1–B6) |
-| `test_rbac_grant_matrix` | T12 | P1 | 1 | `kv:n1ql` | 10-row matrix: who can grant credential_consumer to users vs services; G6/G7 skip if no cbq password |
-| `test_wildcard_role_boundaries` | T13 | P1 | 1 | `kv:n1ql` | 3-phase: db/* slash boundary (200+403), *prod/key rejected (400), * master key (200+200) |
+| `test_credential_type_smoke` | T08 | P1 | 1 | `kv` | POST→GET→assert secrets redacted for all 10 credential types; also schemaVersion and missingSensitiveFields |
+| `test_consume_auth_matrix` | T11 | P1 | 1 | `kv:n1ql` | all cbauth error codes, Pattern A and Pattern B, plus default-deny, wildcard boundaries and multi-grant union |
+| `test_rbac_grant_matrix` | T12 | P1 | 1 | `kv:n1ql` | who can grant credential_consumer to users vs services, plus the [admin, credentials] RBAC matrix asserting permission strings |
 | `test_id_validation_matrix` | T14 | P1 | 1 | `kv` | ID validation: 128 chars=201, 129=400, space=400, non-ASCII=400, slashes=201, duplicate=409 |
 
 ### `test_prerequisites_override_and_expiry` branches
@@ -465,32 +464,10 @@ time. `credential_consumer[no/prefix/*]` is syntactically valid (suffix wildcard
 fails because no credential with prefix `no/prefix/` exists — same existence check as
 G9. If the server uses lazy validation, adjust `exp_status` to 200.
 
-### `test_wildcard_role_boundaries` flow (T13)
+### Wildcard role boundaries
 
-Two credentials are created up front: `db/prod/1` (target, inside `db/` namespace)
-and `db_test/1` (spoof, same starting letters but without the `db/` directory prefix).
-Both have `allowedServices=["n1ql"]` so guardrail is not the reason for allow/deny.
-
-**Phase 1 — suffix wildcard:**
-- `_set_user_roles(ALICE_USER, "credential_consumer[db/*]")` → expect 200
-  (server validates at least one credential matches the `db/` prefix at grant time)
-- Consume `db/prod/1` as alice → 200 + plaintext secret (wildcard matches)
-- Consume `db_test/1` as alice → 403 INSUFFICIENT_PERMISSIONS
-  (the Erlang router treats `/` literally: `db_test/` is not a sub-path of `db/`)
-- `_set_user_roles(ALICE_USER, "")` — clear alice's roles before Phase 2
-
-**Phase 2 — prefix asterisk rejected:**
-- `_set_user_roles(ALICE_USER, "credential_consumer[*prod/key]")` → expect 400
-  (wildcard is suffix-only; `*prod/key` is treated as a literal ID lookup; no such credential exists)
-- Error body must mention "undefined", "unknown", or "malformed" in the `errors.roles` field
-
-**Phase 3 — master key:**
-- `_set_user_roles(ALICE_USER, "credential_consumer[*]")` → expect 200
-- Consume `db/prod/1` → 200 + plaintext secret
-- Consume `db_test/1` → 200 + plaintext secret (standalone `*` bypasses all prefix checks)
-
-**Cleanup:** `finally:` block calls `_set_user_roles(ALICE_USER, "")` regardless of phase outcome.
-Tracked credentials (`db/prod/1`, `db_test/1`) are deleted in tearDown via `_cleanup_created_credentials`.
+Folded into `test_consume_auth_matrix`: the consume cases are rows there, and the
+grant-time rejection of a leading-`*` pattern is a row in `_GRANT_MATRIX`.
 
 ### `test_id_validation_matrix` flow (T14)
 
@@ -558,7 +535,7 @@ python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialSt
 python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_rbac_grant_matrix,nodes_init=1,services_init=kv:n1ql -p skip_cluster_reset=False,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
 
 # T13 — Wildcard role boundaries (3 phases: db/*, *prod/key, *)
-python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_wildcard_role_boundaries,nodes_init=1,services_init=kv:n1ql -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
+python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_consume_auth_matrix,nodes_init=1,services_init=kv:n1ql -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
 
 # T14 — Credential ID validation (max length, character whitelist, duplicate collision; kv only)
 python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_id_validation_matrix,nodes_init=1,services_init=kv -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
