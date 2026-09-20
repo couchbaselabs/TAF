@@ -352,6 +352,28 @@ class CBASPythonUDF(CBASBaseTest):
         # Downstream type-mapping functions in this file are written to
         # tolerate either shape rather than assume this result.
 
+        # A zero-parameter external function is accepted by SQL++, and the
+        # marshaling question it raises is external-specific: what does the
+        # Python side actually receive? Checked here rather than as its own
+        # case since it is the same convention this test exists to settle.
+        zero_fn = f"arg_via_zero_{self.cbas_util.generate_name()}"
+        if not self._create_udf(zero_fn, "argprobe", "ArgProbe.via_varargs", name, parameters=[]):
+            self.fail("Error creating a zero-parameter external UDF")
+        status_z, _, errors_z, results_z, _, _ = self._call(
+            f"{DEFAULT_DATAVERSE}.{zero_fn}", [])
+        self.log.info(
+            f"Argument marshaling result -- zero-parameter form: "
+            f"status={status_z} result={results_z} errors={errors_z}"
+        )
+        if status_z != "success":
+            self.fail(
+                f"A zero-parameter external UDF could not be invoked: {errors_z}")
+        if results_z[0].get("len") != 0:
+            self.fail(
+                "A zero-parameter external UDF did not receive an empty "
+                f"argument tuple on the Python side: {results_z}"
+            )
+
     # ---- §2 Library Lifecycle ----------------------------------------
 
     def test_library_upload_and_metadata(self):
@@ -754,6 +776,107 @@ class CBASPythonUDF(CBASBaseTest):
                 f"on-disk artifact was removed on every node. Result: {results}"
             )
         self.log.info(f"Post-drop-attempt call: status={status} errors={errors}")
+
+    def test_variadic_rejected_for_external_functions(self):
+        """
+        Inline analytics UDFs accept a variadic parameter list; external
+        (library-backed) ones do not. Verified live 2026-09-18 on the same
+        build: `CREATE ANALYTICS FUNCTION f(...) {42}` succeeds and returns
+        42, while the external form below is refused at compile time.
+
+        Worth pinning because the divergence is invisible to the inline UDF
+        suite (conf/cbas/py-cbas-udf-management.conf, which covers variadic
+        for inline functions only), and because it cuts against what
+        test_argument_marshaling_convention establishes -- the Python side
+        receives native varargs, so a user may reasonably expect to be able
+        to declare a variadic signature in SQL++ as well.
+        """
+        lib = f"vararg_{self.cbas_util.generate_name()}"
+        self._upload(DEFAULT_SCOPE, lib, "mylib", ECHO_MODULE_SOURCE)
+
+        fn = f"variadic_fn_{self.cbas_util.generate_name()}"
+        # Built by hand rather than via _create_udf: the point is the
+        # compiler's response to the `(...)` signature, so the statement
+        # text needs to be exactly this.
+        ddl = (
+            f'create or replace function {DEFAULT_DATAVERSE}.{fn}(...) '
+            f'as "mylib", "Echo.hello" at {lib};'
+        )
+        status, _, errors, _, _, _ = self._execute(ddl)
+        self.log.info(f"Variadic external function DDL: status={status} errors={errors}")
+
+        if status == "success":
+            self.fail(
+                "A variadic (...) signature was accepted for an external "
+                "function -- it is rejected on 2.3.0-1186, so either the "
+                "product gained the capability or the rejection regressed"
+            )
+        if not errors or "Variable number of parameters is not supported" not in str(errors):
+            self.fail(
+                "Variadic external function was rejected, but not with the "
+                f"expected 'Variable number of parameters' error: {errors}"
+            )
+
+    def test_overloads_bind_to_independent_libraries(self):
+        """
+        Same function name, different arity, each bound to a *different*
+        library. Neither existing suite covers this intersection: the inline
+        UDF suite has overloads but no libraries, and the rest of this file
+        has libraries but only ever one signature per name.
+        """
+        lib_a = f"ovla_{self.cbas_util.generate_name()}"
+        lib_b = f"ovlb_{self.cbas_util.generate_name()}"
+        self._upload(DEFAULT_SCOPE, lib_a, "mylib", ECHO_MODULE_SOURCE)
+        self._upload(DEFAULT_SCOPE, lib_b, "mylib",
+                     ECHO_MODULE_SOURCE.replace('return "hello"', 'return "hello-b"'))
+
+        fn = f"overload_fn_{self.cbas_util.generate_name()}"
+        if not self._create_udf(fn, "mylib", "Echo.hello", lib_a, parameters=["a"]):
+            self.fail("Error creating the single-parameter overload against library A")
+        if not self._create_udf(fn, "mylib", "Echo.hello", lib_b, parameters=["a", "b"]):
+            self.fail("Error creating the two-parameter overload against library B")
+
+        full_name = f"{DEFAULT_DATAVERSE}.{fn}"
+        status_a, _, errors_a, results_a, _, _ = self._call(full_name, [1])
+        status_b, _, errors_b, results_b, _, _ = self._call(full_name, [1, 2])
+        self.log.info(
+            f"Overload resolution -- 1-arg: status={status_a} result={results_a}; "
+            f"2-arg: status={status_b} result={results_b}"
+        )
+        if status_a != "success" or results_a[0] != "hello":
+            self.fail(
+                "The single-parameter overload did not resolve to library A: "
+                f"{errors_a} / {results_a}"
+            )
+        if status_b != "success" or results_b[0] != "hello-b":
+            self.fail(
+                "The two-parameter overload did not resolve to library B -- "
+                f"overloads are not binding independently: {errors_b} / {results_b}"
+            )
+
+        # Dropping one overload must leave the other's binding intact.
+        if not self.cbas_util.drop_udf(
+            self.cluster,
+            name=fn,
+            dataverse=DEFAULT_DATAVERSE,
+            database=DEFAULT_DATABASE,
+            parameters=["a"],
+            timeout=300,
+            analytics_timeout=300,
+        ):
+            self.fail("Error dropping the single-parameter overload")
+
+        status_c, _, errors_c, results_c, _, _ = self._call(full_name, [1, 2])
+        if status_c != "success" or results_c[0] != "hello-b":
+            self.fail(
+                "Dropping the single-parameter overload disturbed the "
+                f"two-parameter overload's binding: {errors_c} / {results_c}"
+            )
+        status_d, _, errors_d, _, _, _ = self._call(full_name, [1])
+        if status_d == "success":
+            self.fail(
+                "The single-parameter overload still resolves after being dropped")
+        self.log.info(f"Dropped overload now correctly unresolvable: {errors_d}")
 
     # ---- §6 Type Mappings ----------------------------------------------
 
