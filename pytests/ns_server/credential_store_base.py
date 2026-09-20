@@ -1139,6 +1139,226 @@ class CredentialStoreBase(ClusterSetup):
         finally:
             self._teardown_grant_row(resolved_row)
 
+    # ── Credential lifecycle metadata helpers ─────────────────────────────────
+
+    def _credential_meta(self, cred_id, context=""):
+        """GET a credential and return its meta dict, asserting the read worked."""
+        status, content = self.cs_utils.get_credential(self.rest, cred_id)
+        self.assertTrue(
+            self.cs_utils._is_success_status(status),
+            f"[{context}] GET {cred_id} expected 2xx, got {status}. content={content}",
+        )
+        parsed = self.cs_utils.parse_content(content)
+        self.assertIsInstance(
+            parsed, dict, f"[{context}] GET body should be a JSON object: {content}"
+        )
+        return parsed.get("meta", {}), parsed
+
+    def _run_payload_version_cas_checks(self, cred_id, known_secret):
+        """
+        payloadVersion as an optional compare-and-swap token on PUT and PATCH.
+
+        The assertion that matters is not the 409 itself but that the rejected
+        write changed nothing: a conflict must leave the winning write intact,
+        otherwise the mechanism does not prevent the lost update it exists for.
+        """
+        def aws(access_key_id):
+            return self.cs_utils.build_aws_payload(
+                access_key_id=access_key_id,
+                secret_access_key=known_secret,
+                region="us-east-1",
+            )
+
+        status, content = self._create_tracked_credential(cred_id, aws("AK-CAS-ORIG"))
+        self.assertEqual(
+            int(status) if status else 0, 201,
+            f"[CAS] create expected 201, got {status}. content={content}",
+        )
+        meta, _ = self._credential_meta(cred_id, context="CAS")
+        v1 = meta.get("payloadVersion")
+        self.assertTrue(v1, f"[CAS] payloadVersion missing after create: {meta}")
+
+        # Correct version → applied, and the token rotates.
+        payload = dict(aws("AK-CAS-WINNER"))
+        payload["payloadVersion"] = v1
+        status, content = self.cs_utils.update_credential(self.rest, cred_id, payload)
+        self.assertEqual(
+            int(status) if status else 0, 200,
+            f"[CAS] PUT with current payloadVersion expected 200, got {status}. "
+            f"content={content}",
+        )
+        meta, _ = self._credential_meta(cred_id, context="CAS")
+        v2 = meta.get("payloadVersion")
+        self.assertNotEqual(v1, v2, "[CAS] payloadVersion must rotate on a write")
+
+        # Stale version → 409 and, crucially, no change.
+        payload = dict(aws("AK-CAS-LOSER"))
+        payload["payloadVersion"] = v1
+        status, content = self.cs_utils.update_credential(self.rest, cred_id, payload)
+        self.assertEqual(
+            int(status) if status else 0, 409,
+            f"[CAS] PUT with stale payloadVersion expected 409, got {status}. "
+            f"content={content}",
+        )
+        _, parsed = self._credential_meta(cred_id, context="CAS")
+        self.assertEqual(
+            parsed.get("fields", {}).get("accessKeyId"), "AK-CAS-WINNER",
+            "[CAS] the rejected write must be a no-op — the earlier write has "
+            f"to survive intact. fields={parsed.get('fields')}",
+        )
+
+        # Omitting the token keeps the old unconditional-overwrite behaviour.
+        status, content = self.cs_utils.update_credential(
+            self.rest, cred_id, aws("AK-CAS-NOVER")
+        )
+        self.assertEqual(
+            int(status) if status else 0, 200,
+            f"[CAS] PUT without payloadVersion expected 200, got {status}. "
+            f"content={content}",
+        )
+
+        # A malformed token is rejected rather than ignored, so a caller that
+        # meant to opt in never silently falls back to overwriting.
+        payload = dict(aws("AK-CAS-BAD"))
+        payload["payloadVersion"] = "not-a-real-revision"
+        status, content = self.cs_utils.update_credential(self.rest, cred_id, payload)
+        self.assertEqual(
+            int(status) if status else 0, 400,
+            f"[CAS] PUT with a malformed payloadVersion expected 400, got {status}. "
+            f"content={content}",
+        )
+
+        # PATCH honours the same token.
+        meta, _ = self._credential_meta(cred_id, context="CAS")
+        v3 = meta.get("payloadVersion")
+        status, content = self.cs_utils.patch_credential(
+            self.rest, cred_id, {"description": "cas patch", "payloadVersion": v3}
+        )
+        self.assertEqual(
+            int(status) if status else 0, 200,
+            f"[CAS] PATCH with current payloadVersion expected 200, got {status}. "
+            f"content={content}",
+        )
+        status, content = self.cs_utils.patch_credential(
+            self.rest, cred_id, {"description": "cas patch 2", "payloadVersion": v3}
+        )
+        self.assertEqual(
+            int(status) if status else 0, 409,
+            f"[CAS] PATCH with stale payloadVersion expected 409, got {status}. "
+            f"content={content}",
+        )
+        self.log.info("[CAS] PASSED — PUT/PATCH compare-and-swap, stale write is a no-op")
+
+    def _run_secret_metadata_checks(self, cred_id, known_secret):
+        """
+        secretSetAt/secretSetBy track the sensitive portion, updatedAt tracks any
+        change — which is what lets an operator tell a rotation from an edit.
+        Also covers clearing an expiry with an explicit null.
+        """
+        def aws(access_key_id, **kw):
+            return self.cs_utils.build_aws_payload(
+                access_key_id=access_key_id,
+                secret_access_key=known_secret,
+                region="us-east-1",
+                **kw
+            )
+
+        status, content = self._create_tracked_credential(cred_id, aws("AK-META-1"))
+        self.assertEqual(
+            int(status) if status else 0, 201,
+            f"[META] create expected 201, got {status}. content={content}",
+        )
+        meta, _ = self._credential_meta(cred_id, context="META")
+        created_at = meta.get("createdAt")
+        self.assertEqual(
+            meta.get("secretSetAt"), created_at,
+            f"[META] secretSetAt should equal createdAt on create. meta={meta}",
+        )
+        self.assertIsNotNone(
+            meta.get("secretSetBy"), f"[META] secretSetBy missing on create. meta={meta}"
+        )
+        # Absent, not equal to createdAt — an `updatedAt == createdAt` assertion
+        # would fail here.
+        self.assertNotIn(
+            "updatedAt", meta,
+            f"[META] updatedAt should be absent until the first update. meta={meta}",
+        )
+
+        time.sleep(1)
+        status, content = self.cs_utils.patch_credential(
+            self.rest, cred_id, {"description": "metadata only"}
+        )
+        self.assertEqual(
+            int(status) if status else 0, 200,
+            f"[META] PATCH expected 200, got {status}. content={content}",
+        )
+        meta, _ = self._credential_meta(cred_id, context="META")
+        self.assertIsNotNone(
+            meta.get("updatedAt"), f"[META] PATCH must stamp updatedAt. meta={meta}"
+        )
+        self.assertEqual(
+            meta.get("secretSetAt"), created_at,
+            "[META] PATCH must not advance secretSetAt — it cannot touch secrets. "
+            f"meta={meta}",
+        )
+
+        time.sleep(1)
+        status, content = self.cs_utils.update_credential(
+            self.rest, cred_id, aws("AK-META-2")
+        )
+        self.assertEqual(
+            int(status) if status else 0, 200,
+            f"[META] PUT expected 200, got {status}. content={content}",
+        )
+        meta, _ = self._credential_meta(cred_id, context="META")
+        self.assertNotEqual(
+            meta.get("secretSetAt"), created_at,
+            "[META] PUT is a full replace including secret material, so it must "
+            f"advance secretSetAt. meta={meta}",
+        )
+
+        # expiresAt round-trip, then cleared with an explicit null.
+        expires_at = self.cs_utils.expires_at_ms(360)
+        status, content = self.cs_utils.update_credential(
+            self.rest, cred_id, aws("AK-META-3", expires_at_ms=expires_at)
+        )
+        self.assertEqual(
+            int(status) if status else 0, 200,
+            f"[META] PUT with expiresAt expected 200, got {status}. content={content}",
+        )
+        meta, _ = self._credential_meta(cred_id, context="META")
+        self.assertEqual(
+            meta.get("expiresAt"), expires_at,
+            f"[META] expiresAt should round-trip. meta={meta}",
+        )
+
+        status, content = self.cs_utils.patch_credential(
+            self.rest, cred_id, {"expiresAt": None}
+        )
+        self.assertEqual(
+            int(status) if status else 0, 200,
+            f"[META] PATCH clearing expiresAt expected 200, got {status}. "
+            f"content={content}",
+        )
+        meta, _ = self._credential_meta(cred_id, context="META")
+        self.assertNotIn(
+            "expiresAt", meta,
+            f"[META] an explicit null must remove the expiry. meta={meta}",
+        )
+
+        # A later PATCH that does not mention expiresAt leaves it removed.
+        status, _ = self.cs_utils.patch_credential(
+            self.rest, cred_id, {"description": "still no expiry"}
+        )
+        meta, _ = self._credential_meta(cred_id, context="META")
+        self.assertNotIn(
+            "expiresAt", meta,
+            f"[META] omitting expiresAt must preserve the cleared state. meta={meta}",
+        )
+        self.log.info(
+            "[META] PASSED — secretSetAt/By vs updatedAt, and expiry cleared by null"
+        )
+
     # ── T15 input-validation helpers ──────────────────────────────────────────
 
     def _run_validation_row(self, row):

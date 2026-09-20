@@ -691,6 +691,11 @@ class CredentialStoreTest(CredentialStoreBase):
 
         self.log.info("Admin CRUD, redaction, and validation verified")
 
+        # Optimistic concurrency, and the provenance metadata that lets an
+        # operator tell a rotation from an edit.
+        self._run_payload_version_cas_checks("p0-s1-cas", known_secret)
+        self._run_secret_metadata_checks("p0-s1-meta", known_secret)
+
         # Input-validation matrices — off by default to keep the P0 line fast.
         if not self.input.param("test_validation_rows", False):
             self.log.info(
