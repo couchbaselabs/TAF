@@ -1642,6 +1642,15 @@ class CredentialStoreTest(CredentialStoreBase):
                     "type/id/redaction/fields/schemaVersion verified"
                 )
 
+        # Every row above used a secret unique to its type, and all of them are
+        # still on the cluster at this point, so one sweep covers every type at
+        # once — including the two field-less ones, which must contribute
+        # nothing to grep for.
+        self._assert_secrets_absent_from_node_logs(
+            [known_secret for _t, _f, known_secret, _ns in _TYPE_SMOKE_ROWS],
+            context=" T08",
+        )
+
     def test_rbac_grant_matrix(self):
         """
         T12: RBAC grant matrix — 10 rows covering who can grant credential_consumer

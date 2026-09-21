@@ -1,5 +1,6 @@
 import os
 import secrets
+import shlex
 import string
 import time
 import urllib.parse
@@ -1138,6 +1139,64 @@ class CredentialStoreBase(ClusterSetup):
             self.log.info(f"[T12 {row_id}] PASSED")
         finally:
             self._teardown_grant_row(resolved_row)
+
+    # ── Log redaction sweep ───────────────────────────────────────────────────
+
+    NODE_LOG_DIR = "/opt/couchbase/var/lib/couchbase/logs"
+
+    def _assert_secrets_absent_from_node_logs(self, secrets, context=""):
+        """
+        Assert that no secret value appears anywhere under the node's log dir.
+
+        Greps every file rather than a named list, so a value landing in a log
+        nobody thought to check still fails.  The sweep is what catches a new
+        credential field wrongly declared `sensitive => false`: such a field
+        loses redaction on read AND the in-flight hiding on the write path, and
+        no per-field assertion would notice because nothing asserts on a field
+        nobody marked secret.
+
+        A connection failure fails the test rather than skipping.  A silent skip
+        here would read as "no secrets leaked" in the run output, which is the
+        one wrong answer this check can give.
+        """
+        secrets = [s for s in secrets if s]
+        if not secrets:
+            return
+        server = self.cluster.master
+        try:
+            shell = RemoteMachineShellConnection(server)
+        except Exception as exc:
+            self.fail(
+                f"[LOGSWEEP{context}] Could not open an SSH session to "
+                f"{getattr(server, 'ip', server)} to check the logs for leaked "
+                f"secrets: {type(exc).__name__}: {exc}. Treating this as a "
+                "failure rather than a skip — an unrun sweep must not look like "
+                "a clean one."
+            )
+        leaked = {}
+        try:
+            for secret in secrets:
+                # -r recurse, -a treat binary as text, -F literal, -l names only.
+                cmd = (f"grep -ralF -- {shlex.quote(secret)} "
+                       f"{self.NODE_LOG_DIR} 2>/dev/null || true")
+                out, _err = shell.execute_command(cmd)
+                files = [line.strip() for line in (out or []) if line.strip()]
+                if files:
+                    leaked[secret] = files
+        finally:
+            shell.disconnect()
+
+        self.assertFalse(
+            leaked,
+            f"[LOGSWEEP{context}] Secret values found in node logs on "
+            f"{getattr(server, 'ip', server)} — sensitive credential material "
+            f"must never reach a log file. Leaks: "
+            + "; ".join(f"{s!r} in {files}" for s, files in leaked.items()),
+        )
+        self.log.info(
+            f"[LOGSWEEP{context}] PASSED — {len(secrets)} secret value(s) absent "
+            f"from every file under {self.NODE_LOG_DIR}"
+        )
 
     # ── Credential lifecycle metadata helpers ─────────────────────────────────
 
