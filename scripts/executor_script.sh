@@ -424,15 +424,59 @@ if [ $status -eq 0 ]; then
   fi
   testrunner_status=$?
   set +x
-  # Capture this before rerun_jobs.py runs: merge_reports.merge_reports()
+  # Capture these before rerun_jobs.py runs: merge_reports.merge_reports()
   # renames logs/ to job_logs/ and creates a fresh empty logs/ as a side
-  # effect, so checking logs/*/*.xml afterwards would always read 0.
-  report_count=$(ls $WORKSPACE/logs/*/*.xml 2>/dev/null | wc -l)
+  # effect, so reading logs/*/*.xml afterwards would always come back empty.
+  report_count=$(ls $WORKSPACE/logs/*/*.xml 2>/dev/null | wc -l | tr -d ' ')
+  # Tests that actually reached a verdict. A report file merely existing
+  # proves nothing: testrunner.py writes the report up-front with every
+  # scheduled test recorded as <skipped/> and only rewrites it as tests
+  # finish, so a run killed before its first test still leaves behind a
+  # complete-looking report. Only result="pass"/"fail" means a test ran.
+  executed_count=$(grep -ho 'result="\(pass\|fail\)"' \
+    $WORKSPACE/logs/*/*.xml 2>/dev/null | wc -l | tr -d ' ')
+
+  # A shell reports a signal death as 128+signum, and testrunner.py only
+  # ever exits 0 or 1 itself, so anything >= 128 means the process was
+  # killed from outside - overwhelmingly the kernel OOM killer on the
+  # slave. Whatever the signal, the tests after the kill never ran.
+  killed_by_signal=0
+  if [ "$testrunner_status" -ge 128 ]; then
+    killed_by_signal=1
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "testrunner.py was killed by signal $((testrunner_status - 128))"
+    echo "Kernel messages mentioning a kill (empty if none/unreadable):"
+    dmesg -T 2>/dev/null \
+      | grep -i -E "killed process|out of memory|oom-kill" | tail -20
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  fi
+
+  # An incomplete run is one that cannot be trusted to have reported its
+  # own results: killed by a signal, or exited non-zero without a single
+  # test reaching a verdict. Deliberately NOT "testrunner_status -ne 0":
+  # it exits 1 for any failed test case, and those runs do produce real
+  # reports - they must stay a zero exit here so the JUnit publisher
+  # marks the build UNSTABLE rather than FAILURE.
+  incomplete_run=0
+  if [ "$killed_by_signal" -eq 1 ] \
+     || { [ "$testrunner_status" -ne 0 ] && [ "$executed_count" -eq 0 ]; }; then
+    incomplete_run=1
+  fi
 
   # ---- NFS teardown for fusion tests (runs once after all tests complete) ----
   if [ "${component}" = "fusion" ] && [ -n "${CLIENT_SHARE_DIR}" ]; then
     CLUSTER_SERVER_IPS=$(grep -oP '^ip:\K.+' "$WORKSPACE/testexec.$$.ini" | paste -sd',' -)
     python scripts/fusion_scripts/nfs_setup.py teardown --nfs-server-ip "$NFS_FUSION_SERVER_IP" --cluster-ips "$CLUSTER_SERVER_IPS" --client-share-dir "$CLIENT_SHARE_DIR"
+  fi
+
+  # Tests the kill left behind are still recorded as <skipped/> from the
+  # up-front report write. Rewrite them as errors before anything reads
+  # the reports, so they show up as failures instead of silently
+  # vanishing into the skip count, and so rerun_jobs.py schedules them
+  # for a retry.
+  if [ "$incomplete_run" -eq 1 ]; then
+    python scripts/mark_aborted_tests.py "$WORKSPACE/logs/*/*.xml" \
+      --reason "testrunner.py exited $testrunner_status before this test ran to completion"
   fi
 
   set -x
@@ -449,17 +493,18 @@ if [ $status -eq 0 ]; then
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
   rerun_status=$?
   set +x
-  # testrunner.py can crash before writing any report (e.g. Sirius/doc-loader
-  # launch failure) - rerun_jobs.py then finds zero testsuites and happily
-  # exits 0 ("no more failed tests"), which would otherwise mask the crash
-  # and let Jenkins report the build as SUCCESS with no test results at all.
-  # NOTE: this deliberately only fires when there is NO report at all.
-  # testrunner.py exits 1 for any failed/errored test case, and those runs do
-  # produce reports - they must stay a zero exit here so the JUnit publisher
-  # marks the build UNSTABLE rather than FAILURE.
-  if [ "$testrunner_status" -ne 0 ] && [ "$report_count" -eq 0 ]; then
+  # testrunner.py can die without reporting anything usable - it can crash
+  # before writing any report at all (e.g. Sirius/doc-loader launch failure),
+  # or be killed mid-suite and leave only the up-front report in which every
+  # test is still <skipped/>. Either way rerun_jobs.py finds nothing failed
+  # and happily exits 0 ("no more failed tests"), which used to let Jenkins
+  # report the build as SUCCESS and greenboard show the suite as "PASS 0/0".
+  # Checking for the report file's mere existence was not enough: the
+  # up-front write means the file is nearly always there.
+  if [ "$incomplete_run" -eq 1 ]; then
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    echo "testrunner.py exited $testrunner_status without producing any test report"
+    echo "testrunner.py exited $testrunner_status leaving the suite incomplete"
+    echo "(tests that reached a verdict: $executed_count, report files: $report_count)"
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     exit $testrunner_status
   fi
