@@ -4,7 +4,7 @@ import time
 
 from common_lib import sleep
 from membase.api.rest_client import RestConnection
-from platform_constants.os_constants import Linux, LinuxEnterpriseAnalytics, Windows
+from platform_constants.os_constants import Linux, Windows
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -268,10 +268,7 @@ class RemoteUtilHelper(object):
                                 logs_to_check='debug'):
         shell = RemoteMachineShellConnection(server)
         if shell.info.type.lower() != Windows.NAME:
-            if server.type == "analytics":
-                path_to_log = LinuxEnterpriseAnalytics.COUCHBASE_LOGS_PATH
-            else:
-                path_to_log = Linux.COUCHBASE_LOGS_PATH
+            path_to_log = Linux.COUCHBASE_LOGS_PATH
         else:
             path_to_log = Windows.COUCHBASE_LOGS_PATH
         log_files = []

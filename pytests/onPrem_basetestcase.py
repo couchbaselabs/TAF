@@ -1050,7 +1050,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Always restore FBR to default (True) for all clusters.
         # Skip analytics-type cluster masters: file-based rebalance is a
-        # KV/data-service-only setting and enterprise-analytics does not
+        # KV/data-service-only setting and operational-insights does not
         # expose it.  Attempting to call it on a columnar node raises
         # ServerUnavailableException when the service is mid-restart.
         for _, cluster in self.cb_clusters.items():
@@ -1139,27 +1139,27 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Why this matters:
         #   reset_cluster_nodes() sends a REST reset that triggers a process
         #   restart but returns before the service has fully stopped.
-        #   CloudGuardian (running inside enterprise-analytics) keeps polling
+        #   CloudGuardian (running inside operational-insights) keeps polling
         #   S3 on a background thread.  If we delete the bucket while it is
         #   still alive it sees "topology not found", wipes the local metadata
         #   cache, and the node enters an illegal bootstrap state for the next
         #   test.
         if self.analytics_compute_storage_separation:
-            self.log.info("Stopping enterprise-analytics service on columnar "
+            self.log.info("Stopping operational-insights service on columnar "
                           "nodes before deleting cloud storage bucket")
             for _cluster_name, cluster in self.cb_clusters.items():
                 for server in cluster.servers:
                     if server.type == CbServer.Services.COLUMNAR:
                         try:
                             shell = RemoteMachineShellConnection(server)
-                            shell.stop_enterprise_analytics()
+                            shell.stop_operational_insights()
                             shell.disconnect()
                             self.log.info(
-                                "Stopped enterprise-analytics on {}".format(
+                                "Stopped operational-insights on {}".format(
                                     server.ip))
                         except Exception as e:
                             self.log.warning(
-                                "Failed to stop enterprise-analytics on "
+                                "Failed to stop operational-insights on "
                                 "{}: {}".format(server.ip, e))
 
         # delete aws bucket that was created for compute storage separation
@@ -1182,7 +1182,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.log.error("GCS bucket {} failed to delete.".format(
                     self.columnar_gs_bucket_name))
 
-        # Restart enterprise-analytics after bucket deletion so that the
+        # Restart operational-insights after bucket deletion so that the
         # analytics node is reachable for the rest of tearDown
         if self.analytics_compute_storage_separation:
             for _cluster_name, cluster in self.cb_clusters.items():
@@ -1190,14 +1190,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     if server.type == CbServer.Services.COLUMNAR:
                         try:
                             shell = RemoteMachineShellConnection(server)
-                            shell.start_enterprise_analytics()
+                            shell.start_operational_insights()
                             shell.disconnect()
                             self.log.info(
-                                "Restarted enterprise-analytics on {}".format(
+                                "Restarted operational-insights on {}".format(
                                     server.ip))
                         except Exception as e:
                             self.log.warning(
-                                "Failed to restart enterprise-analytics on "
+                                "Failed to restart operational-insights on "
                                 "{}: {}".format(server.ip, e))
 
         # Deleting all backups from test runs in the backup location
@@ -1457,12 +1457,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
         for idx, server in enumerate(servers):
             self.log.info(f"{server.ip} - Parsing logs for error/critical "
                           f"string patterns")
-            if server.type == "analytics":
-                lib_cb = os_constants.LinuxEnterpriseAnalytics.COUCHBASE_LIB_PATH
-                bin_cb = os_constants.LinuxEnterpriseAnalytics.COUCHBASE_BIN_PATH
-            else:
-                lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
-                bin_cb = os_constants.Linux.COUCHBASE_BIN_PATH
+            # Operational Insights/analytics nodes use the same
+            # /opt/couchbase-based paths as plain Linux nodes post-rename,
+            # so no server.type branch is needed here any more.
+            lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
+            bin_cb = os_constants.Linux.COUCHBASE_BIN_PATH
             shell = RemoteMachineShellConnection(server)
             crash_dir = lib_cb + "crash/"
             if shell.info.type.lower() == "windows":

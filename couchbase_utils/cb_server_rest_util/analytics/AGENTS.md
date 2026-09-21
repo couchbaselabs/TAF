@@ -27,8 +27,8 @@ model: inherit
 
 | Method | Verb | Path |
 |---|---|---|
-| `get_analytics_settings` | GET | `/settings/analytics` |
-| `update_analytics_settings` | POST | `/settings/analytics` |
+| `get_analytics_settings` | GET | `/settings/operationalInsights` |
+| `update_analytics_settings` | POST | `/settings/operationalInsights` |
 | `set_analytics_debug_settings_in_metakv` | PUT | `/_metakv/cbas/debug/settings/` |
 | `set_blob_storage_access_key_id` | — | delegates to `set_analytics_debug_settings_in_metakv` |
 | `set_blob_storage_secret_access_key` | — | delegates to `set_analytics_debug_settings_in_metakv` |

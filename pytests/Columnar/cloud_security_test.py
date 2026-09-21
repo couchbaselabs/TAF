@@ -1426,7 +1426,7 @@ class SecurityTest(ColumnarBaseTest):
                           "/analytics/cluster", "/analytics/status/ingestion",
                           "/analytics/node/agg/stats/remaining",
                           "/analytics/config/service", "/analytics/config/node",
-                          "/settings/analytics", "/analytics/link/"]
+                          "/settings/operationalInsights", "/analytics/link/"]
 
         for endpoint in test_endpoints:
             response = self.send_request_to_nebula(self.cluster.endpoint, self.CBAS_PORT,

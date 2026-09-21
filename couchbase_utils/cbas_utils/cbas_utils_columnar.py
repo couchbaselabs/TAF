@@ -2400,7 +2400,10 @@ class Dataset_Util(KafkaLink_Util):
         Gets the count of docs in the cbas dataset
         """
         total_items = -1
-        cmd_get_num_items = "select count(*) from %s;" % dataset_name
+        quoted_dataset_name = '.'.join(
+            '`{0}`'.format(part.strip('`'))
+            for part in dataset_name.split('.'))
+        cmd_get_num_items = "select count(*) from %s;" % quoted_dataset_name
 
         status, metrics, errors, results, _, warnings = \
             self.execute_statement_on_cbas_util(

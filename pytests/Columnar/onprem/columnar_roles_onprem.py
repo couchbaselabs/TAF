@@ -50,7 +50,7 @@ class ColumnarRolesOnPrem(ColumnarOnPremBase):
         self.link_api = self.base_url + self.rest_api_port + "/api/v1/link/"
         self.multiple_links_api = self.base_url + self.rest_api_port + "/api/v1/link"
         self.request_api = self.base_url + self.rest_api_port + "/api/v1/request"
-        self.settings_api = self.base_url + self.admin_rest_api_port + "/settings/analytics"
+        self.settings_api = self.base_url + self.admin_rest_api_port + "/settings/operationalInsights"
 
     def create_user_for_server(self, username="temp_user", password="password", role=""):
         self.log.info("Creating user: {}".format(username))

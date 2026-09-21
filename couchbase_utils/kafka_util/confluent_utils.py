@@ -607,6 +607,7 @@ class ConfluentUtils(object):
                     environment["id"])
                 for cluster in clusters:
                     if cluster["id"] == kafka_cluster_id:
+                        cluster_found = True
                         cluster_obj.environment_name = environment["display_name"]
                         cluster_obj.environment_id = environment["id"]
                         cluster_obj.name = cluster["spec"]["display_name"]
@@ -619,6 +620,8 @@ class ConfluentUtils(object):
                         cluster_obj.bootstrap_server = cluster["spec"][
                             "kafka_bootstrap_endpoint"].split("//")[1]
                         break
+                if cluster_found:
+                    break
             user = self.confluent_apis.list_all_users()[0]
             response = self.confluent_apis.create_api_key(
                 user["id"], "test_key_{0}".format(int(time.time())),

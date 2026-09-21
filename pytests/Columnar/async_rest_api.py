@@ -27,6 +27,8 @@ class AsyncRestApi(ColumnarBaseTest):
         test_method_name = self._testMethodName
         if test_method_name in ['test_query_rebalance', 'test_rebalance_query']:
             TestInputSingleton.input.test_params['nodes_init'] = '1|2'
+            TestInputSingleton.input.test_params['services_init'] = \
+                'kv|columnar-kv:cbas'
 
         super(AsyncRestApi, self).setUp()
 

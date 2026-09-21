@@ -56,7 +56,7 @@ class LSMSampling(ColumnarOnPremBase):
                               "Finished", stage="Teardown")
 
     def get_num_storage_partitions(self):
-        """Fetches numStoragePartitions via GET /settings/analytics
+        """Fetches numStoragePartitions via GET /settings/operationalInsights
         (reusing the existing AnalyticsRestAPI) instead of hardcoding it,
         since it's cluster-configurable."""
         status, content = AnalyticsRestAPI(

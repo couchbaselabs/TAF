@@ -596,7 +596,7 @@ class CBASHelper(AnalyticsRestAPI):
         if not password:
             password = rest_conn.password
 
-        api = rest_conn.baseUrl + "/settings/analytics"
+        api = rest_conn.baseUrl + "/settings/operationalInsights"
         headers = rest_conn._create_headers(username, password)
 
         try:

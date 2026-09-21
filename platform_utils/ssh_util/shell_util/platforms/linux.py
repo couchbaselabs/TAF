@@ -1235,15 +1235,15 @@ class Linux(ShellConnection, LinuxConstants):
     EA START
     """
 
-    def start_enterprise_analytics(self):
+    def start_operational_insights(self):
         o, r = self.execute_command(
-            "systemctl start enterprise-analytics.service")
+            "systemctl start operational-insights.service")
         self.log_command_output(o, r)
         return o, r
 
-    def stop_enterprise_analytics(self):
+    def stop_operational_insights(self):
         o, r = self.execute_command(
-            "systemctl stop enterprise-analytics.service")
+            "systemctl stop operational-insights.service")
         self.log_command_output(o, r)
         return o, r
 

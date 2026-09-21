@@ -44,10 +44,10 @@ class AnalyticsSettingsAPI(CBRestConnection):
 
     def get_analytics_settings(self):
         """
-        GET /settings/analytics
+        GET /settings/operationalInsights
         https://docs.couchbase.com/server/current/analytics/rest-settings.html
         """
-        api = self.base_url + "/settings/analytics"
+        api = self.base_url + "/settings/operationalInsights"
         status, content, _ = self.request(api, self.GET)
         return status, content
 
@@ -59,7 +59,7 @@ class AnalyticsSettingsAPI(CBRestConnection):
             blob_storage_force_path_style=False,
             blob_storage_checksum_behavior=None):
         """
-        POST /settings/analytics
+        POST /settings/operationalInsights
         https://docs.couchbase.com/server/current/analytics/rest-settings.html
         Following setting are not released, but are used to configure
         compute storage separation on columnar server builds.
@@ -70,7 +70,7 @@ class AnalyticsSettingsAPI(CBRestConnection):
         the S3 bucket name.
         blob_storage_scheme : For now only "s3" is supported.
         """
-        api = self.base_url + "/settings/analytics"
+        api = self.base_url + "/settings/operationalInsights"
         params = {}
         if endpoint_url:
             params["blobStorageEndpoint"] = endpoint_url

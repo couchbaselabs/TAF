@@ -1017,20 +1017,20 @@ class AggregateDistinctHash(ColumnarOnPremBase):
 
     # ============================================================ durability / restart
     def _restart_enterprise_analytics(self):
-        """Restart the `enterprise-analytics` systemd service on every analytics
+        """Restart the `operational-insights` systemd service on every analytics
         node, then block until cbas can serve queries again."""
         nodes = getattr(self.columnar_cluster, "cbas_nodes", None) \
             or [self.columnar_cluster.master]
         for node in nodes:
             shell = RemoteMachineShellConnection(node)
             try:
-                shell.stop_enterprise_analytics()
-                shell.start_enterprise_analytics()
+                shell.stop_operational_insights()
+                shell.start_operational_insights()
             finally:
                 shell.disconnect()
         if not self.cbas_util.wait_for_cbas_to_recover(
                 self.columnar_cluster, timeout=self.RESTART_RECOVER_TIMEOUT):
-            self.fail("cbas did not recover after restarting enterprise-analytics"
+            self.fail("cbas did not recover after restarting operational-insights"
                       " on {0} node(s)".format(len(nodes)))
 
     def test_survives_service_restart(self):
