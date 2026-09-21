@@ -53,6 +53,12 @@ class CreateAppService(GetProject):
             if res.status_code not in [202, 404]:
                 self.log.error("Error while deleting App Service created "
                                "for the test: {}".format(res.content))
+            elif res.status_code == 202:
+                self.log.info("...Waiting for App Service to be deleted...")
+                if not self.wait_for_deletion(
+                        self.cluster_id, self.created_app_service_id):
+                    self.log.error("!!!...App Service could not be "
+                                   "deleted...!!!")
         super(CreateAppService, self).tearDown()
 
     def test_api_path(self):
