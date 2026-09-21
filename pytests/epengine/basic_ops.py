@@ -2,6 +2,7 @@ import json
 import os
 import re
 import string
+import struct
 import time
 import urllib.parse
 import uuid
@@ -40,8 +41,9 @@ from error_simulation.cb_error import CouchbaseError
 from gsiLib.gsiHelper import GsiHelper
 
 from mc_bin_client import MemcachedClient, MemcachedError
-from memcacheConstants import ENGINE_PARAM_CHECKPOINT, ENGINE_PARAM_FLUSH, \
-    ERR_ETMPFAIL
+from memcacheConstants import CMD_SET_WITH_META, DATATYPE_XATTR, \
+    ENGINE_PARAM_CHECKPOINT, ENGINE_PARAM_FLUSH, ERR_ETMPFAIL, \
+    ERR_KEY_ENOENT, FEATURE_XATTR, SKIP_META_CMD_FMT
 from memcached.helper.data_helper import MemcachedClientHelper, \
     VBucketAwareMemcached
 from platform_constants.os_constants import Linux
@@ -4633,3 +4635,266 @@ class basic_ops(ClusterSetup):
                     c.close()
                 except Exception:
                     pass
+
+    # ------------------------------------------------------------------ #
+    # MB-73502: per-collection cache-miss counter collection_ops_get_bgfetch
+    # ------------------------------------------------------------------ #
+    def _bgfetch_snapshot(self):
+        coll = self.bgf_client.stats("collections")
+        bucket = self.bgf_client.stats("")
+        snap = {s: int(coll[self.bgf_stat_prefix + s])
+                for s in ["ops_get", "ops_get_bgfetch"]}
+        snap.update({s: int(bucket[s]) for s in
+                     ["ep_bg_fetched", "ep_bg_meta_fetched", "cmd_lookup"]})
+        return snap
+
+    def _bgfetch_keys(self, prefix):
+        # Fixed-width suffix so no key of one prefix equals one of another
+        return [f"{prefix}_{i:05d}" for i in range(self.num_keys)]
+
+    def _bgfetch_evict(self, keys):
+        """Eject each value (value eviction) or whole item (full eviction)
+        so the next access has to background fetch from disk. Keys must be
+        persisted first; a dirty item cannot be evicted."""
+        for key in keys:
+            try:
+                self.bgf_client.evict_key(key)
+            except MemcachedError as exp:
+                self.fail(f"evict_key failed for '{key}': {exp}")
+
+    def _bgfetch_load(self, prefix, value='{"k":"v"}', evict=True):
+        """Store num_keys docs, wait for persistence and optionally evict."""
+        keys = self._bgfetch_keys(prefix)
+        for key in keys:
+            self.bgf_client.set(key, 0, 0, value)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     [self.bucket])
+        if evict:
+            self._bgfetch_evict(keys)
+        return keys
+
+    def _bgfetch_set_with_meta_xattr(self, key):
+        """Store a doc carrying a system xattr via SetWithMeta, as inbound
+        XDCR would. mc_bin_client.setWithMeta cannot set datatype, so the
+        packet is sent directly with DATATYPE_XATTR."""
+        pair = b'_sys\x00{"a":1}\x00'
+        xattrs = struct.pack(">I", len(pair)) + pair
+        value = struct.pack(">I", len(xattrs)) + xattrs + b'{"v":1}'
+        # flags, expiry, rev-seqno, cas, options
+        extras = struct.pack(SKIP_META_CMD_FMT, 0, 0, 1, 0x1000000000000, 0)
+        self.bgf_client._set_vbucket(key)
+        opaque = randint(0, 2**32 - 1)
+        self.bgf_client._sendMsg(CMD_SET_WITH_META, key, value, opaque,
+                                 extraHeader=extras, dtype=DATATYPE_XATTR,
+                                 vbucketId=self.bgf_client.vbucketId)
+        self.bgf_client._handleSingleResponse(opaque)
+
+    def _bgfetch_run(self, label, keys, op, expected, expected_status=0):
+        """
+        Run op(key) for every key and validate the counter deltas.
+        :param expected: {stat: exact delta}; stats not listed are logged
+        :param expected_status: 0 for success, else the memcached status
+                                every op must fail with
+        :return: dict of all stat deltas
+        """
+        before = self._bgfetch_snapshot()
+        statuses = {}
+        for key in keys:
+            try:
+                op(key)
+                status = 0
+            except MemcachedError as exp:
+                status = exp.status
+            statuses[status] = statuses.get(status, 0) + 1
+        after = self._bgfetch_snapshot()
+        delta = {s: after[s] - before[s] for s in after}
+        label = f"{self.bgf_tag} {label}"
+        self.log.info(f"{label}: statuses={statuses}, deltas={delta}")
+
+        if statuses != {expected_status: len(keys)}:
+            self.log_failure(f"{label}: expected status {expected_status} "
+                             f"for all {len(keys)} ops, got {statuses}")
+        for stat, exp_delta in expected.items():
+            if delta[stat] != exp_delta:
+                self.log_failure(f"{label}: {stat} delta expected "
+                                 f"{exp_delta}, got {delta[stat]} "
+                                 f"({before[stat]} -> {after[stat]})")
+        return delta
+
+    def _bgfetch_validate_bucket(self, bucket):
+        """Run every test_ops_get_bgfetch step against one bucket."""
+        self.bucket = bucket
+        self.bgf_tag = f"[{bucket.evictionPolicy}]"
+        n = self.num_keys
+        full_eviction = (bucket.evictionPolicy
+                         == Bucket.EvictionPolicy.FULL_EVICTION)
+        client = self.bgf_client = MemcachedClientHelper.direct_client(
+            self.cluster.master, bucket)
+        self.addCleanup(client.close)
+        client.hello([FEATURE_XATTR])
+
+        # '<scope_id>:<collection_id>:' of _default._default
+        stats = client.stats("collections")
+        self.bgf_stat_prefix = None
+        for stat, value in stats.items():
+            if not (stat.endswith(":name") and value == "_default"):
+                continue
+            prefix = stat[:-len("name")]
+            if stats.get(prefix + "scope_name") == "_default":
+                self.bgf_stat_prefix = prefix
+        if self.bgf_stat_prefix is None:
+            self.fail(f"{self.bgf_tag} _default._default not in "
+                      f"'stats collections': {stats}")
+        if self.bgf_stat_prefix + "ops_get_bgfetch" not in stats:
+            self.fail("ops_get_bgfetch missing from 'stats collections'; "
+                      "build does not contain MB-73502")
+
+        def touch(key):
+            return client.touch(key, 0)
+
+        def getl(key):
+            return client.getl(key, 5)
+
+        # 1, 2: Get hit and miss
+        keys = self._bgfetch_load("hit", evict=False)
+        self._bgfetch_run("cache-hit get", keys, client.get,
+                          {"ops_get": n, "ops_get_bgfetch": 0,
+                           "ep_bg_fetched": 0, "cmd_lookup": n})
+        keys = self._bgfetch_load("get")
+        self._bgfetch_run("cache-miss get", keys, client.get,
+                          {"ops_get": n, "ops_get_bgfetch": n,
+                           "ep_bg_fetched": n, "cmd_lookup": n})
+
+        # 3: Touch (getAndUpdateTtl) and GetLocked (getLocked) misses
+        keys = self._bgfetch_load("touch")
+        self._bgfetch_run("cache-miss touch", keys, touch,
+                          {"ops_get": n, "ops_get_bgfetch": n,
+                           "ep_bg_fetched": n, "cmd_lookup": 0})
+        keys = self._bgfetch_load("getl")
+        self._bgfetch_run("cache-miss getl", keys, getl,
+                          {"ops_get": n, "ops_get_bgfetch": n,
+                           "ep_bg_fetched": n})
+
+        # 4: Read-modify-writes read through getInternal
+        keys = self._bgfetch_load("incr", value="100")
+        self._bgfetch_run("cache-miss incr", keys, client.incr,
+                          {"ops_get": n, "ops_get_bgfetch": n,
+                           "ep_bg_fetched": n, "cmd_lookup": 0})
+        keys = self._bgfetch_load("append")
+        self._bgfetch_run("cache-miss append", keys,
+                          lambda key: client.append(key, "-a"),
+                          {"ops_get": n, "ops_get_bgfetch": n,
+                           "ep_bg_fetched": n, "cmd_lookup": 0})
+
+        # 5: Lookups of never-written keys are counted on ENOENT
+        for name, op in [("touch", touch), ("getl", getl)]:
+            expected = {"ops_get": n}
+            if not full_eviction:
+                expected.update({"ops_get_bgfetch": 0, "ep_bg_fetched": 0})
+            delta = self._bgfetch_run(
+                f"never-written {name}", self._bgfetch_keys(f"never_{name}"),
+                op, expected, expected_status=ERR_KEY_ENOENT)
+            if delta["ops_get_bgfetch"] != delta["ep_bg_fetched"]:
+                self.log_failure(
+                    f"{self.bgf_tag} never-written {name}: ops_get_bgfetch "
+                    f"delta {delta['ops_get_bgfetch']} != ep_bg_fetched "
+                    f"delta {delta['ep_bg_fetched']}")
+
+        # 6: Lookup of deleted keys fetches the tombstone under full eviction
+        keys = self._bgfetch_load("deleted", evict=False)
+        for key in keys:
+            client.delete(key)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     [self.bucket])
+        exp_fetch = n if full_eviction else 0
+        self._bgfetch_run("deleted-key getl", keys, getl,
+                          {"ops_get": n, "ops_get_bgfetch": exp_fetch,
+                           "ep_bg_fetched": exp_fetch},
+                          expected_status=ERR_KEY_ENOENT)
+
+        # 7: A non-get disk fetch must reach neither counter
+        keys = self._bgfetch_keys("dwm")
+        for key in keys:
+            self._bgfetch_set_with_meta_xattr(key)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     [self.bucket])
+        self._bgfetch_evict(keys)
+        delta = self._bgfetch_run(
+            "DelWithMeta xattr doc", keys,
+            lambda key: client.del_with_meta(key, 0, 0, 2, 0x2000000000000),
+            {"ops_get": 0, "ops_get_bgfetch": 0})
+        fetched = delta["ep_bg_fetched"] + delta["ep_bg_meta_fetched"]
+        if fetched < n:
+            self.log_failure(f"{self.bgf_tag} DelWithMeta xattr doc: expected "
+                             f"at least {n} disk fetches, got {fetched}; the "
+                             f"step did not exercise a non-get fetch")
+
+        # 8: The miss counter never runs ahead of the op counter
+        snap = self._bgfetch_snapshot()
+        self.log.info(f"{self.bgf_tag} Final counters: {snap}")
+        if snap["ops_get_bgfetch"] > snap["ops_get"]:
+            self.log_failure(f"{self.bgf_tag} ops_get_bgfetch "
+                             f"({snap['ops_get_bgfetch']}) exceeds ops_get "
+                             f"({snap['ops_get']})")
+
+    def test_ops_get_bgfetch(self):
+        """
+        Ref: MB-73502
+        ep_bg_fetched/cmd_lookup is not a usable cache-miss ratio:
+        ep_bg_fetched counts every full-value disk fetch (Append/Incr
+        read-modify-writes, Touch, inbound-XDCR DelWithMeta, ...) while
+        cmd_lookup only counts the front-end retrieval opcodes, so the ratio
+        can exceed 1. collection_ops_get_bgfetch is bumped at the same three
+        sites as collection_ops_get (KVBucket::getInternal, getAndUpdateTtl,
+        getLocked), on the pass which queues the bgfetch, while
+        collection_ops_get is bumped on the pass which terminates the op,
+        whatever its status.
+
+        Counters are per node, so this needs nodes_init=1. The eviction
+        policy changes the miss and deleted-key paths, so the steps run on
+        the conf bucket and on a second bucket created here with the other
+        policy (leave bucket_eviction_policy unset in the conf: magma then
+        defaults to full eviction). The default collection is driven over a
+        raw memcached connection and each step uses num_keys fresh keys,
+        persisted and evicted so every miss is deterministic. basic_ops.setUp
+        loads no docs. Exact deltas, per step and bucket (N = num_keys):
+        1. Get resident docs     -> ops_get +N, ops_get_bgfetch +0
+        2. Get evicted docs      -> +N / +N (not ops_get +2N, although each
+                                    op passes through the engine twice)
+        3. Touch, GetLocked miss -> +N / +N (getAndUpdateTtl, getLocked).
+                                    Touch fetches with cmd_lookup +0
+        4. Incr, Append miss     -> +N / +N: their read goes through
+                                    getInternal; cmd_lookup +0
+        5. Touch, GetLocked on never-written keys -> ENOENT, ops_get +N
+           (counted only on success before the fix). No fetch under value
+           eviction; under full eviction a bloom-filter false positive may
+           fetch, so ops_get_bgfetch must only match ep_bg_fetched
+        6. GetLocked on deleted, persisted keys -> ENOENT, ops_get +N,
+           ops_get_bgfetch +N under full eviction (the tombstone is only on
+           disk), +0 under value eviction
+        7. DelWithMeta on evicted docs with a system xattr fetches from disk
+           to preserve the xattr, but leaves both counters +0
+        8. ops_get_bgfetch <= ops_get overall
+        """
+        conf_bucket = self.cluster.buckets[0]
+        if conf_bucket.bucketType == Bucket.Type.EPHEMERAL:
+            self.fail("collection_ops_get_bgfetch needs a persistent bucket "
+                      "to evict values; ephemeral bucket configured")
+        num_nodes = len(self.cluster.nodes_in_cluster)
+        if num_nodes != 1:
+            self.fail("Collection counters are per node; run with "
+                      f"nodes_init=1 (got {num_nodes} nodes)")
+        self.num_keys = self.input.param("num_keys", 50)
+
+        # Second bucket with the other eviction policy, same storage
+        other_policy = Bucket.EvictionPolicy.VALUE_ONLY
+        if conf_bucket.evictionPolicy == Bucket.EvictionPolicy.VALUE_ONLY:
+            other_policy = Bucket.EvictionPolicy.FULL_EVICTION
+        self.bucket_util.create_default_bucket(
+            self.cluster, ram_quota=self.bucket_size, replica=0,
+            storage=conf_bucket.storageBackend, eviction_policy=other_policy,
+            bucket_name=f"bgfetch_{other_policy}")
+
+        for bucket in self.cluster.buckets[:2]:
+            self._bgfetch_validate_bucket(bucket)
+        self.validate_test_failure()

@@ -32,7 +32,7 @@ CAS consistency, OOO returns, TTL/expiry, rate limiting, and secondary warmup.
 | `secondary_warmup.py` | `SecondaryWarmup` | Secondary warmup behavior (background vs blocking) under CRUD load |
 | `expiry_maxttl.py` | `ExpiryMaxTTL` | maxTTL semantics, doc TTL vs bucket TTL precedence, metadata purge |
 | `documentkeys.py` | `DocumentKeysTests` | CRUD and views/DCP with whitespace, binary, and unicode doc keys |
-| `basic_ops.py` | Multiple | General KV CRUD, concurrent mutations, doc-size variations |
+| `basic_ops.py` | Multiple | General KV CRUD, concurrent mutations, doc-size variations; single-MB regressions incl. MB-73502 `collection_ops_get_bgfetch` cache-miss counter (`test_ops_get_bgfetch`) |
 
 ---
 
