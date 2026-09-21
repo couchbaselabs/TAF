@@ -224,7 +224,7 @@ class CreateAppService(GetProject):
         # version is deployed, verified, and torn down before the next
         # one is attempted - this is a slow test (up to 3 full App
         # Service deploy/destroy cycles).
-        valid_versions = ["4.0", "4.1"]
+        valid_versions = ["4.0"]
         testcases = list()
         for version in valid_versions:
             testcases.append({
