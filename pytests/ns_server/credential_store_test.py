@@ -313,16 +313,46 @@ _GRANT_MATRIX = (
     {"id": "R21", "actor": "cbq_engine", "api": "cred_read",
      "target": "{cred_id}", "role": None, "exp_status": 403,
      "verify": None, "requires_cbq_password": True},
+
+    # ── Service-role revocation ───────────────────────────────────────────────
+    # Revoking is the operator's way of cutting a service off from a credential,
+    # so a DELETE that silently no-ops would leave access in place while the
+    # operator believes it is gone.  D1 grants, D2 revokes and D3 revokes again:
+    # the repeat must also succeed, or a retry after a timeout looks like a
+    # failure and invites the operator to go looking for a problem that is not
+    # there.
+    {"id": "D1", "actor": "Administrator", "api": "service_role",
+     "target": "n1ql", "role": "credential_consumer[{cred_id}]",
+     "exp_status": 200, "verify": "service_role"},
+    {"id": "D2", "actor": "Administrator", "api": "service_role_delete",
+     "target": "n1ql", "role": None, "exp_status": 200, "verify": None},
+    {"id": "D3", "actor": "Administrator", "api": "service_role_delete",
+     "target": "n1ql", "role": None, "exp_status": 200, "verify": None},
+    # Revocation is Full-Admin-only: security_admin manages credentials but not
+    # who may consume them.
+    {"id": "D4", "actor": "cs_sec_admin", "api": "service_role_delete",
+     "target": "n1ql", "role": None, "exp_status": 403,
+     "exp_permission": "cluster.admin.security.admin!write", "verify": None},
+    # An unknown service name is a 404, not a silent success.
+    {"id": "D5", "actor": "Administrator", "api": "service_role_delete",
+     "target": "kafka", "role": None, "exp_status": 404, "verify": None},
 )
 
 # ── T14: Credential ID validation matrix ────────────────────────────────────
 # Fields: (cred_id, expected_status, description)
+# Rows are (cred_id, expected_status, description) with an optional 4th element:
+# when True, the credential is read back and its id asserted to round-trip.
+# A slashed id travels the wire percent-encoded, so the round-trip is what shows
+# the server decodes it back to the id the caller asked for rather than storing
+# the escaped form.
 _ID_MATRIX = [
     ("a" * 128, 201, "Exact maximum length (128 chars)"),
     ("b" * 129, 400, "Exceeds maximum length (129 chars)"),
     ("my key", 400, "Contains invalid character: space"),
     ("keyñ", 400, "Contains invalid character: non-ASCII"),
-    ("valid/folder/key", 201, "Valid hierarchical ID with slashes"),
+    ("valid/folder/key", 201, "Valid hierarchical ID with slashes", True),
+    ("backup/aws/prod", 201, "Hierarchical ID round-trips through encoding", True),
+    ("a/b/c/d/e/f", 201, "Deeply nested hierarchical ID", True),
 ]
 
 # ── T15: Admin input-validation matrix ──────────────────────────────────────
@@ -1268,6 +1298,14 @@ class CredentialStoreTest(CredentialStoreBase):
         else:
             self._run_expiry_enforcement_subtest(cred_expiring, "EXPIRY_SECRET")
 
+        # Credentials on the cluster must pin config encryption on, and the
+        # warning that says so must stay worded as documented.
+        with self.subTest(phase="encryption-lock"):
+            self._run_encryption_lock_checks("LOCK_SECRET")
+
+        with self.subTest(phase="n2n-warning-text"):
+            self._run_n2n_warning_text_checks()
+
         self.log.info("Prerequisites, override settings, warnings, and expiry verified")
 
     def test_cross_node_credential_consume(self):
@@ -1710,7 +1748,9 @@ class CredentialStoreTest(CredentialStoreBase):
         )
 
         # 1. Run the validation matrix
-        for cred_id, expected_status, context in _ID_MATRIX:
+        for row in _ID_MATRIX:
+            cred_id, expected_status, context = row[0], row[1], row[2]
+            verify_get = row[3] if len(row) > 3 else False
             with self.subTest(cred_id=cred_id, context=context):
                 self.log.info(f"Testing ID rule: {context}")
 
@@ -1729,6 +1769,22 @@ class CredentialStoreTest(CredentialStoreBase):
                 # Manually track successful creations for cleanup
                 if actual_status == 201:
                     self._created_creds.append(cred_id)
+
+                if verify_get and actual_status == 201:
+                    status_get, content_get = self.cs_utils.get_credential(
+                        self.rest, cred_id
+                    )
+                    self.assertTrue(
+                        self.cs_utils._is_success_status(status_get),
+                        f"[{context}] GET after create expected 2xx, got "
+                        f"{status_get}. content={content_get}",
+                    )
+                    parsed = self.cs_utils.parse_content(content_get) or {}
+                    self.assertEqual(
+                        parsed.get("id"), cred_id,
+                        f"[{context}] id must round-trip unescaped. "
+                        f"sent={cred_id!r} got={parsed.get('id')!r}",
+                    )
 
                 self.log.info(f"PASSED: {context} -> {actual_status}")
 
