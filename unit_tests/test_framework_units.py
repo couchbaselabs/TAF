@@ -677,5 +677,222 @@ class TestRebalanceHelper(unittest.TestCase):
         self.assertGreater(unique_vbuckets, 100)  # Should hit many vbuckets
 
 
+class TestMarkAbortedTests(unittest.TestCase):
+    """
+    Tests for scripts/mark_aborted_tests.py, which rescues the results of
+    a run that died mid-suite.
+
+    testrunner.py writes its report up-front with every scheduled test
+    recorded as <skipped/> and rewrites it as tests finish. A run killed
+    in between (OOM killer on the slave) therefore leaves a
+    complete-looking report where nothing failed and nothing passed, so
+    Jenkins keeps the build SUCCESS and greenboard shows the suite as
+    "PASS 0/0" - a run that produced no results at all is indis-
+    tinguishable from a healthy one. Fixtures here are produced by
+    xunit.py itself so they stay faithful to that real report format.
+    """
+
+    # Real TAF failures quote cluster output, which is not always ascii
+    NON_ASCII_ERROR = "Rebalance failed: node \u2018172.23.218.68\u2019"
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        from framework_lib.xunit import XUnitTestResult
+
+        from scripts import mark_aborted_tests
+
+        self.mark_aborted_tests = mark_aborted_tests
+        self.xunit_result_cls = XUnitTestResult
+        self.tmp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp_dir, True)
+
+    def write_report(self, statuses):
+        """Write a report the way testrunner.py does, one test per given
+        status ('skip' for a test that never ran)."""
+        xunit = self.xunit_result_cls()
+        suite = xunit.get_unit_test_suite(
+            "upgrade.durability_upgrade.UpgradeTests")
+        for index, status in enumerate(statuses):
+            test = suite.add_test(
+                "upgrade.durability_upgrade.UpgradeTests.test_upgrade",
+                params=f",case={index}", status="skip")
+            if status == "pass":
+                test.update_results(suite, "pass", 1.0)
+            elif status == "fail":
+                test.update_results(suite, "fail", 1.0,
+                                    error_type="membase.error",
+                                    error_message=self.NON_ASCII_ERROR)
+        xunit.write(os.path.join(self.tmp_dir, "report"))
+        return os.path.join(
+            self.tmp_dir, "report-upgrade.durability_upgrade.xml")
+
+    def read_testcases(self, report):
+        """Return [(result attribute, error text or None)] per testcase."""
+        import xml.dom.minidom
+        doc = xml.dom.minidom.parse(report)
+        testcases = []
+        for testcase in doc.getElementsByTagName("testcase"):
+            errors = testcase.getElementsByTagName("error")
+            testcases.append((testcase.getAttribute("result"),
+                              errors[0].firstChild.nodeValue if errors
+                              else None))
+        return testcases
+
+    def read_suite_attributes(self, report):
+        import xml.dom.minidom
+        doc = xml.dom.minidom.parse(report)
+        return doc.getElementsByTagName("testsuite")[0]
+
+    def test_killed_run_reports_failures_instead_of_skips(self):
+        """The regression itself: a run killed before its first test
+        leaves every test <skipped/>, which reads as a clean build."""
+        report = self.write_report(["skip", "skip", "skip"])
+        self.assertEqual([("", None)] * 3, self.read_testcases(report),
+                         "fixture is not testrunner.py's up-front report")
+
+        marked = self.mark_aborted_tests.mark_report(report, "killed")
+
+        self.assertEqual(3, marked)
+        self.assertEqual([("fail", "killed")] * 3,
+                         self.read_testcases(report))
+        suite = self.read_suite_attributes(report)
+        self.assertEqual("3", suite.getAttribute("failures"))
+        self.assertEqual("3", suite.getAttribute("errors"))
+        self.assertEqual("0", suite.getAttribute("skip"),
+                         "marked tests must leave the skip count")
+
+    def test_finished_tests_keep_their_verdicts(self):
+        """A kill part-way through a suite must not rewrite the verdicts
+        of the tests that did run - only the ones left behind."""
+        report = self.write_report(["pass", "fail", "skip"])
+
+        marked = self.mark_aborted_tests.mark_report(report, "killed")
+
+        self.assertEqual(1, marked)
+        self.assertEqual(
+            [("pass", None), ("fail", self.NON_ASCII_ERROR), ("fail", "killed")],
+            self.read_testcases(report))
+
+    def test_report_without_never_run_tests_is_left_alone(self):
+        """Nothing to rescue means the file is not rewritten at all."""
+        report = self.write_report(["pass", "fail"])
+        with open(report) as report_file:
+            before = report_file.read()
+
+        marked = self.mark_aborted_tests.mark_report(report, "killed")
+
+        self.assertEqual(0, marked)
+        with open(report) as report_file:
+            self.assertEqual(before, report_file.read())
+
+    def test_unparsable_report_does_not_raise(self):
+        """This runs on an already-failing path: a broken report must be
+        reported and skipped, never replace the real failure."""
+        report = os.path.join(self.tmp_dir, "report-broken.xml")
+        with open(report, "w") as report_file:
+            report_file.write("<testsuite>truncated")
+
+        self.assertEqual(
+            0, self.mark_aborted_tests.mark_reports(
+                [os.path.join(self.tmp_dir, "*.xml")], "killed"))
+
+    def test_non_ascii_error_text_survives_the_rewrite(self):
+        """Reports carry error text captured from the cluster, which is
+        not always ascii. Encoding the rewrite with the slave's locale
+        (commonly POSIX/ascii) used to blow up mid-write."""
+        report = self.write_report(["fail", "skip"])
+        with open(report, encoding="utf-8") as report_file:
+            self.assertIn("\u2018172.23.218.68\u2019", report_file.read(),
+                          "fixture lost its non-ascii error text")
+
+        marked = self.mark_aborted_tests.mark_report(report, "killed")
+
+        self.assertEqual(1, marked)
+        with open(report, encoding="utf-8") as report_file:
+            self.assertIn("\u2018172.23.218.68\u2019", report_file.read())
+        self.assertEqual([("fail", self.NON_ASCII_ERROR), ("fail", "killed")],
+                         self.read_testcases(report))
+
+    def test_report_is_intact_when_the_rewrite_fails(self):
+        """The rewrite must never be able to leave a half-written or
+        empty report: that would destroy the verdicts of the tests that
+        did finish before the kill - the very results this is trying to
+        rescue. Disk-full mid-write is a real condition on these slaves,
+        which is why the executor script reclaims space every run."""
+        import glob
+        from unittest import mock
+
+        report = self.write_report(["pass", "skip"])
+        with open(report, "rb") as report_file:
+            before = report_file.read()
+
+        with mock.patch.object(self.mark_aborted_tests.os, "replace",
+                               side_effect=OSError("No space left on device")):
+            marked = self.mark_aborted_tests.mark_reports(
+                [report], "killed")
+
+        self.assertEqual(0, marked)
+        with open(report, "rb") as report_file:
+            self.assertEqual(before, report_file.read(),
+                             "report was damaged by a failed rewrite")
+        self.assertEqual([], glob.glob(report + ".tmp"),
+                         "temp file left behind")
+
+    def test_parse_args_leaves_globs_for_this_script_to_expand(self):
+        """executor_script.sh passes the pattern quoted so the shell
+        does not expand it - argparse has to hand it through intact for
+        glob.glob() here. Also pins the flag name, which the caller in
+        executor_script.sh spells out, and the default reason."""
+        import sys
+        from unittest import mock
+
+        argv = ["mark_aborted_tests.py", "logs/*/*.xml",
+                "--reason", "testrunner.py exited 137"]
+        with mock.patch.object(sys, "argv", argv):
+            args = self.mark_aborted_tests.parse_args()
+        self.assertEqual(["logs/*/*.xml"], args.patterns)
+        self.assertEqual("testrunner.py exited 137", args.reason)
+
+        with mock.patch.object(sys, "argv", argv[:2]):
+            self.assertEqual(self.mark_aborted_tests.DEFAULT_REASON,
+                             self.mark_aborted_tests.parse_args().reason)
+
+    def test_bump_count_clamps_at_zero_and_tolerates_junk(self):
+        """The skip decrement leans on the clamp whenever a report's own
+        counts disagree with the number of <skipped/> elements it holds,
+        and on the fallback when the attribute is absent or not a
+        number - neither of which the happy path ever reaches."""
+        from xml.dom import minidom
+
+        bump_count = self.mark_aborted_tests.bump_count
+        element = minidom.Document().createElement("testsuite")
+
+        element.setAttribute("skip", "abc")
+        bump_count(element, "skip", -5)
+        self.assertEqual("0", element.getAttribute("skip"))
+
+        bump_count(element, "errors", 2)
+        self.assertEqual("2", element.getAttribute("errors"),
+                         "absent attribute should count as zero")
+
+        element.setAttribute("skip", "1")
+        bump_count(element, "skip", -3)
+        self.assertEqual("0", element.getAttribute("skip"),
+                         "count must never go negative")
+
+    def test_marked_tests_are_picked_up_for_rerun(self):
+        """rerun_jobs.should_rerun_tests() reruns a test when its merged
+        entry carries an error, so the rescued tests must carry one."""
+        report = self.write_report(["skip"])
+        self.mark_aborted_tests.mark_report(report, "killed")
+
+        result, error = self.read_testcases(report)[0]
+
+        self.assertEqual("fail", result)
+        self.assertTrue(error, "no error text -> no rerun scheduled")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
