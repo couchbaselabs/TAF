@@ -523,12 +523,16 @@ class CRLUtils:
         status, content, _ = api.post_crl_settings(fields)
         return status, self.parse_content(content)
 
-    def post_settings_raw(self, rest, body, query=""):
+    def post_settings_raw(self, rest, body, query="", timeout=300):
         """
         POST /settings/crl with a raw, already-encoded body (str/bytes) and
         an optional literal query string -- for request-envelope shape
         tests (oversized body, undecodable JSON, ?just_validate=1) that
         set_settings()'s dict -> json.dumps() path can't produce.
+
+        Pass a shorter `timeout` for requests expected to fail fast (e.g.
+        an oversized body) -- otherwise connection.py's retry-on-error
+        loop can turn a fast rejection into a long, needless hang.
 
         Returns (status_bool, content, response).
         """
@@ -537,7 +541,7 @@ class CRLUtils:
         if query:
             url = f"{url}?{query}"
         headers = api.get_headers_for_content_type_json()
-        return api.request(url, "POST", body, headers=headers)
+        return api.request(url, "POST", body, headers=headers, timeout=timeout)
 
     def list_files(self, rest):
         """GET /settings/crl/files. Returns (status_bool, content_list)."""
@@ -1428,6 +1432,28 @@ class CRLUtils:
         return False
 
     @classmethod
+    def wait_for_log_text(cls, shell_conn, log_path, grep_pattern,
+                          expected_substrings, max_wait=10, interval=1):
+        """
+        Polls grep_remote_log() until every string in expected_substrings
+        appears, or max_wait elapses -- covers the log write not having
+        reached disk yet at the moment of the first read.
+        """
+        deadline = time.monotonic() + max_wait
+        log_text = ""
+        while time.monotonic() < deadline:
+            log_text = grep_remote_log(shell_conn, log_path, grep_pattern, lines=5)
+            if all(s in log_text for s in expected_substrings):
+                return log_text
+            time.sleep(interval)
+        missing = [s for s in expected_substrings if s not in log_text]
+        raise AssertionError(
+            f"Expected {expected_substrings} in the log matching "
+            f"{grep_pattern!r} within {max_wait}s -- still missing "
+            f"{missing} after polling, last seen: {log_text!r}"
+        )
+
+    @classmethod
     def wait_for_crl_log_text(cls, shell_conn, debug_log_path, ip, port,
                               cert_path, key_path, expected_substrings,
                               max_wait=30, interval=3):
@@ -1660,6 +1686,23 @@ def find_remote_pid(shell_conn, pattern):
     )
     pid = out[0].strip() if out else ""
     return pid if pid else None
+
+
+def wait_for_remote_pid(shell_conn, pattern, max_wait=30, interval=1):
+    """Polls find_remote_pid() until it returns a PID or max_wait elapses --
+    a sibling process (e.g. memcached) can still be mid-restart even after
+    the mgmt listener recovers, so a bare call right after is racy."""
+    deadline = time.monotonic() + max_wait
+    pid = None
+    while time.monotonic() < deadline:
+        pid = find_remote_pid(shell_conn, pattern)
+        if pid:
+            return pid
+        time.sleep(interval)
+    raise AssertionError(
+        f"No process matching '{pattern}' found on remote host within "
+        f"{max_wait}s"
+    )
 
 
 def tail_remote_log(shell_conn, log_path, lines=200):

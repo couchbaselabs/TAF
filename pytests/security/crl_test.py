@@ -14,6 +14,7 @@ import requests
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID
+from custom_exceptions.exception import ServerUnavailableException
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -27,6 +28,7 @@ from couchbase_utils.security_utils.crl_utils import (
     set_url_crl_body,
     setup_url_poll_crl_env,
     tail_remote_log,
+    wait_for_remote_pid,
 )
 from couchbase_utils.security_utils.jwt_utils import remote_write_file_b64
 from pytests.security.crl_base import CRLBase
@@ -538,11 +540,30 @@ class CRLTest(CRLBase):
 
         # Step 11 -- request envelope: oversized body, undecodable JSON,
         # and ?just_validate=1 validating without applying.
+        #
+        # The server rejects the >20MB body almost instantly, but under
+        # CI's low-latency network some client/requests versions surface
+        # that as a connection-level SSLError instead of a clean 413 --
+        # confirmed via direct repro. Short timeout + tolerate either
+        # outcome as a pass, since both mean the body was rejected.
         oversized_body = json.dumps({"directory": "x" * (21 * 1024 * 1024)})
-        status, content, response = self.crl_utils.post_settings_raw(self.rest, oversized_body)
-        self.assertEqual(
-            response.status_code, 413, f"A >20MB body should 413: got {response.status_code}",
-        )
+        try:
+            status, content, response = self.crl_utils.post_settings_raw(
+                self.rest, oversized_body, timeout=20,
+            )
+            self.assertEqual(
+                response.status_code, 413,
+                f"A >20MB body should 413: got {response.status_code}",
+            )
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError,
+                ServerUnavailableException) as exc:
+            self.log.info(
+                f"Oversized body was rejected via a connection-level error "
+                f"rather than a clean 413 ({type(exc).__name__}: {exc}) -- "
+                f"accepted as a pass: this is the client's own large write "
+                f"racing the server's correct early rejection, not a "
+                f"server-side failure (see comment above)"
+            )
 
         status, content, response = self.crl_utils.post_settings_raw(self.rest, "{not valid json")
         self.assertEqual(response.status_code, 400, f"Undecodable JSON should 400: {content}")
@@ -1729,12 +1750,10 @@ class CRLTest(CRLBase):
             f"Expected the missing-CRL cert to classify as 'undetermined': {content}",
         )
         self.log.info("Missing-CRL cert confirmed 'undetermined' via diagnostics/validate")
-        # The permissive clause's own warning (cb_crl.erl apply_policy).
-        recent = grep_remote_log(
-            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined", lines=5
+        self.crl_utils.wait_for_log_text(
+            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined",
+            ["policy=permissive, treat as valid", "leafMissing"],
         )
-        self.assertIn("policy=permissive, treat as valid", recent, f"log: {recent}")
-        self.assertIn("leafMissing", recent, f"log: {recent}")
 
         # Permissive fails open on an expired applicable CRL too, a
         # distinct case from "missing" above (this CRL exists, it's just
@@ -1776,11 +1795,11 @@ class CRLTest(CRLBase):
             f"expired CRL, distinct from the missing-CRL case: {content}",
         )
         self.log.info("Expired-CRL cert confirmed 'undetermined' via diagnostics/validate")
-        recent = grep_remote_log(
-            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined", lines=5
+        # Polled for the same reason as the missing-CRL case above.
+        self.crl_utils.wait_for_log_text(
+            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined",
+            ["policy=permissive, treat as valid", "leafExpired"],
         )
-        self.assertIn("policy=permissive, treat as valid", recent, f"log: {recent}")
-        self.assertIn("leafExpired", recent, f"log: {recent}")
 
         # Permissive -> Require: same immediate-effect check as above.
         self.crl_utils.set_settings(
@@ -2509,6 +2528,7 @@ class CRLTest(CRLBase):
         event, not a CRL-specific one); no serial/PEM leakage into logs;
         revoked vs missing vs expired vs already-loaded-then-untrusted-CA
         CRL all producing distinguishable runtime log text; and the
+        cm_crl_loads_total load-outcome metric (MB-73929) and
         cm_crl_status_checks_total revocation-check metric.
 
         Note: untrusted-issuer/forged-signature CRL rejection producing a
@@ -2988,31 +3008,40 @@ class CRLTest(CRLBase):
                 f"failure types: {reasons_by_case}"
             )
 
-            # No CRL load-success/failure metric should exist.
-            all_metrics = self.crl_utils.get_all_metrics_text(server)
-            self.assertNotIn(
-                "cm_crl_load", all_metrics,
-                "Did not expect a dedicated CRL load-success/failure metric",
-            )
-
-            # The revocation-check metric should increment correctly for a
-            # fresh valid check and a fresh revoked check. Re-establish a
-            # clean, non-expired, non-revoking CRL first -- the only one
-            # still active right now is the expired one from above, and
-            # under Require that would reject any cert, valid or not.
-            # Fresh certs are used for both checks below (not a cert
-            # already checked earlier in this test): the decision cache is
-            # keyed by cert+CRL-version, so re-checking an already-seen
-            # cert would hit cache instead of producing the fresh miss
-            # this needs.
+            # Re-establish a clean, non-expired CRL first -- the only one
+            # active right now is the expired one from above, and under
+            # Require that would reject any cert.
+            before_loads = self.crl_utils.get_metric_value(
+                server, "cm_crl_loads_total", {"status": "success"},
+            ) or 0
             metrics_filename = "audit_metrics_clean.pem"
+            # No reload_crl() here: the upload handler itself activates the
+            # file and fires its own success tick. reload_crl() also forces
+            # a reconcile of the cluster's OOTB CRL every call, which would
+            # add an unrelated second increment and break the delta below.
             status, content = self.crl_utils.upload_file(
                 self.rest, metrics_filename,
                 self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=5),
             )
             self.assertTrue(status, f"Clean CRL upload failed: {content}")
             self._track_uploaded_file(metrics_filename)
-            self.crl_utils.reload_crl(self.rest)
+            after_loads = self.crl_utils.get_metric_value(
+                server, "cm_crl_loads_total", {"status": "success"},
+            ) or 0
+            self.assertEqual(
+                after_loads, before_loads + 1,
+                "Expected cm_crl_loads_total{status=\"success\"} to "
+                "increment for the upload above",
+            )
+            self.log.info(
+                "cm_crl_loads_total{status=\"success\"} incremented "
+                "correctly for a genuine CRL load"
+            )
+
+            # Fresh certs below, not ones already checked earlier: the
+            # decision cache is keyed by cert+CRL-version, so a re-checked
+            # cert would hit cache instead of producing the fresh miss
+            # this needs.
 
             valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
                 self.ca_cert, self.ca_key, "auditMetricsValid"
@@ -3258,6 +3287,7 @@ class CRLTest(CRLBase):
             # A metric reflecting CRL expiry status should exist
             # (structural check only -- the full expiry-alert lifecycle
             # is a separate test).
+            all_metrics = self.crl_utils.get_all_metrics_text(server)
             self.assertIn("cm_alerts_triggered_total", all_metrics)
         finally:
             shell.disconnect()
@@ -4921,7 +4951,14 @@ class CRLTest(CRLBase):
             # Killing only the ns_server child process (not memcached, not
             # the babysitter) restarts that component alone, with no
             # stale pre-restart CRL state and no effect on its siblings.
-            memcached_pid_before = find_remote_pid(shell, "/opt/couchbase/bin/memcached ")
+            #
+            # Poll here (unlike the bare find_remote_pid() calls below):
+            # right after the full restart's recovery check, memcached can
+            # still be mid-restart even though ns_server's listener is
+            # already back (seen live in CI: this exact call returned None).
+            memcached_pid_before = wait_for_remote_pid(
+                shell, "/opt/couchbase/bin/memcached "
+            )
             ns_server_pid_before = find_remote_pid(shell, "child_start ns_bootstrap")
             self.assertIsNotNone(ns_server_pid_before, "Could not find the ns_server child PID")
             self.assertIsNotNone(memcached_pid_before, "Could not find the memcached PID")
@@ -5033,8 +5070,12 @@ class CRLTest(CRLBase):
             "Cert should connect before its serial is revoked",
         )
 
+        # Captured so the dir-poll CRL below can be pinned to an
+        # unambiguously later this_update -- see the comment there.
+        revoking_crl_now = datetime.datetime.now(datetime.timezone.utc)
         status, content = self.crl_utils.revoke_and_upload(
             self.rest, self.ca_cert, self.ca_key, [leaf_serial], filename, crl_number=2,
+            this_update=revoking_crl_now - datetime.timedelta(days=1),
         )
         self.assertTrue(status, f"Revoking CRL re-upload failed: {content}")
         self.crl_utils.reload_crl(self.rest)
@@ -5082,9 +5123,18 @@ class CRLTest(CRLBase):
             "directory-polled CRL revoking it is dropped -- otherwise the "
             "rejection below wouldn't be attributable to that file",
         )
+        # Shares an issuer with hot_reload_revoking.pem -- freshest-CRL-wins
+        # per-issuer selection must unambiguously prefer this one.
+        # build_crl()'s default this_update only has whole-second
+        # resolution, and two uploads this close together can land in the
+        # same second (confirmed live in CI job 264820). Pinned 10s past
+        # revoking_crl_now, rather than a fresh now() call, so this always
+        # sorts unambiguously newer.
         dir_crl_pem = self.crl_utils.build_crl(
             self.ca_cert, self.ca_key, revoked_serials=[dir_leaf_serial],
             crl_number=3,
+            this_update=revoking_crl_now - datetime.timedelta(days=1)
+            + datetime.timedelta(seconds=10),
         )
 
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -5403,11 +5453,13 @@ class CRLTest(CRLBase):
         proportional warning window (min(the configured 3-day window, 1/4
         of the CRL's own total validity period) -- confirmed from
         cb_crl_manager/menelaus_web_alerts_srv source, not assumed), the
-        same CRL later flips to a distinctly-worded 'crl_expired' warning
-        once it genuinely expires, and -- a known gap -- a CRL whose
-        issuing CA becomes untrusted after being loaded is correctly
-        detected by diagnostics/status but produces no health warning at
-        all, since only these two alert types exist."""
+        same CRL later flips to a distinctly-worded 'crl_unusable' warning
+        once it genuinely expires, and a CRL whose issuing CA becomes
+        untrusted after being loaded fires that same 'crl_unusable' alert
+        too, naming the reason -- fixed by MB-73655 (previously a known
+        gap: diagnostics/status detected it but no health warning fired;
+        the old 'crl_expired' alert key was renamed to 'crl_unusable' and
+        generalized to cover any non-active status, not just expiry)."""
         server = self.cluster.master
         node_key = f"{self.cluster.master.ip}:8091"
         # Multi-node aggregation: CRL files sync cluster-wide (entry #7), so
@@ -5431,7 +5483,7 @@ class CRLTest(CRLBase):
         expires_soon_baseline = self.crl_utils.get_crl_alert_count(
             server, "crl_expires_soon"
         )
-        expired_baseline = self.crl_utils.get_crl_alert_count(server, "crl_expired")
+        expired_baseline = self.crl_utils.get_crl_alert_count(server, "crl_unusable")
         status, content = self.crl_utils.upload_file(
             self.rest, soon_filename,
             self.crl_utils.build_crl(
@@ -5471,17 +5523,17 @@ class CRLTest(CRLBase):
 
         self.assertTrue(
             self.crl_utils.wait_for_crl_alert_increment(
-                server, "crl_expired", expired_baseline, max_wait=150,
+                server, "crl_unusable", expired_baseline, max_wait=150,
             ),
-            "Expected the same CRL to later trigger 'crl_expired', "
+            "Expected the same CRL to later trigger 'crl_unusable', "
             "distinct from 'crl_expires_soon', once it genuinely expired",
         )
         # No date field in the expired message -- exact full-string match.
         alert_msgs = self.crl_utils.get_alert_messages(self.rest)
         expected_expired_msg = (
             f"Certificate Revocation List (CRL) issued by 'CN=TestCA1' "
-            f"(CRL number: 1, file(s): {soon_filename}) has expired "
-            f"(present on node(s): {node_ips_str})."
+            f"(CRL number: 1, file(s): {soon_filename}) can no longer be "
+            f"used: it has expired (present on node(s): {node_ips_str})."
         )
         self.assertIn(
             expected_expired_msg, alert_msgs,
@@ -5489,17 +5541,17 @@ class CRLTest(CRLBase):
         )
         self.log.info(
             "The same CRL later triggered a distinctly-worded "
-            "'crl_expired' once it genuinely expired"
+            "'crl_unusable' once it genuinely expired"
         )
 
         # The now-expired CRL above must be removed before the untrusted
         # sub-case below: the 'alerts_triggered' counter increments on
-        # every ~60s check tick for as long as ANY CRL remains in the
-        # expired state (confirmed from source -- the metric notification
-        # is unconditional, only the human-readable alert message itself
-        # is deduped), not just once per new alert. Left loaded, it would
-        # keep re-incrementing 'crl_expired' independent of the untrust
-        # action below and produce a false failure of that known-gap check.
+        # every ~60s check tick for as long as ANY CRL remains in a
+        # non-active state (confirmed from source -- the metric
+        # notification is unconditional, only the human-readable alert
+        # message itself is deduped), not just once per new alert. Left
+        # loaded, it would keep re-incrementing 'crl_unusable' independent
+        # of the untrust action below and produce a false pass/count for it.
         status, content = self.crl_utils.delete_file(self.rest, soon_filename)
         self.assertTrue(status, f"Deleting the expired CRL failed: {content}")
         self._created_files.remove(soon_filename)
@@ -5526,8 +5578,8 @@ class CRLTest(CRLBase):
         untrusted_soon_baseline = self.crl_utils.get_crl_alert_count(
             server, "crl_expires_soon"
         )
-        untrusted_expired_baseline = self.crl_utils.get_crl_alert_count(
-            server, "crl_expired"
+        untrusted_unusable_baseline = self.crl_utils.get_crl_alert_count(
+            server, "crl_unusable"
         )
         status, content = self.crl_utils.untrust_ca_by_cn(self.rest, "TestCA1")
         self.assertTrue(status, f"Untrust-by-CN diag/eval failed: {content}")
@@ -5543,32 +5595,36 @@ class CRLTest(CRLBase):
                 "CRL's issuing CA is no longer trusted -- diagnostics/status "
                 "should flip to reflect it",
             )
-            # A generous wait -- long enough for at least one alert-check
-            # tick to have genuinely run and found nothing, not merely "not
-            # checked yet".
-            self.assertFalse(
+            self.assertTrue(
                 self.crl_utils.wait_for_crl_alert_increment(
-                    server, "crl_expired", untrusted_expired_baseline, max_wait=90,
+                    server, "crl_unusable", untrusted_unusable_baseline, max_wait=90,
                 ),
-                "Known gap: no health warning exists for a CRL whose "
-                "issuing CA became untrusted after load, even though "
-                "diagnostics/status correctly detects it. If this now "
-                "fails, the gap has been fixed -- flip to assertTrue and "
-                "assert on the new alert's text.",
+                "Expected 'crl_unusable' to fire once the CRL's issuing CA "
+                "was untrusted, naming why it's no longer usable",
+            )
+            alert_msgs = self.crl_utils.get_alert_messages(self.rest)
+            expected_untrusted_msg = (
+                f"Certificate Revocation List (CRL) issued by 'CN=TestCA1' "
+                f"(CRL number: 2, file(s): {untrusted_filename}) can no "
+                f"longer be used: its issuing CA is no longer trusted "
+                f"(present on node(s): {node_ips_str})."
+            )
+            self.assertIn(
+                expected_untrusted_msg, alert_msgs,
+                f"Expected the exact message {expected_untrusted_msg!r}, "
+                f"got: {alert_msgs}",
             )
             self.assertEqual(
                 self.crl_utils.get_crl_alert_count(server, "crl_expires_soon"),
                 untrusted_soon_baseline,
-                "Known gap: an untrusted-CA CRL should not trigger "
-                "'crl_expires_soon' either -- only 'crl_expired'/"
-                "'crl_expires_soon' alert types exist at all, neither "
-                "covers 'untrusted'",
+                "An untrusted-CA CRL is reported as 'crl_unusable', not "
+                "'crl_expires_soon' -- the two must stay distinct",
             )
         finally:
             self._trust_ca_on_cluster(self.ca_cert)
         self.log.info(
-            "Known gap: diagnostics/status correctly flips to 'untrusted', "
-            "but no health warning of either type fires for it"
+            "diagnostics/status flips to 'untrusted' and 'crl_unusable' "
+            "fires for it, naming the reason -- MB-73655"
         )
 
         # -- crlExpirationDays / crlWarningValidityFraction
