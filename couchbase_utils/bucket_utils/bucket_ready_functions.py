@@ -490,7 +490,8 @@ class DocLoaderUtils(object):
                           target_vbuckets="all", type="default",
                           doc_size=256, randomize_value=False,
                           randomize_doc_size=False, key_size=None,
-                          load_using="default_loader"):
+                          load_using="default_loader",
+                          num_vbuckets=CbServer.total_vbuckets):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -503,6 +504,9 @@ class DocLoaderUtils(object):
         :param doc_size: Doc size to use for doc_generator
         :return: doc_generator object based on given inputs
         :param randomize_value: Randomize the data
+        :param num_vbuckets: vBucket count of the bucket being loaded. Only
+                             meaningful along with target_vbuckets, since it
+                             decides the vBucket a generated key hashes to
         """
         if op_type == "create":
             start = collection_obj.doc_index[1]
@@ -534,6 +538,12 @@ class DocLoaderUtils(object):
                         (collection_obj.sub_doc_index[0],
                          collection_obj.sub_doc_index[0])
 
+        # bucket.numVBuckets is only populated once the bucket exists, and
+        # the generator needs a real vBucket count: hashing a key against
+        # 1024 vBuckets for a 128-vBucket (magma) bucket makes
+        # target_vbuckets match roughly 1/8th of the keys it should, so the
+        # generator walks far past the last index that was ever created
+        num_vbuckets = num_vbuckets or CbServer.total_vbuckets
         if target_vbuckets == "all":
             target_vbuckets = None
         else:
@@ -544,6 +554,7 @@ class DocLoaderUtils(object):
             gen_docs = doc_generator(generic_key, start, end,
                                      doc_size=doc_size,
                                      target_vbucket=target_vbuckets,
+                                     vbuckets=num_vbuckets,
                                      mutation_type=op_type,
                                      mutate=mutation_num,
                                      randomize_value=randomize_value,
@@ -563,7 +574,9 @@ class DocLoaderUtils(object):
     @staticmethod
     def get_subdoc_generator(op_type, collection_obj, num_items,
                              generic_key, target_vbuckets="all",
-                             xattr_test=False):
+                             xattr_test=False,
+                             num_vbuckets=CbServer.total_vbuckets):
+        num_vbuckets = num_vbuckets or CbServer.total_vbuckets
         if target_vbuckets == "all":
             target_vbuckets = None
 
@@ -580,6 +593,7 @@ class DocLoaderUtils(object):
                 end -= start
             return sub_doc_generator(generic_key, start, end,
                                      target_vbucket=target_vbuckets,
+                                     vbuckets=num_vbuckets,
                                      xattr_test=xattr_test)
         elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             start = collection_obj.sub_doc_index[0]
@@ -611,6 +625,7 @@ class DocLoaderUtils(object):
         return sub_doc_generator_for_edit(generic_key, start, end,
                                           subdoc_gen_template_num,
                                           target_vbucket=target_vbuckets,
+                                          vbuckets=num_vbuckets,
                                           xattr_test=xattr_test)
 
     @staticmethod
@@ -777,7 +792,8 @@ class DocLoaderUtils(object):
                                         randomize_value=randomize_value,
                                         randomize_doc_size=randomize_doc_size,
                                         key_size=doc_key_size,
-                                        load_using=load_using)
+                                        load_using=load_using,
+                                        num_vbuckets=bucket.numVBuckets)
                             else:
                                 c_crud_data[op_type]["xattr_test"] = \
                                     is_xattr_test
@@ -788,7 +804,8 @@ class DocLoaderUtils(object):
                                         num_items,
                                         doc_key,
                                         target_vbuckets=target_vbs,
-                                        xattr_test=is_xattr_test)
+                                        xattr_test=is_xattr_test,
+                                        num_vbuckets=bucket.numVBuckets)
 
         crud_spec = dict()
         spec_percent_data = dict()
