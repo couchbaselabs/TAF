@@ -3520,14 +3520,21 @@ class basic_ops(ClusterSetup):
         self.log.info("Fetching cb_stats")
         max_mem_pct_of_low_wm()
 
-        otp_node = "ns_1@%s" % self.cluster.servers[1].ip
+        fo_node_ip = self.cluster.servers[1].ip
+        otp_node = "ns_1@%s" % fo_node_ip
         self.log.info("Performing graceful failover of %s" % otp_node)
         rest.perform_graceful_failover(otp_node)
         self.assertTrue(RebalanceUtil(self.cluster).monitor_rebalance(),
                         "FO rebalance failed")
         validate_item_count()
 
-        node = self.cluster.nodes_in_cluster[0]
+        # nodes_in_cluster[0] can be the node that was just failed over, and
+        # memcached there no longer serves the bucket - 'cbstats all' then
+        # comes back with the bucket-less stat set (no ep_* keys) instead of
+        # raising, which surfaces as a KeyError on ep_mem_low_wat. Read the
+        # watermarks off a node that is still serving the bucket
+        node = [t_node for t_node in self.cluster.nodes_in_cluster
+                if t_node.ip != fo_node_ip][0]
         cbstat = node_info[node.ip]["cbstat"].all_stats(bucket.name)
         self.log.info("%s - Low wm: %s, Mem used: %s"
                       % (node.ip, cbstat["ep_mem_low_wat"],
@@ -3566,14 +3573,29 @@ class basic_ops(ClusterSetup):
           3. Pre-load N items uniformly across all VBuckets (both nodes up)
              to bring mem_used close to low_wm, reducing warm-up time.
           4. SIGSTOP node2 memcached.
-          5. Incrementally load batches of ~10 K items targeting only node1's
-             active VBs (target_vbucket=); observe mem_used > high_wm on node1
-             for 3 separate batches — confirming pager is throttled.
+          5. Incrementally load batches targeting only node1's active VBs
+             (target_vbucket=) until pager_throttled has advanced across
+             `throttle_confirmations` (default 3) separate batches, then stop
+             loading and record the item count at that point. If KV rejects
+             >= `max_reject_pct` (default 50) % of a batch while mem_used is
+             still under low_wm, fail right away: the pager has not started,
+             so the precondition cannot be reached. Also fail right away if
+             the live item count collapses below `pager_retain_pct` % of its
+             peak during the load (over-deletion as it happens), or if KV
+             keeps rejecting that share of a batch above low_wm.
           6. Sleep 60 s with pager stuck.
           7. SIGCONT node2 — replica DCP drains, pager resumes.
           8. Wait up to 120 s for mem_used to fall back under low_wm.
-          9. Assert total active items on node1 > min_curr_items
-             (default 100,000) - i.e. the pager did not over-delete.
+          9. Assert the item count on node1 is still at least
+             `pager_retain_pct` (default 50) % of the count recorded in step 5
+             - i.e. the pager did not over-delete.
+
+        Note on step 5: once an nruEviction ephemeral bucket sits at its
+        quota, each further create auto-deletes older items to make room, so
+        the live item count should level off near capacity. It should not
+        collapse: a count far below its peak while mem_used stays high means
+        the pager's deletes are not releasing memory - the over-deletion
+        this test exists to catch.
         """
         if self.nodes_init < 2:
             self.fail("test_ephemeral_auto_delete_pager_throttle requires "
@@ -3600,6 +3622,42 @@ class basic_ops(ClusterSetup):
         # 100 batches is ~42h - enough to blow past the Jenkins job timeout
         # and starve every test queued behind this one.
         load_timeout = self.input.param("pager_load_timeout", 2700)
+        # Below low_wm the pager is not involved at all, so KV rejecting this
+        # share of a batch there means memory pressure cannot be built and
+        # there is no pager behaviour left to observe
+        max_reject_pct = self.input.param("max_reject_pct", 50)
+        retain_pct = self.input.param("pager_retain_pct", 50)
+
+        def summarize_errors(failed_docs):
+            """'<error type> x<count> (e.g. <first message>)' per type"""
+            counts = {}
+            samples = {}
+            for val in failed_docs.values():
+                err = val.get("error") if isinstance(val, dict) else val
+                err_type = type(err).__name__ if isinstance(err, Exception) \
+                    else str(err).split(":")[0][:80]
+                counts[err_type] = counts.get(err_type, 0) + 1
+                samples.setdefault(err_type, str(err)[:300])
+            return "; ".join("%s x%d (e.g. %s)" % (e_type, cnt, samples[e_type])
+                             for e_type, cnt in counts.items())
+
+        def pressure_stats(t_stats):
+            """Stats that explain why KV rejects writes before the pager"""
+            return ", ".join(
+                "%s=%s" % (stat, t_stats.get(stat, "n/a"))
+                for stat in ["ep_checkpoint_memory",
+                             "ep_checkpoint_memory_quota",
+                             "ep_cursors_dropped", "ep_tmp_oom_errors",
+                             "ep_oom_errors"])
+
+        def auto_delete_stats(t_stats):
+            """Ephemeral auto-delete / seqlist (tombstone) stats, matched by
+            name so this keeps working if the exact stat set differs across
+            builds - these show where mem_used sits once items are gone"""
+            return ", ".join(
+                "%s=%s" % (stat, t_stats[stat]) for stat in sorted(t_stats)
+                if stat.startswith(("vb_active_", "ep_"))
+                and ("auto_delete" in stat or "seqlist" in stat)) or "n/a"
 
         try:
             # ---- Read default watermarks from cbstats (no forced overrides) ----
@@ -3625,25 +3683,36 @@ class basic_ops(ClusterSetup):
             # to node1's active VBs, so every write goes to the running node.
             # A range of 2×load_batch covers ~load_batch effective docs at the
             # ~50 % VBucket split.
-            # After each batch, compare mem_used to the previous reading.
-            # A drop means the pager ran and freed items — stop loading there.
+            # Loading stops as soon as pager_throttled has advanced over
+            # `throttle_confirmations` separate batches: that is the signal
+            # the test is after, and every batch written past it only
+            # auto-deletes older items (nruEviction on a bucket already at
+            # quota), which has nothing to do with the throttle.
             a_stats = cbstat1.all_stats(bucket.name)
             mem_used = int(a_stats["mem_used"])
-            itrs_after_low_wm_hit = 5
+            throttle_confirmations = self.input.param(
+                "throttle_confirmations", 3)
+            prev_throttled = int(a_stats.get("pager_throttled", 0))
+            confirmations = 0
+            throttle_confirmed = False
+            items_at_throttle = 0
+            peak_mem_used = mem_used
+            pressure_blocked = False
+            over_deleted = False
             load_deadline = time.time() + load_timeout
             for batch_num in range(1, max_load_batches + 1):
-                if itrs_after_low_wm_hit == 0:
-                    break
                 if time.time() > load_deadline:
-                    self.log_failure(
-                        "Pager did not activate within %ss (%d batches "
-                        "done) - mem_used=%dMB low_wm=%dMB"
+                    # Reported by the throttle_confirmed check below
+                    self.log.info(
+                        "Stopping load: %ss budget exhausted after %d "
+                        "batches - mem_used=%dMB low_wm=%dMB"
                         % (load_timeout, batch_num - 1,
                            mem_used >> 20, low_wm >> 20))
                     break
                 self.key = uuid.uuid4().hex[:6]
+                this_batch = load_batch
                 doc_gen = doc_generator(
-                    self.key, 0, load_batch,
+                    self.key, 0, this_batch,
                     key_size=self.key_size, doc_size=doc_size,
                     target_vbucket=node1_active_vbs)
                 load_task = self.task.async_load_gen_docs(
@@ -3657,23 +3726,95 @@ class basic_ops(ClusterSetup):
 
                 a_stats = cbstat1.all_stats(bucket.name)
                 mem_used = int(a_stats["mem_used"])
-                if low_wm_hit:
-                    itrs_after_low_wm_hit -= 1
-                elif mem_used > low_wm:
+                peak_mem_used = max(peak_mem_used, mem_used)
+                if not low_wm_hit and mem_used > low_wm:
                     low_wm_hit = True
                     self.log.info("Low watermark level hit")
                     load_batch = 20000
                 active_items = int(a_stats.get("vb_active_curr_items", 0))
                 peak_active_items = max(peak_active_items, active_items)
+                throttled = int(a_stats.get("pager_throttled", 0))
+                rejected = len(load_task.fail)
                 self.log.info(
                     "Batch %d: mem_used=%dMB high_wm=%dMB low_wm=%dMB "
-                    "vb_active_curr_items=%d pager_throttled=%s"
+                    "vb_active_curr_items=%d pager_throttled=%s "
+                    "rejected=%d/%d (%s)"
                     % (batch_num, mem_used >> 20, high_wm >> 20,
-                       low_wm >> 20, active_items,
-                       a_stats.get("pager_throttled", "n/a")))
+                       low_wm >> 20, active_items, throttled,
+                       rejected, this_batch, pressure_stats(a_stats)))
+                self.log.info("Batch %d auto-delete stats: %s"
+                              % (batch_num, auto_delete_stats(a_stats)))
+
+                # Over-deletion as it happens: live items far below their
+                # peak with the loader still writing means the pager is
+                # deleting without freeing memory. Nothing later in the test
+                # can recover from that, so report it here with the numbers
+                # that show it instead of loading on until the time budget
+                if peak_active_items \
+                        and active_items * 100 < peak_active_items * retain_pct:
+                    over_deleted = True
+                    self.log_failure(
+                        "Pager over-deleted during load on %s: "
+                        "vb_active_curr_items fell to %d in batch %d from a "
+                        "peak of %d (< %s%%) while mem_used=%dMB "
+                        "(low_wm=%dMB high_wm=%dMB) pager_throttled=%d. "
+                        "%s. Auto-delete stats: %s"
+                        % (node1.ip, active_items, batch_num,
+                           peak_active_items, retain_pct, mem_used >> 20,
+                           low_wm >> 20, high_wm >> 20, throttled,
+                           pressure_stats(a_stats),
+                           auto_delete_stats(a_stats)))
+                    break
+
+                # Writes refused while still under low_wm are not the
+                # pager's doing (it has not started yet). Every further
+                # batch then only times out op by op (~25min per batch at
+                # timeout_secs=3) without adding memory, so stop here and
+                # report why the precondition could not be reached
+                if not low_wm_hit \
+                        and rejected * 100 >= this_batch * max_reject_pct:
+                    pressure_blocked = True
+                    self.log_failure(
+                        "Could not build memory pressure on %s: KV rejected "
+                        "%d of %d creates in batch %d at mem_used=%dMB, "
+                        "below low_wm=%dMB, so the pager never ran and "
+                        "there is no throttling to validate. %s. "
+                        "Errors: %s"
+                        % (node1.ip, rejected, this_batch, batch_num,
+                           mem_used >> 20, low_wm >> 20,
+                           pressure_stats(a_stats),
+                           summarize_errors(load_task.fail)))
+                    break
+                if low_wm_hit \
+                        and rejected * 100 >= this_batch * max_reject_pct:
+                    pressure_blocked = True
+                    self.log_failure(
+                        "Bucket stopped accepting writes on %s: KV rejected "
+                        "%d of %d creates in batch %d at mem_used=%dMB "
+                        "(high_wm=%dMB) with vb_active_curr_items=%d. %s. "
+                        "Errors: %s"
+                        % (node1.ip, rejected, this_batch, batch_num,
+                           mem_used >> 20, high_wm >> 20, active_items,
+                           pressure_stats(a_stats),
+                           summarize_errors(load_task.fail)))
+                    break
+
+                if throttled > prev_throttled:
+                    confirmations += 1
+                prev_throttled = throttled
+                if confirmations >= throttle_confirmations:
+                    throttle_confirmed = True
+                    items_at_throttle = int(a_stats.get("curr_items", 0))
+                    self.log.info(
+                        "Pager throttling confirmed over %d batches "
+                        "(pager_throttled=%d) - stopping load with "
+                        "curr_items=%d"
+                        % (confirmations, throttled, items_at_throttle))
+                    break
             else:
-                self.log_failure(
-                    "Pager did not activate after %d batches — "
+                # Reported by the throttle_confirmed check below
+                self.log.info(
+                    "Stopping load: batch cap (%d) reached - "
                     "mem_used=%dMB low_wm=%dMB" % (max_load_batches,
                                                    mem_used >> 20,
                                                    low_wm >> 20))
@@ -3719,18 +3860,40 @@ class basic_ops(ClusterSetup):
                        low_wm >> 20))
 
             # ---- Validate item count ----
-            min_curr_items = self.input.param("min_curr_items", 100000)
-            curr_items = int(
-                cbstat1.all_stats(bucket.name).get("curr_items", 0))
-            self.log.info(f"Final curr_items on node1: {curr_items}")
-            if curr_items < min_curr_items:
-                final_stats = cbstat1.all_stats(bucket.name)
+            # The floor is derived from what the node actually held when the
+            # throttle kicked in, not from a fixed item count: how many items
+            # fit under the watermarks depends on the bucket quota, key/doc
+            # size and compression, so a hard-coded number only ever measures
+            # the bucket config. `min_curr_items` remains available to pin an
+            # absolute floor from the conf file
+            min_curr_items = self.input.param(
+                "min_curr_items", int(items_at_throttle * retain_pct / 100))
+            final_stats = cbstat1.all_stats(bucket.name)
+            curr_items = int(final_stats.get("curr_items", 0))
+            self.log.info(
+                "Final curr_items on node1: %d (was %d when the pager "
+                "throttle was confirmed, floor is %d)"
+                % (curr_items, items_at_throttle, min_curr_items))
+            if not throttle_confirmed:
+                # Both have already been reported from the load loop
+                if not (pressure_blocked or over_deleted):
+                    self.log_failure(
+                        "pager_throttled did not advance over %d batches "
+                        "while node2 memcached was frozen - peak "
+                        "mem_used=%dMB low_wm=%dMB high_wm=%dMB "
+                        "pager_throttled=%s"
+                        % (throttle_confirmations, peak_mem_used >> 20,
+                           low_wm >> 20, high_wm >> 20,
+                           final_stats.get("pager_throttled", "n/a")))
+            elif curr_items < min_curr_items:
                 self.log_failure(
                     "Pager over-deleted: curr_items=%s after test (expected "
-                    ">= %s). Peak vb_active_curr_items during load was %s, "
-                    "mem_used=%dMB low_wm=%dMB high_wm=%dMB "
+                    ">= %s, %s%% of the %s items held when throttling was "
+                    "confirmed). Peak vb_active_curr_items during load was "
+                    "%s, mem_used=%dMB low_wm=%dMB high_wm=%dMB "
                     "pager_throttled=%s"
-                    % (curr_items, min_curr_items, peak_active_items,
+                    % (curr_items, min_curr_items, retain_pct,
+                       items_at_throttle, peak_active_items,
                        int(final_stats["mem_used"]) >> 20, low_wm >> 20,
                        high_wm >> 20,
                        final_stats.get("pager_throttled", "n/a")))
