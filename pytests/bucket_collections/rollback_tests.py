@@ -1,3 +1,4 @@
+import time
 from random import choice
 
 from bucket_collections.collections_base import CollectionBase
@@ -52,16 +53,38 @@ class RollbackTests(CollectionBase):
                 node_dict["cbstat"].vbucket_details(self.bucket.name)
 
     def validate_seq_no_post_rollback(self, init_stat_key, post_stat_key,
-                                      keys_to_verify):
-        for node, n_dict in self.node_shells.items():
-            for vb, vb_stat_dict in n_dict[post_stat_key].items():
-                for stat in keys_to_verify:
-                    if vb_stat_dict[stat] != n_dict[init_stat_key][vb][stat]:
-                        self.log_failure("vBucket %s - %s stat mismatch. "
-                                         "(current) %s != %s (prev)"
-                                         % (vb, stat,
-                                            vb_stat_dict[stat],
-                                            n_dict[init_stat_key][vb][stat]))
+                                      keys_to_verify, timeout=120):
+        """
+        A vBucket's replica copies roll back asynchronously - the replica
+        only rewinds once the already warmed-up active rejects its DCP
+        stream request. A single snapshot taken a fixed number of seconds
+        after warmup therefore catches whichever copies have not got there
+        yet, so poll until every copy agrees or the timeout expires.
+        The node is part of the message: without it a copy that is merely
+        lagging and one that is genuinely stuck look identical in the log
+        """
+        deadline = time.time() + timeout
+        while True:
+            mismatches = list()
+            for node, n_dict in self.node_shells.items():
+                for vb, vb_stat_dict in n_dict[post_stat_key].items():
+                    for stat in keys_to_verify:
+                        if vb_stat_dict[stat] \
+                                != n_dict[init_stat_key][vb][stat]:
+                            mismatches.append(
+                                "%s - vBucket %s - %s stat mismatch. "
+                                "(current) %s != %s (prev)"
+                                % (node.ip, vb, stat,
+                                   vb_stat_dict[stat],
+                                   n_dict[init_stat_key][vb][stat]))
+            if not mismatches or time.time() >= deadline:
+                break
+            self.sleep(5, "%s vBucket copies yet to complete rollback"
+                          % len(mismatches))
+            self.get_vb_details_cbstats_for_all_nodes(post_stat_key)
+
+        for mismatch in mismatches:
+            self.log_failure(mismatch)
 
     def __rewind_doc_index(self, doc_loading_task):
         for bucket, s_dict in doc_loading_task.loader_spec.items():
