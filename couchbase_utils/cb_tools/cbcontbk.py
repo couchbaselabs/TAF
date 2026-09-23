@@ -167,7 +167,8 @@ class CbContBk(CbCmdBase):
 
     def restore(self, archive_path, repo_name,
                 location, temp_dir, cluster_host=None, threads=8, timestamp=None,
-                include_data=None, map_data=None, obj_staging_dir=None):
+                include_data=None, map_data=None, obj_staging_dir=None,
+                no_ssl_verify=False):
         """
         Restores a continuous backup to a specified point in time.
         :param archive_path: Path to the traditional backup location
@@ -194,7 +195,10 @@ class CbContBk(CbCmdBase):
                                 --obj-staging-dir
         """
         if cluster_host is None:
-            cluster_host = f"http://{self.shellConn.server.ip}:8091"
+            if CbServer.use_https:
+                cluster_host = f"https://{self.shellConn.server.ip}:{self.port}"
+            else:
+                cluster_host = f"http://{self.shellConn.server.ip}:{self.port}"
 
         if timestamp is None:
             timestamp = "everything"
@@ -209,6 +213,8 @@ class CbContBk(CbCmdBase):
             cmd += f" --include-data {include_data}"
         if map_data:
             cmd += f" --map-data {map_data}"
+        if no_ssl_verify:
+            cmd += f" --no-ssl-verify"
 
         cmd += self.cli_flags
 

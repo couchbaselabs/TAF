@@ -1701,13 +1701,17 @@ class UpgradeTests(UpgradeBase):
             # object-store backing needs the staging dir here too.
             for bucket in self.cluster.buckets:
                 if bucket.storageBackend == Bucket.StorageBackend.magma:
+                    no_ssl_verify = True if self.tls_level == "strict" \
+                        else False
+
                     self.cont_bk_mgr.restore(
                         self.backup_archive_dir, self.backup_repo_name,
                         location=self.continuous_backup_location,
                         temp_dir="/data/tmp",
                         timestamp=timestamp,
                         map_data=f"{bucket.name}={bucket.name}",
-                        obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+                        obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
+                        no_ssl_verify=no_ssl_verify)
 
             # Wait for stats and verify item count
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
