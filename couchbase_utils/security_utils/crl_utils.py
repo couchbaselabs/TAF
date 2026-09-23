@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import socket
 import ssl
 import tempfile
@@ -92,6 +93,17 @@ class CRLUtils:
     every REST-facing method takes a `rest_connection` as first argument and
     builds a CRLAPI (CBRestConnection) via the _crl_api() shim.
     """
+
+    # Windows nodes are reached over cygwin sshd, so anything that touches
+    # the filesystem from here -- shell commands and paramiko's sftp alike --
+    # must address the install through the cygwin mount, not through
+    # x509main.WININSTALLPATH's native "C:/Program Files/..." spelling (same
+    # reason x509main._delete_inbox_folder special-cases /cygdrive). The
+    # native path is still what ns_server itself expects, so REST *settings*
+    # values (e.g. /settings/crl's `directory`) keep using WININSTALLPATH --
+    # see _server_var_lib_dir below.
+    WIN_SHELL_INSTALLPATH = \
+        "/cygdrive/c/Program Files/Couchbase/Server/var/lib/couchbase/"
 
     def __init__(self, log=None):
         self.log = log
@@ -920,7 +932,27 @@ class CRLUtils:
                 self.log.warning(f"Failed to delete CRL file {filename} in teardown")
         self.created_files = []
 
-    def reset_crl_settings(self, rest):
+    def default_crl_dir(self, server):
+        """The node's own default /settings/crl `directory`, spelled the way
+        ns_server spells it (native Windows path, not the cygwin one the
+        shell uses). Falls back to the Linux default if the node can't be
+        reached -- this only ever feeds teardown's best-effort reset."""
+        try:
+            shell = RemoteMachineShellConnection(server)
+        except Exception as exc:
+            if self.log:
+                self.log.warning(
+                    f"Could not determine the CRL directory default on "
+                    f"{server.ip}, assuming the Linux one: {exc}"
+                )
+            return f"{x509main.LININSTALLPATH}{x509main.CHAINFILEPATH}/crls"
+        try:
+            return f"{self._server_var_lib_dir(shell)}" \
+                   f"{x509main.CHAINFILEPATH}/crls"
+        finally:
+            shell.disconnect()
+
+    def reset_crl_settings(self, rest, server=None):
         """
         Reset every /settings/crl field back to its documented default, not
         just policyPerScope. Found the hard way: a test that configures
@@ -930,11 +962,20 @@ class CRLUtils:
         policyPerScope left `urls` still pointed at it -- generating
         continuous "unexpected HTTP status 404" warnings on the node with
         no test still running to explain them.
+
+        `server` is what the per-OS `directory` default is derived from;
+        without it the Linux default is assumed, which is wrong on a
+        Windows cluster (it would leave the node polling a path that
+        doesn't exist there).
         """
+        directory = (
+            self.default_crl_dir(server) if server is not None
+            else f"{x509main.LININSTALLPATH}{x509main.CHAINFILEPATH}/crls"
+        )
         self.set_settings(
             rest,
             policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
-            directory="/opt/couchbase/var/lib/couchbase/inbox/crls",
+            directory=directory,
             dirPollIntervalMs=60000,
             checkIntermediateCerts=False,
             urls=[],
@@ -992,16 +1033,43 @@ class CRLUtils:
         self.temp_pem_files = []
 
     @staticmethod
-    def _ca_dir(shell):
-        """Returns the OS-appropriate inbox/CA path for the connected shell's host."""
+    def _var_lib_dir(shell):
+        """Returns the node's var/lib/couchbase dir as the *shell/sftp* on
+        that host can address it -- cygwin-mounted on Windows. Use this for
+        anything that reads or writes files over the SSH connection."""
         os_type = shell.extract_remote_info().distribution_type
         if os_type == "windows":
-            install_path = x509main.WININSTALLPATH
-        elif os_type == "Mac":
-            install_path = x509main.MACINSTALLPATH
-        else:
-            install_path = x509main.LININSTALLPATH
-        return f"{install_path}{x509main.CHAINFILEPATH}/CA"
+            return CRLUtils.WIN_SHELL_INSTALLPATH
+        if os_type == "Mac":
+            return x509main.MACINSTALLPATH
+        return x509main.LININSTALLPATH
+
+    @staticmethod
+    def _server_var_lib_dir(shell):
+        """Returns the node's var/lib/couchbase dir as *ns_server* spells it
+        -- native "C:/Program Files/..." on Windows. Use this for paths that
+        are handed to the server over REST, never for shell/sftp access."""
+        os_type = shell.extract_remote_info().distribution_type
+        if os_type == "windows":
+            return x509main.WININSTALLPATH
+        if os_type == "Mac":
+            return x509main.MACINSTALLPATH
+        return x509main.LININSTALLPATH
+
+    @staticmethod
+    def _copy_to_remote(shell, local_path, remote_path):
+        """copy_file_local_to_remote swallows IOError and just returns False,
+        so a failed upload would otherwise surface much later as a confusing
+        server-side "file does not exist" -- raise at the actual failure."""
+        if not shell.copy_file_local_to_remote(local_path, remote_path):
+            raise AssertionError(
+                f"Failed to copy {local_path} to {shell.ip}:{remote_path}"
+            )
+
+    @staticmethod
+    def _ca_dir(shell):
+        """Returns the OS-appropriate inbox/CA path for the connected shell's host."""
+        return f"{CRLUtils._var_lib_dir(shell)}{x509main.CHAINFILEPATH}/CA"
 
     @staticmethod
     def _ca_remote_filename(ca_cert):
@@ -1033,15 +1101,18 @@ class CRLUtils:
         shell = RemoteMachineShellConnection(server)
         try:
             ca_dir = self._ca_dir(shell)
-            shell.execute_command(f"mkdir -p {ca_dir}")
+            # Quoted: the Windows install path contains a space, and an
+            # unquoted one word-splits into two mkdir arguments, leaving
+            # inbox/CA uncreated and the upload below with nowhere to land.
+            shell.execute_command(f"mkdir -p {shlex.quote(ca_dir)}")
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=".pem", mode="wb"
             ) as tmp_file:
                 tmp_file.write(pem_bytes)
                 local_path = tmp_file.name
             try:
-                shell.copy_file_local_to_remote(
-                    local_path, f"{ca_dir}/{remote_filename}"
+                self._copy_to_remote(
+                    shell, local_path, f"{ca_dir}/{remote_filename}"
                 )
             finally:
                 os.remove(local_path)
@@ -1090,14 +1161,7 @@ class CRLUtils:
         """Returns the OS-appropriate inbox path (no /CA suffix) for the
         connected shell's host -- same per-OS switch as _ca_dir, minus the
         CA-specific subfolder, shared by deploy_node_cert/deploy_client_cert."""
-        os_type = shell.extract_remote_info().distribution_type
-        if os_type == "windows":
-            install_path = x509main.WININSTALLPATH
-        elif os_type == "Mac":
-            install_path = x509main.MACINSTALLPATH
-        else:
-            install_path = x509main.LININSTALLPATH
-        return f"{install_path}{x509main.CHAINFILEPATH}"
+        return f"{CRLUtils._var_lib_dir(shell)}{x509main.CHAINFILEPATH}"
 
     def deploy_node_cert(self, rest, server, cert, key):
         """
@@ -1116,7 +1180,7 @@ class CRLUtils:
         shell = RemoteMachineShellConnection(server)
         try:
             inbox_dir = self._inbox_dir(shell)
-            shell.execute_command(f"mkdir -p {inbox_dir}")
+            shell.execute_command(f"mkdir -p {shlex.quote(inbox_dir)}")
             for filename, pem_bytes in (
                 (x509main.CHAINCERTFILE, self.cert_to_pem(cert)),
                 (x509main.NODECAKEYFILE, self.key_to_pem(key)),
@@ -1127,8 +1191,8 @@ class CRLUtils:
                     tmp_file.write(pem_bytes)
                     local_path = tmp_file.name
                 try:
-                    shell.copy_file_local_to_remote(
-                        local_path, f"{inbox_dir}/{filename}"
+                    self._copy_to_remote(
+                        shell, local_path, f"{inbox_dir}/{filename}"
                     )
                 finally:
                     os.remove(local_path)
@@ -1156,7 +1220,7 @@ class CRLUtils:
         shell = RemoteMachineShellConnection(server)
         try:
             inbox_dir = self._inbox_dir(shell)
-            shell.execute_command(f"mkdir -p {inbox_dir}")
+            shell.execute_command(f"mkdir -p {shlex.quote(inbox_dir)}")
             for filename, pem_bytes in (
                 ("client_chain.pem", self.cert_to_pem(cert)),
                 ("client_pkey.key", self.key_to_pem(key)),
@@ -1167,8 +1231,8 @@ class CRLUtils:
                     tmp_file.write(pem_bytes)
                     local_path = tmp_file.name
                 try:
-                    shell.copy_file_local_to_remote(
-                        local_path, f"{inbox_dir}/{filename}"
+                    self._copy_to_remote(
+                        shell, local_path, f"{inbox_dir}/{filename}"
                     )
                 finally:
                     os.remove(local_path)

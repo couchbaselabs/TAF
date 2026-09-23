@@ -1,4 +1,5 @@
 import json
+import shlex
 
 import requests
 
@@ -163,7 +164,10 @@ class CRLBase(ClusterSetup):
         shell = RemoteMachineShellConnection(self.cluster.master)
         try:
             ca_dir = self.crl_utils._ca_dir(shell)
-            shell.execute_command(f"rm -f {ca_dir}/*")
+            # Quote the directory but leave the glob outside the quotes --
+            # the Windows install path has a space in it, and unquoted it
+            # word-splits into two rm arguments that silently match nothing.
+            shell.execute_command(f"rm -f {shlex.quote(ca_dir)}/*")
         except Exception as exc:
             self.log.warning(f"Trusted CA inbox/CA cleanup error: {exc}")
         finally:
@@ -211,7 +215,9 @@ class CRLBase(ClusterSetup):
         self.crl_utils.cleanup_created_files(self.rest)
 
     def _reset_crl_settings(self):
-        self.crl_utils.reset_crl_settings(self.rest)
+        self.crl_utils.reset_crl_settings(
+            self.rest, server=self.cluster.master
+        )
 
     def _disable_client_cert_auth(self):
         self.crl_utils.disable_client_cert_auth(self.cluster.master)
