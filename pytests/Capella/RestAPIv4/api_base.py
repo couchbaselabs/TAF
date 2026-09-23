@@ -109,31 +109,45 @@ class APIBase(CouchbaseBaseTest):
                 self.project_id = TestInputSingleton.input.capella.get(
                     "project")
             else:
-                self.log.info("Creating the functional-test required project")
-                res = self.capellaAPI.org_ops_apis.create_project(
+                self.project_id = self.find_project_by_name(
                     self.organisation_id, self.prefix + "WRAPPER")
-                if res.status_code != 201:
-                    self.log.error(res.content)
-                    self.tearDown()
-                    self.fail("!!!..Project creation failed...!!!")
+                if self.project_id:
+                    self.log.info("Reusing existing project: {}"
+                                  .format(self.project_id))
                 else:
-                    self.log.info("Project Creation Successful")
-                    self.project_id = res.json()["id"]
-                    self.capella["project"] = self.project_id
+                    self.log.info(
+                        "Creating the functional-test required project")
+                    res = self.capellaAPI.org_ops_apis.create_project(
+                        self.organisation_id, self.prefix + "WRAPPER")
+                    if res.status_code != 201:
+                        self.log.error(res.content)
+                        self.tearDown()
+                        self.fail("!!!..Project creation failed...!!!")
+                    else:
+                        self.log.info("Project Creation Successful")
+                        self.project_id = res.json()["id"]
+                self.capella["project"] = self.project_id
 
             self.api_keys = dict()
             if self.input.param("GROUP", "functional") == "security":
-                # Create a residual project used for auth verification tests.
-                self.log.info("Creating the security-test required project")
-                resp = self.capellaAPI.org_ops_apis.create_project(
+                # Reuse a residual project used for auth verification
+                # tests, IF not already present.
+                self.other_project_id = self.find_project_by_name(
                     self.organisation_id, "Auth_Project")
-                if resp.status_code == 201:
-                    self.other_project_id = resp.json()["id"]
-                    self.capella["tenant_id"][
-                        "otherProj"] = self.other_project_id
+                if self.other_project_id:
+                    self.log.info("Reusing existing project: {}"
+                                  .format(self.other_project_id))
                 else:
-                    self.fail("Error while creating project: {}"
-                              .format(resp.content))
+                    self.log.info(
+                        "Creating the security-test required project")
+                    resp = self.capellaAPI.org_ops_apis.create_project(
+                        self.organisation_id, "Auth_Project")
+                    if resp.status_code == 201:
+                        self.other_project_id = resp.json()["id"]
+                    else:
+                        self.fail("Error while creating project: {}"
+                                  .format(resp.content))
+                self.capella["tenant_id"]["otherProj"] = self.other_project_id
 
                 if "apiKeys" not in self.capella["tenant_id"] or not \
                         self.capella["tenant_id"]["apiKeys"]:
@@ -1942,6 +1956,32 @@ class APIBase(CouchbaseBaseTest):
                 }
             }
         return projects
+
+    def find_project_by_name(self, org_id, name):
+        """
+        Returns the ID of the first project matching `name` in the given
+        organization, or None if no such project exists. Paginates
+        through list_projects since a match could be on any page.
+        """
+        page = 1
+        while True:
+            resp = self.capellaAPI.org_ops_apis.list_projects(
+                org_id, page=page, perPage=100)
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.org_ops_apis.list_projects(
+                    org_id, page=page, perPage=100)
+            if resp.status_code != 200:
+                self.log.error("Error while listing projects: {}"
+                              .format(resp.content))
+                return None
+            body = resp.json()
+            for project in body.get("data", []):
+                if project.get("name") == name:
+                    return project.get("id")
+            if not body.get("cursor", {}).get("pages", {}).get("next"):
+                return None
+            page += 1
 
     def delete_projects(self, org_id, project_ids, token):
         project_deletion_failed = False
