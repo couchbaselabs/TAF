@@ -441,9 +441,16 @@ if [ $status -eq 0 ]; then
   status=$?
   set +x
   echo workspace is $WORKSPACE
-  fails=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($3,s1,"=");print s1[2]}' | sed s/\"//g | awk '{s+=$1} END {print s}'`
+  # A testrunner killed before writing its report (e.g. OOM-killed jython,
+  # gradle exit 137) leaves no logs/*/*.xml, so both counts come back empty.
+  # An empty operand in the $(( )) below is an arithmetic syntax error, and
+  # bash aborts the whole enclosing if-block on it - skipping the gradle
+  # status check, so the build ended SUCCESS and greenboard showed "PASS 0/0".
+  fails=`cat $WORKSPACE/logs/*/*.xml 2>/dev/null | grep 'testsuite errors' | awk '{split($3,s1,"=");print s1[2]}' | sed s/\"//g | awk '{s+=$1} END {print s}'`
+  fails=${fails:-0}
   echo fails is $fails
-  total_tests=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
+  total_tests=`cat $WORKSPACE/logs/*/*.xml 2>/dev/null | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
+  total_tests=${total_tests:-0}
   echo $total_tests
   echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
   guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
