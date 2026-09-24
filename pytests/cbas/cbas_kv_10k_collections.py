@@ -125,6 +125,15 @@ class CBASKVCollectionScale(CBASBaseTest):
             if not self.cbas_util.connect_link(self.cluster, "Local", timeout=600, analytics_timeout=600):
                 self.fail("Failed to connect link Local")
 
+            self.log.info(
+                "Waiting for ingestion to complete across all analytics "
+                "datasets")
+            if not self.cbas_util.wait_for_ingestion_all_datasets(
+                    self.cluster, self.bucket_util, timeout=1800):
+                self.fail(
+                    "Ingestion did not complete for all analytics datasets "
+                    "within timeout")
+
             for analytics_collection_name in analytics_collection_names:
                 self.log.info(
                     "Validating analytics collection count: {0}".format(
