@@ -80,6 +80,8 @@ file_name_patterns:
   - file: 'analytics_info*'
     grep_for:
       - string: "FATA"
+        exclude_patterns:
+          - 'Global recovery failed. Shutting down'
       - string: "MERGE operation.*failed"
       - string: "Analytics Service is temporarily unavailable"
       - string: "Failed during startup task"

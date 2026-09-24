@@ -9,16 +9,39 @@ Swap Rebalance:
 1. Upgrade node3 to 2.1; Swap node1 ↔ node3; Rebalance
 2. Upgrade node1 to 2.1; Swap node2 ↔ node1; Rebalance
 Result: node1 and node3 cluster with upgraded versions
+
+Failover Upgrade Test
+Setup: 3-node cluster, no spare node needed
+Failover:
+1. Failover node (settle-rebalances it out); Upgrade node in place;
+   Add it back in + Rebalance
+2. Repeat for each remaining node (master rerouted before it's failed over)
+Result: same 3 nodes, all on the upgraded version
+
+Offline Upgrade Test
+Setup: 3-node cluster, no spare node needed
+Auto-failover is disabled for the whole upgrade:
+1. Upgrade each node in place (stop, remove old package, install new build
+   without starting, restore its saved state, start); the node rejoins the
+   cluster by itself - no failover, rebalance or add-node needed
+2. Verify all nodes are active + healthy and the cluster is balanced
+3. Re-enable auto-failover once every node is upgraded
+Result: same 3 nodes, all on the upgraded version
 """
 
 from pytests.Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
+from cb_server_rest_util.analytics.analytics_settings import \
+    LEGACY_ANALYTICS_SETTINGS_PATH
 from platform_utils.ssh_util.shell_util.remote_connection import RemoteMachineShellConnection
 from cb_constants.CBServer import CbServer
 from cb_constants.ClusterRun import ClusterRun
 from awsLib.S3 import S3
 from custom_exceptions.exception import RebalanceFailedException
+from TestInput import TestInputSingleton
+from global_vars import logger
+from common_lib import sleep as common_sleep
 import time
 import os
 
@@ -29,51 +52,86 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
     using swap rebalance
     """
 
-    # Hardcoded Enterprise Analytics build URLs and constants
     EA_DOWNLOAD_SERVER = "latestbuilds.service.couchbase.com"
-    EA_BASE_URL_PATH = "builds/latestbuilds/enterprise-analytics"
     EA_VERSION_MAP = {
         "2.1": "phoenix",  # Map version to build path
         "2.2": "lumina",
-        "2.3": "helios"
+        "3.0": "helios"
     }
 
-    # Enterprise Analytics service and paths
-    EA_SERVICE_NAME = "enterprise-analytics"
-    EA_INSTALL_DIR = "/opt/enterprise-analytics"
+    # The product was renamed from "Enterprise Analytics" to "Operational
+    # Insights" starting with the 3.0 release - download path, package
+    # name prefix, install dir, and service/launcher name all changed
+    # together. Versions before 3.0 (e.g. 2.1, 2.2) keep the old naming;
+    # 3.0+ uses the new one. See _get_product_info().
+    PRODUCT_RENAME_MAIN_VERSION = (3, 0)
+    PRODUCT_INFO = {
+        "old": {
+            "url_path": "builds/latestbuilds/enterprise-analytics",
+            "package_prefix": "enterprise-analytics",
+            "service_name": "enterprise-analytics",
+            "install_dir": "/opt/enterprise-analytics",
+        },
+        "new": {
+            "url_path": "builds/latestbuilds/operational-insights",
+            "package_prefix": "operational-insights",
+            "service_name": "operational-insights",
+            "install_dir": "/opt/couchbase",
+        },
+    }
+
     EA_DOWNLOAD_DIR = "/tmp"
 
-    COMMANDS = {
-        "uninstall": [
+    def _get_product_info(self, version):
+        """
+        Returns the PRODUCT_INFO entry (url path, package prefix, service
+        name, install dir) matching the given version string (e.g.
+        "3.0.0-1010", "2.2.1-1404"), based on the Enterprise Analytics ->
+        Operational Insights rename that shipped in 3.0.
+        """
+        main_version = version.split("-", 1)[0]
+        main_version = tuple(
+            int(part) for part in main_version.split(".")[:2])
+        if main_version >= self.PRODUCT_RENAME_MAIN_VERSION:
+            return self.PRODUCT_INFO["new"]
+        return self.PRODUCT_INFO["old"]
+
+    @staticmethod
+    def _get_uninstall_commands(product_info):
+        service_name = product_info["service_name"]
+        install_dir = product_info["install_dir"]
+        package_prefix = product_info["package_prefix"]
+        return [
             ("rm -rf /tmp/tmp* ; rm -rf /tmp/cbbackupmgr-staging; rm -rf /tmp/entbackup* || true",
              0, "Clean up temporary directories"),
-            ("systemctl -q stop {}.service || true".format(EA_SERVICE_NAME),
-             0, "Stop Enterprise Analytics service"),
+            ("systemctl -q stop {}.service || true".format(service_name),
+             0, "Stop {} service".format(service_name)),
             ("umount -a -t nfs,nfs4 -f -l || true",
              0, "Unmount NFS mounts"),
             ("service ntp restart || true",
              0, "Restart NTP service"),
-            ("systemctl unmask {}.service || true".format(EA_SERVICE_NAME),
-             0, "Unmask Enterprise Analytics service"),
-            ("dpkg -l | grep enterprise-analytics || echo 'not_installed'",
+            ("systemctl unmask {}.service || true".format(service_name),
+             0, "Unmask {} service".format(service_name)),
+            ("dpkg -l | grep {} || echo 'not_installed'".format(package_prefix),
              0, "Check current installation status"),
-            ("apt-get purge -y 'enterprise-analytics*' > /dev/null 2>&1 || true",
-             10, "Purge Enterprise Analytics packages using apt-get"),
-            ("dpkg --purge $(dpkg -l | grep enterprise-analytics | awk '{print $2}' | xargs echo) 2>&1 || true",
+            ("apt-get purge -y '{}*' > /dev/null 2>&1 || true".format(package_prefix),
+             10, "Purge {} packages using apt-get".format(package_prefix)),
+            ("dpkg --purge $(dpkg -l | grep {} | awk '{{print $2}}' | xargs echo) 2>&1 || true".format(package_prefix),
              10, "Additional cleanup using dpkg --purge"),
-            ("rm -f /var/lib/dpkg/info/enterprise-analytics* || true",
+            ("rm -f /var/lib/dpkg/info/{}* || true".format(package_prefix),
              10, "Remove dpkg info files"),
-            ("ps -ef | egrep enterprise-analytics || echo 'no_processes'",
-             0, "Check Enterprise Analytics processes"),
-            ("kill -9 `ps -ef | egrep enterprise-analytics | cut -f3 -d' '` 2>&1 || true",
-             0, "Kill remaining Enterprise Analytics processes"),
-            ("rm -rf {} > /dev/null 2>&1 && echo 1 || echo 0".format(EA_INSTALL_DIR),
+            ("ps -ef | egrep {} || echo 'no_processes'".format(package_prefix),
+             0, "Check {} processes".format(package_prefix)),
+            ("kill -9 `ps -ef | egrep {} | cut -f3 -d' '` 2>&1 || true".format(package_prefix),
+             0, "Kill remaining {} processes".format(package_prefix)),
+            ("rm -rf {} > /dev/null 2>&1 && echo 1 || echo 0".format(install_dir),
              0, "Remove install directory"),
-            ("rm -rf {}/* > /dev/null 2>&1 && echo 1 || echo 0".format(EA_DOWNLOAD_DIR),
+            ("rm -rf {}/* > /dev/null 2>&1 && echo 1 || echo 0".format(
+                EnterpriseAnalyticsUpgrade.EA_DOWNLOAD_DIR),
              0, "Remove download directory"),
-            ("dpkg -P {} 2>&1 || true".format(EA_SERVICE_NAME),
+            ("dpkg -P {} 2>&1 || true".format(service_name),
              0, "Explicit dpkg purge"),
-            ("rm -rf /var/lib/dpkg/info/enterprise-analytics* || true",
+            ("rm -rf /var/lib/dpkg/info/{}* || true".format(package_prefix),
              0, "Remove dpkg info files (second pass)"),
             ("du -ch /data | grep total || echo 'no_data_dir'",
              0, "Check data directory size"),
@@ -89,20 +147,69 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
              0, "Clean up journal logs (time)"),
             ("grep 'kernel.dmesg_restrict=0' /etc/sysctl.conf || (echo 'kernel.dmesg_restrict=0' >> /etc/sysctl.conf && service procps restart) || true",
              0, "Set kernel.dmesg_restrict if needed"),
-            ("rm -rf {} || true".format(EA_INSTALL_DIR),
+            ("rm -rf {} || true".format(install_dir),
              0, "Final cleanup of install directory"),
-            ("dpkg -l | grep enterprise-analytics || echo 'not_installed'",
+            ("dpkg -l | grep {} || echo 'not_installed'".format(package_prefix),
              0, "Verify uninstallation"),
-        ]}
+        ]
 
     def setUp(self):
-        super(EnterpriseAnalyticsUpgrade, self).setUp()
+        # Minimal bootstrap (input/log/sleep) so the pre-cluster-formation
+        # reinstall below can run: CouchbaseBaseTest.setUp() (invoked via
+        # super().setUp() further down) assigns these same three
+        # identically a moment later, so this is a harmless early peek at
+        # framework state, not a second, divergent initialization path.
+        self.input = TestInputSingleton.input
+        self.log = logger.get("test")
+        self.sleep = common_sleep
+
         self.upgrade_version = self.input.param(
             "upgrade_version", "2.1.0-1367")
         self.pre_upgrade_version = self.input.param(
             "pre_upgrade_version", "2.0.0-1069")
         self.nodes_init = self.input.param("nodes_init", 2)
-        self.spare_node = self.cluster.servers[self.nodes_init]
+        self.reset_to_pre_upgrade_version = self.input.param(
+            "reset_to_pre_upgrade_version", True)
+
+        if self.reset_to_pre_upgrade_version:
+            # Reinstall the initial nodes_init servers with
+            # pre_upgrade_version BEFORE OnPremBaseTest/ClusterSetup
+            # (invoked by super().setUp() below) clusters them on
+            # whatever version test_infra_runner actually installed -
+            # see _reset_servers_to_pre_upgrade_version().
+            self._reset_servers_to_pre_upgrade_version(
+                self.input.servers[:self.nodes_init], self.pre_upgrade_version)
+
+        self.analytics_settings_path = LEGACY_ANALYTICS_SETTINGS_PATH
+        super(EnterpriseAnalyticsUpgrade, self).setUp()
+
+        # super().setUp() re-reads/overwrites some of the params above
+        # with its own (different) defaults - re-assert ours.
+        self.upgrade_version = self.input.param(
+            "upgrade_version", "2.1.0-1367")
+        self.pre_upgrade_version = self.input.param(
+            "pre_upgrade_version", "2.0.0-1069")
+        self.nodes_init = self.input.param("nodes_init", 2)
+        # Not every test provisions a spare node (e.g. failover-based
+        # upgrade needs none) - guard against IndexError in that case.
+        if len(self.cluster.servers) > self.nodes_init:
+            self.spare_node = self.cluster.servers[self.nodes_init]
+        else:
+            self.spare_node = None
+
+        # COPY INTO / ANALYZE COLLECTION params, shared by both tests
+        self.copy_into_path_pre_upgrade = self.input.param(
+            "copy_into_path_pre_upgrade",
+            "level_1_folder_1/level_2_folder_1/level_3_folder_1")
+        self.copy_into_path_post_upgrade = self.input.param(
+            "copy_into_path_post_upgrade", "level_1_folder_1")
+        self.analyze_sample_size = self.input.param(
+            "analyze_sample_size", "high")
+        self.analyze_sample_seed = self.input.param(
+            "analyze_sample_seed", 1000)
+        self.post_upgrade_retry_count = self.input.param(
+            "post_upgrade_retry_count", 3)
+
         # Track buckets created during upgrade for cleanup
         self.created_buckets = []  # List of (bucket_name, s3_obj) tuples
         # Standalone collection used to validate that ANALYZE COLLECTION
@@ -167,13 +274,17 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         version_path = self.EA_VERSION_MAP[main_version]
         self.log.debug("Version path from map: {}".format(version_path))
 
-        package_name = "enterprise-analytics_{}-{}-linux_{}.deb".format(
-            version, build_number, arch_suffix)
+        product_info = self._get_product_info(original_version)
+        self.log.debug("Product info for version {}: {}".format(
+            original_version, product_info))
+
+        package_name = "{}_{}-{}-linux_{}.deb".format(
+            product_info["package_prefix"], version, build_number, arch_suffix)
         self.log.debug("Package name: {}".format(package_name))
 
         url = "https://{}/{}/{}/{}/{}".format(
             self.EA_DOWNLOAD_SERVER,
-            self.EA_BASE_URL_PATH,
+            product_info["url_path"],
             version_path,
             build_number,
             package_name)
@@ -244,9 +355,10 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         self.log.info("Successfully downloaded: {}".format(download_path))
         return download_path
 
-    def _uninstall_enterprise_analytics(self, shell):
+    def _uninstall_enterprise_analytics(self, shell, product_info):
         # Execute commands in sequence
-        for cmd, sleep_seconds, description in self.COMMANDS["uninstall"]:
+        for cmd, sleep_seconds, description in self._get_uninstall_commands(
+                product_info):
             self.log.debug("{}...".format(description))
             output, error = shell.execute_command(cmd)
             self.log.debug(
@@ -257,8 +369,10 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                 self.sleep(sleep_seconds, "Wait after {}".format(description))
         self.log.debug("Uninstallation completed")
 
-    def _install_enterprise_analytics(self, shell, package_path):
-        """Install Enterprise Analytics from deb package"""
+    def _install_enterprise_analytics(self, shell, package_path, product_info,
+                                      start_server=True):
+        """Install Enterprise Analytics / Operational Insights from deb package"""
+        env_prefix = "" if start_server else "INSTALL_DONT_START_SERVER=1 "
 
         # Verify package file exists before installation
         self.log.debug("Verifying package file exists...")
@@ -282,8 +396,8 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         # This handles dependencies automatically
         self.log.debug(
             "Installing using apt-get (following install_constants.py pattern)...")
-        cmd = "DEBIAN_FRONTEND='noninteractive' apt-get -y -f install {} > /dev/null 2>&1 && echo 1 || echo 0".format(
-            package_path)
+        cmd = "{}DEBIAN_FRONTEND='noninteractive' apt-get -y -f install {} > /dev/null 2>&1 && echo 1 || echo 0".format(
+            env_prefix, package_path)
         self.log.debug(
             "Executing: DEBIAN_FRONTEND='noninteractive' apt-get -y -f install {}".format(package_path))
         output, error = shell.execute_command(cmd)
@@ -296,7 +410,7 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                 "apt-get install returned: {}, error: {}".format(output, error))
             # Fallback to dpkg if apt-get fails
             self.log.debug("Trying dpkg installation as fallback...")
-            cmd = "dpkg -i {} 2>&1 || true".format(package_path)
+            cmd = "{}dpkg -i {} 2>&1 || true".format(env_prefix, package_path)
             self.log.debug("Executing: dpkg -i {}".format(package_path))
             output, error = shell.execute_command(cmd)
             self.log.debug(
@@ -311,29 +425,31 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
 
         # Verify installation
         self.log.debug("Verifying installation...")
-        cmd = "dpkg -l | grep enterprise-analytics"
+        cmd = "dpkg -l | grep {}".format(product_info["package_prefix"])
         output, error = shell.execute_command(cmd)
         if not output or len(output) == 0:
             self.log.error(
-                "Enterprise Analytics installation verification failed - no packages found")
-            self.fail("Enterprise Analytics installation verification failed")
+                "{} installation verification failed - no packages found"
+                .format(product_info["package_prefix"]))
+            self.fail("{} installation verification failed"
+                      .format(product_info["package_prefix"]))
 
         self.log.info("Installation completed successfully")
 
-    def _start_enterprise_analytics(self, shell):
-        """Start Enterprise Analytics service"""
+    def _start_enterprise_analytics(self, shell, product_info):
+        """Start the Enterprise Analytics / Operational Insights service"""
+        service_name = product_info["service_name"]
+
         # Check service status before starting
         self.log.debug("Checking service status before starting...")
-        cmd = "systemctl status {}.service || true".format(
-            self.EA_SERVICE_NAME)
+        cmd = "systemctl status {}.service || true".format(service_name)
         output, error = shell.execute_command(cmd)
         self.log.debug(
             "Initial service status - output: {}, error: {}".format(output, error))
 
         # Unmask the service first (in case it was masked during uninstall)
-        self.log.debug("Unmasking Enterprise Analytics service...")
-        cmd = "systemctl unmask {}.service || true".format(
-            self.EA_SERVICE_NAME)
+        self.log.debug("Unmasking {} service...".format(service_name))
+        cmd = "systemctl unmask {}.service || true".format(service_name)
         output, error = shell.execute_command(cmd)
         self.log.debug(
             "Unmask service - output: {}, error: {}".format(output, error))
@@ -346,16 +462,15 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             "daemon-reload - output: {}, error: {}".format(output, error))
 
         # Enable the service
-        self.log.debug("Enabling Enterprise Analytics service...")
-        cmd = "systemctl enable {}.service || true".format(
-            self.EA_SERVICE_NAME)
+        self.log.debug("Enabling {} service...".format(service_name))
+        cmd = "systemctl enable {}.service || true".format(service_name)
         output, error = shell.execute_command(cmd)
         self.log.debug(
             "Enable service - output: {}, error: {}".format(output, error))
 
         # Start the service
-        self.log.debug("Starting Enterprise Analytics service...")
-        cmd = "systemctl start {}.service".format(self.EA_SERVICE_NAME)
+        self.log.debug("Starting {} service...".format(service_name))
+        cmd = "systemctl start {}.service".format(service_name)
         output, error = shell.execute_command(cmd)
         self.log.debug(
             "Start service - output: {}, error: {}".format(output, error))
@@ -364,19 +479,19 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             self.log.error("Error starting service: {}".format(error))
             # Check service status
             self.log.debug("Checking detailed service status after error...")
-            cmd = "systemctl status {}.service".format(self.EA_SERVICE_NAME)
+            cmd = "systemctl status {}.service".format(service_name)
             output, error = shell.execute_command(cmd)
             self.log.debug("Service status details: {}".format(output))
 
             # Retry starting
             self.log.debug("Retrying service start...")
-            cmd = "systemctl start {}.service".format(self.EA_SERVICE_NAME)
+            cmd = "systemctl start {}.service".format(service_name)
             output, error = shell.execute_command(cmd)
             self.log.debug(
                 "Retry start - output: {}, error: {}".format(output, error))
 
         # Check if service is active
-        cmd = "systemctl is-active {}.service".format(self.EA_SERVICE_NAME)
+        cmd = "systemctl is-active {}.service".format(service_name)
         output, error = shell.execute_command(cmd)
         self.log.debug(
             "Service active check - output: {}, error: {}".format(output, error))
@@ -385,19 +500,21 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         self.sleep(10, "Wait for service to start")
 
         cmd = "systemctl status {}.service --no-pager | head -10".format(
-            self.EA_SERVICE_NAME)
+            service_name)
         output, error = shell.execute_command(cmd)
         self.log.debug("Final service status: {}".format(output))
 
-    def _is_service_running(self, shell, max_wait=60):
-        """Check if Enterprise Analytics service is running"""
+    def _is_service_running(self, shell, product_info, max_wait=60):
+        """Check if the Enterprise Analytics / Operational Insights service is running"""
+        service_name = product_info["service_name"]
         self.log.info(
-            "Checking if Enterprise Analytics service is running (max_wait={}s)...".format(max_wait))
+            "Checking if {} service is running (max_wait={}s)...".format(
+                service_name, max_wait))
         for i in range(max_wait // 5):
             attempt = i + 1
             self.log.debug(
                 "Service check attempt {}/{}...".format(attempt, max_wait // 5))
-            cmd = "systemctl is-active {}.service".format(self.EA_SERVICE_NAME)
+            cmd = "systemctl is-active {}.service".format(service_name)
             output, error = shell.execute_command(cmd)
             self.log.debug(
                 "Service status check - output: {}, error: {}".format(output, error))
@@ -413,13 +530,15 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             "Service did not become active within {} seconds".format(max_wait))
         return False
 
-    def _initialize_cluster_for_upgrade(self, node):
+    def _initialize_cluster_for_upgrade(self, node, target_version=None):
         """
         Initialize cluster for upgraded Enterprise Analytics node
         This configures compute storage and initializes the node
         """
+        target_version = target_version or self.upgrade_version
         self.log.debug(
-            "Initializing cluster for upgraded node: {}".format(node.ip))
+            "Initializing cluster for upgraded node: {} (version: {})"
+            .format(node.ip, target_version))
 
         # Configure compute storage if needed (creating new bucket for upgrade)
         if hasattr(self, 'analytics_compute_storage_separation') and self.analytics_compute_storage_separation:
@@ -478,7 +597,9 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                 aws_access_key=aws_access_key,
                 aws_secret_key=aws_secret_key,
                 aws_bucket_name=aws_bucket_name,
-                aws_bucket_region=aws_bucket_region)
+                aws_bucket_region=aws_bucket_region,
+                path=getattr(self, "analytics_settings_path",
+                             LEGACY_ANALYTICS_SETTINGS_PATH))
 
             if not status:
                 self.fail(
@@ -1140,29 +1261,47 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         self.log.info("SAMPLE statistics verified in Metadata.Index for {}"
                       .format(self.analyze_collection_name))
 
-    def _upgrade_and_prepare_node(self, node):
+    def _install_version_on_node(self, node, target_version):
+        """
+        Uninstall whatever is currently running on 'node' (detected via
+        REST rather than assumed - see callers) and install+start
+        target_version on it. Does NOT touch cluster membership/REST
+        cluster-init: the node is left factory-fresh, still standalone,
+        for the caller to decide what to do with next. Safe to call
+        before self.cluster/self.cluster_util exist (e.g. from setUp(),
+        before super().setUp() has formed a cluster) - only uses
+        self.log/self.fail/self.sleep, all of which setUp() below
+        assigns before this can be reached either way.
+        """
+        _, node_info = ClusterRestAPI(node).node_details()
+        current_version = node_info.get("version", self.pre_upgrade_version)
+        old_product_info = self._get_product_info(current_version)
+        new_product_info = self._get_product_info(target_version)
+
         shell = RemoteMachineShellConnection(node)
         try:
-            # Step 0: Uninstall existing Enterprise Analytics before upgrade
+            # Step 0: Uninstall whatever is currently installed
             self.log.info(
-                "Step 0/5: Uninstalling existing Enterprise Analytics...")
-            self._uninstall_enterprise_analytics(shell)
+                "Step 0/4: Uninstalling existing Enterprise Analytics "
+                "(detected version: {})...".format(current_version))
+            self._uninstall_enterprise_analytics(shell, old_product_info)
 
             # Step 1: Get build URL
-            self.log.info("Step 1/5: Getting build URL...")
-            build_url, package_name = self._get_build_url(self.upgrade_version)
+            self.log.info("Step 1/4: Getting build URL...")
+            build_url, package_name = self._get_build_url(target_version)
 
             # Step 2: Download build
-            self.log.info("Step 2/5: Downloading build...")
+            self.log.info("Step 2/4: Downloading build...")
             package_path = self._download_build(shell, build_url, package_name)
 
             # Step 3: Install new version
-            self.log.info("Step 3/5: Installing new version...")
-            self._install_enterprise_analytics(shell, package_path)
+            self.log.info("Step 3/4: Installing new version...")
+            self._install_enterprise_analytics(
+                shell, package_path, new_product_info)
 
             # Step 4: Start service
-            self.log.info("Step 4/5: Starting service...")
-            self._start_enterprise_analytics(shell)
+            self.log.info("Step 4/4: Starting service...")
+            self._start_enterprise_analytics(shell, new_product_info)
 
         finally:
             shell.disconnect()
@@ -1174,13 +1313,25 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             "Verifying service is running on node {}...".format(node.ip))
         shell = RemoteMachineShellConnection(node)
         try:
-            if not self._is_service_running(shell, max_wait=60):
+            if not self._is_service_running(
+                    shell, new_product_info, max_wait=60):
                 self.log.error(
-                    "Node {} service not running after upgrade".format(node.ip))
+                    "Node {} service not running after install".format(node.ip))
                 self.fail(
-                    "Node {} service not running after upgrade".format(node.ip))
+                    "Node {} service not running after install".format(node.ip))
         finally:
             shell.disconnect()
+
+        return new_product_info
+
+    def _upgrade_and_prepare_node(self, node, target_version=None):
+        """
+        Install target_version (default: self.upgrade_version) on 'node'
+        via _install_version_on_node(), then clusterInit it as a fresh
+        standalone single-node cluster.
+        """
+        target_version = target_version or self.upgrade_version
+        self._install_version_on_node(node, target_version)
 
         # Verify REST API is accessible
         self.log.debug(
@@ -1192,9 +1343,303 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
 
         # Step 5: Initialize cluster after upgrade
         self.log.info("Step 5/5: Initializing cluster after upgrade...")
-        self._initialize_cluster_for_upgrade(node)
+        self._initialize_cluster_for_upgrade(
+            node, target_version=target_version)
 
         self.log.info("Node {} upgraded and initialized successfully to version {}"
+                      .format(node.ip, target_version))
+
+    def _reset_servers_to_pre_upgrade_version(self, servers, pre_upgrade_version):
+        """
+        Reinstall pre_upgrade_version on each of 'servers' (raw
+        TestInputServer objects, not yet part of any TAF cluster object).
+
+        Called from setUp() BEFORE super().setUp() - infra provisioning
+        (ini + test_infra_runner) installs whatever version the ini's
+        per-node 'version:' field says, which for a regression-suite-
+        triggered run is the suite-wide target build, not
+        pre_upgrade_version. Doing the reinstall here, before
+        OnPremBaseTest/ClusterSetup (invoked via super().setUp() right
+        after this returns) ever clusters these nodes, means the base
+        class's own cluster-formation logic (compute storage separation,
+        clusterInit, rebalance-in) runs exactly once, against nodes
+        already on the right starting version - instead of running twice:
+        once for a 3.0-build cluster that's immediately thrown away, then
+        again after a manual uninstall/reinstall/re-cluster dance.
+
+        Each node is left factory-fresh (uninstalled+reinstalled+started,
+        no clusterInit) via _install_version_on_node() - ClusterSetup's
+        normal __initial_rebalance()/initialize_cluster() then clusters
+        them exactly like it would nodes provisioned correctly to begin
+        with.
+        """
+        self.log.info("=" * 60)
+        self.log.info("Resetting {} server(s) to pre_upgrade_version {} "
+                      "before initial cluster formation"
+                      .format(len(servers), pre_upgrade_version))
+        self.log.info("=" * 60)
+
+        for server in servers:
+            self.log.info("Reinstalling {} with pre_upgrade_version {}"
+                          .format(server.ip, pre_upgrade_version))
+            self._install_version_on_node(server, pre_upgrade_version)
+
+        self.log.info(
+            "All {} server(s) reset to pre_upgrade_version {}".format(
+                len(servers), pre_upgrade_version))
+
+    def _get_otp_id_for_node(self, node):
+        """
+        Resolve a TestInputServer to its current OTP node id.
+        Returns None if the node is not currently known to the cluster.
+        """
+        use_hostnames = getattr(self.task, 'use_hostnames', False) if hasattr(
+            self, 'task') else False
+        for otp_node in self.cluster_util.get_otp_nodes(self.cluster.master):
+            if ClusterRun.is_enabled:
+                if int(node.port) == int(otp_node.port):
+                    return otp_node.id
+            elif use_hostnames:
+                if hasattr(node, 'hostname') and node.hostname == otp_node.ip \
+                        and int(node.port) == int(otp_node.port):
+                    return otp_node.id
+            elif node.ip == otp_node.ip and int(node.port) == int(otp_node.port):
+                return otp_node.id
+        return None
+
+    def _failover_node(self, node):
+        """
+        Fail 'node' out of the cluster and wait for it to be fully gone.
+
+        REST sequence mirrors a manually-captured failover (HAR) against
+        this product: perform_graceful_failover() - on this product the
+        node drops out of pools/default as soon as failover completes, no
+        separate recovery/eject step is needed - followed by a plain
+        settle rebalance with the remaining known nodes.
+
+        Parameters:
+            node: TestInputServer object - must be in cluster.nodes_in_cluster
+
+        Returns:
+            bool: True if the node was failed over and the cluster settled
+        """
+        otp_id = self._get_otp_id_for_node(node)
+        if not otp_id:
+            self.log.error(
+                "Could not find OTP id for node to fail over: {}".format(node.ip))
+            return False
+
+        rest = ClusterRestAPI(self.cluster.master)
+        self.log.info("Gracefully failing over node {} ({})"
+                      .format(node.ip, otp_id))
+        status, content = rest.perform_graceful_failover([otp_id])
+        if not status:
+            self.log.error(
+                "Failover of {} failed: {}".format(node.ip, content))
+            return False
+
+        # Failover runs as a short rebalance-style task internally - wait
+        # for it the same way _rebalance_cluster_manually waits for an
+        # ordinary rebalance.
+        try:
+            failover_completed = self.cluster_util.rebalance_reached(
+                self.cluster,
+                percentage=100,
+                wait_step=5,
+                num_retry=240,
+                validate_bucket_ranking=False)
+        except RebalanceFailedException as e:
+            self.log.error(
+                "Failover of {} did not complete: {}".format(node.ip, str(e)))
+            self._collect_cbcollect_logs_on_failure()
+            raise
+
+        if not failover_completed:
+            self.log.error(
+                "Failover of node {} did not complete successfully".format(node.ip))
+            self._collect_cbcollect_logs_on_failure()
+            return False
+
+        self.log.info("Node {} failed over successfully".format(node.ip))
+        self.cluster_util.update_cluster_nodes_service_list(
+            self.cluster, inactive_added=True, inactive_failed=True)
+
+        if node in self.cluster.nodes_in_cluster:
+            self.cluster.nodes_in_cluster.remove(node)
+
+        # Settle rebalance, matching the captured flow (plain rebalance
+        # over the remaining known nodes, no eject/recovery needed).
+        if not self._rebalance_cluster_manually(eject_nodes=None):
+            self.log.error(
+                "Settle rebalance failed after failing over {}".format(node.ip))
+            return False
+
+        return True
+
+    def _set_auto_failover(self, settings=None):
+        """
+        Disable (settings=None) or restore (settings=<dict returned by an
+        earlier call>) auto-failover on the cluster, and verify the change
+        took effect.
+
+        Returns:
+            dict: the auto-failover settings that were in effect before this
+            call, to be passed back in later to restore them.
+        """
+        rest = ClusterRestAPI(self.cluster.master)
+        status, previous = rest.get_auto_failover_settings()
+        self.assertTrue(
+            status, "Failed to read auto-failover settings: {}".format(previous))
+
+        if settings is None:
+            enabled = False
+            timeout = previous.get("timeout", 120)
+            max_count = None
+        else:
+            enabled = settings.get("enabled", True)
+            timeout = settings.get("timeout", 120)
+            max_count = settings.get("maxCount")
+
+        self.log.info("Setting auto-failover enabled={} (timeout={})"
+                      .format(enabled, timeout))
+        status, content = rest.update_auto_failover_settings(
+            enabled="true" if enabled else "false",
+            timeout=timeout,
+            max_count=max_count)
+        self.assertTrue(
+            status, "Failed to update auto-failover settings: {}".format(content))
+
+        status, updated = rest.get_auto_failover_settings()
+        self.assertTrue(
+            status and updated.get("enabled") == enabled,
+            "Auto-failover enabled expected to be {}, got: {}"
+            .format(enabled, updated))
+        return previous
+
+    def _verify_cluster_nodes_active_healthy(self, timeout=300):
+        """
+        Wait until every node in cluster.nodes_in_cluster is reported by
+        /pools/default as clusterMembership=active and status=healthy, and
+        the cluster reports balanced=true. Fails the test on timeout.
+        """
+        rest = ClusterRestAPI(self.cluster.master)
+        expected_nodes = len(self.cluster.nodes_in_cluster)
+        end_time = time.time() + timeout
+        summary = None
+        while True:
+            status, details = rest.cluster_details()
+            if status:
+                nodes = details.get("nodes", [])
+                summary = [(n.get("hostname"), n.get("clusterMembership"),
+                            n.get("status")) for n in nodes]
+                all_active_healthy = len(nodes) == expected_nodes and all(
+                    n.get("clusterMembership") == "active"
+                    and n.get("status") == "healthy" for n in nodes)
+                if all_active_healthy and details.get("balanced", False):
+                    self.log.info(
+                        "All {} nodes are active and healthy, cluster is "
+                        "balanced: {}".format(expected_nodes, summary))
+                    return
+            if time.time() >= end_time:
+                break
+            self.sleep(5, "Wait for all nodes to be active and healthy")
+        self.fail("Cluster did not become active/healthy/balanced within {}s "
+                  "(expected {} nodes), last seen (host, membership, status): "
+                  "{}".format(timeout, expected_nodes, summary))
+
+    def _offline_upgrade_node(self, node):
+        """
+        Upgrade 'node' in place, keeping its cluster identity and data:
+        back up its state (config, excluding data/logs), remove the old
+        package, install the new build without starting it, restore the
+        state, and start the service. The node then rejoins the cluster by
+        itself - no failover/rebalance/add-node is involved.
+        """
+        _, node_info = ClusterRestAPI(node).node_details()
+        current_version = node_info.get("version") or self.pre_upgrade_version
+        node_uuid = node_info.get("nodeUUID")
+        data_path = node_info["storage"]["hdd"][0]["path"]
+        old_product_info = self._get_product_info(current_version)
+        new_product_info = self._get_product_info(self.upgrade_version)
+
+        old_var_dir = old_product_info["install_dir"] + "/var"
+        state_dir = old_var_dir + "/lib/couchbase"
+        backup_dir = "/var/tmp/ea-state-backup"
+
+        shell = RemoteMachineShellConnection(node)
+
+        def run(cmd, description):
+            output, error = shell.execute_command(
+                cmd + " && echo __ok__ || echo __fail__")
+            self.log.debug("{} - output: {}, error: {}"
+                           .format(description, output, error))
+            if not output or output[-1].strip() != "__ok__":
+                self.fail("{} failed on node {}: {}"
+                          .format(description, node.ip, output))
+
+        try:
+            self.log.info("Step 1/5: Downloading build {} on {}"
+                          .format(self.upgrade_version, node.ip))
+            build_url, package_name = self._get_build_url(self.upgrade_version)
+            package_path = self._download_build(shell, build_url, package_name)
+
+            self.log.info("Step 2/5: Backing up node state to {}"
+                          .format(backup_dir))
+            run("rm -rf {b} && mkdir -p {b} && tar -C {s} -cf - --exclude=./data "
+                "--exclude=./logs . | tar -C {b} -xf - && "
+                "test -f {b}/config/config.dat"
+                .format(b=backup_dir, s=state_dir), "Backup node state")
+
+            self.log.info("Step 3/5: Removing old package {}"
+                          .format(old_product_info["package_prefix"]))
+            shell.execute_command("systemctl stop {}.service || true"
+                                  .format(old_product_info["service_name"]))
+            run("DEBIAN_FRONTEND=noninteractive apt-get remove -y {} "
+                "> /dev/null 2>&1".format(old_product_info["package_prefix"]),
+                "Remove old package")
+
+            self.log.info("Step 4/5: Installing {} without starting it"
+                          .format(self.upgrade_version))
+            self._install_enterprise_analytics(
+                shell, package_path, new_product_info, start_server=False)
+
+            self.log.info(
+                "Step 5/5: Restoring node state and starting service")
+            run("mkdir -p {s} && tar -C {b} -cf - . | tar -C {s} -xf - && "
+                "chown -R couchbase:couchbase {v}"
+                .format(b=backup_dir, s=state_dir, v=old_var_dir),
+                "Restore node state")
+            if new_product_info["install_dir"] != old_product_info["install_dir"]:
+                run("rm -rf {n}/var && ln -s {v} {n}/var"
+                    .format(n=new_product_info["install_dir"], v=old_var_dir),
+                    "Link new install var dir to the restored state")
+            self._start_enterprise_analytics(shell, new_product_info)
+            if not self._is_service_running(
+                    shell, new_product_info, max_wait=60):
+                self.fail("Node {} service not running after upgrade"
+                          .format(node.ip))
+            run("test -d {}".format(data_path),
+                "Verify data dir {} is still present".format(data_path))
+        finally:
+            shell.disconnect()
+
+        self.assertTrue(
+            self.cluster_util.is_ns_server_running(node, 120),
+            "Node {} REST API not accessible after upgrade".format(node.ip))
+        _, new_node_info = ClusterRestAPI(node).node_details()
+        self.assertEqual(
+            new_node_info.get("nodeUUID"), node_uuid,
+            "nodeUUID of {} changed across upgrade".format(node.ip))
+        new_version = new_node_info.get("version", "")
+        self.assertIn(
+            self.upgrade_version, new_version,
+            "Node {} reports version {}, expected {}"
+            .format(node.ip, new_version, self.upgrade_version))
+        new_data_path = new_node_info["storage"]["hdd"][0]["path"]
+        self.assertEqual(
+            new_data_path, data_path,
+            "Data path of {} changed across upgrade".format(node.ip))
+        self.log.info("Node {} upgraded in place to {}"
                       .format(node.ip, self.upgrade_version))
 
     def test_swap_rebalance_upgrade(self):
@@ -1236,12 +1681,13 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
 
         # Run COPY INTO to insert data (~10k docs) before upgrade
         self._copy_into_analyze_collection(
-            path="level_1_folder_1/level_2_folder_1/level_3_folder_1")
+            path=self.copy_into_path_pre_upgrade)
 
         # Run ANALYZE COLLECTION before upgrade
-        self._run_analyze_collection(sample_size="high", sample_seed=1000)
+        self._run_analyze_collection(sample_size=self.analyze_sample_size,
+                                     sample_seed=self.analyze_sample_seed)
         self._verify_sample_metadata_index(
-            sample_size="high", sample_seed=1000)
+            sample_size=self.analyze_sample_size, sample_seed=self.analyze_sample_seed)
 
         nodes_to_upgrade = list(self.cluster.nodes_in_cluster)
         spare_node = self.spare_node
@@ -1251,6 +1697,8 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             self.log.info("Iteration {}".format(iteration))
             self.log.info("=" * 60)
             self.log.info("Nodes in cluster: {}".format(
+                [n.ip for n in self.cluster.nodes_in_cluster]))
+            self.log.info("Remaining nodes in cluster to be upgraded: {}".format(
                 [n.ip for n in nodes_to_upgrade]))
             self.log.info("Current master node: {}:{}".format(
                 self.cluster.master.ip, self.cluster.master.port))
@@ -1293,6 +1741,8 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             iteration += 1
 
         # Verify final state
+        self.sleep(
+            30, "Wait after final swap rebalance to allow cluster to settle")
         self.log.info("=" * 60)
         self.log.info("Final cluster state")
         self.log.info("=" * 60)
@@ -1321,25 +1771,28 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
 
         # Verify pre-upgrade SAMPLE statistics survived the upgrade
         self._verify_sample_metadata_index(
-            sample_size="high", sample_seed=1000)
+            sample_size=self.analyze_sample_size, sample_seed=self.analyze_sample_seed)
 
         # Trigger FLUSH
-        maxRetry = 3
+        maxRetry = self.post_upgrade_retry_count
         retry = 0
         while (retry < maxRetry):
             try:
-                # Run COPY INTO to upsert data (~10k docs) post-upgrade,
-                # before re-running ANALYZE COLLECTION, so the re-analyze
-                # has fresh data
+                # Run COPY INTO to upsert data post-upgrade, before
+                # re-running ANALYZE COLLECTION, so the re-analyze has
+                # fresh data
                 self.log.info(
                     "Running COPY INTO to upsert data post-upgrade (retry {}/{})".format(retry + 1, maxRetry))
-                self._copy_into_analyze_collection(path="level_1_folder_1")
+                self._copy_into_analyze_collection(
+                    path=self.copy_into_path_post_upgrade)
 
                 # Re-run ANALYZE COLLECTION post-upgrade with
                 # sample-method=random and verify it took effect
-                self._run_analyze_collection(sample_size="high", sample_seed=1000,
+                self._run_analyze_collection(sample_size=self.analyze_sample_size,
+                                             sample_seed=self.analyze_sample_seed,
                                              sample_method="random")
-                self._verify_sample_metadata_index(sample_size="high", sample_seed=1000,
+                self._verify_sample_metadata_index(sample_size=self.analyze_sample_size,
+                                                   sample_seed=self.analyze_sample_seed,
                                                    sample_method="random")
                 break
             except Exception as e:
@@ -1355,6 +1808,372 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
 
         self.log.info("=" * 60)
         self.log.info("Swap rebalance upgrade test completed successfully")
+        final_nodes = [n.ip for n in self.cluster.nodes_in_cluster]
+        self.log.info("Final cluster nodes: {}"
+                      .format(", ".join(final_nodes)))
+        self.log.info("=" * 60)
+
+    def test_failover_upgrade(self):
+        """
+        Test failover upgrade from 2.0.0-1069 to 2.1.0:
+        Setup: 3-node cluster, no spare node required
+        Iteration pattern (per node, non-master first, master last):
+        1. Pick non-master node on older version (master rerouted to an
+           already-upgraded node first, if it's the last one left)
+        2. Gracefully failover the node and settle-rebalance the
+           cluster down to the remaining nodes
+        3. Upgrade the failed-over node in place (same as the spare node
+           path in test_swap_rebalance_upgrade)
+        4. Add the upgraded node back in; rebalance; update cluster.master
+        5. Repeat for next node in cluster
+        """
+        self.log.info("Starting failover upgrade test")
+
+        # Verify initial setup: nodes_init nodes in cluster, no spare needed
+        self.assertEqual(
+            len(self.cluster.nodes_in_cluster), self.nodes_init,
+            "Expected {} nodes in cluster, found {}"
+            .format(self.nodes_init, len(self.cluster.nodes_in_cluster)))
+
+        # Initial cluster state
+        self.log.info("=" * 60)
+        self.log.info("Initial cluster state")
+        self.log.info("=" * 60)
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        # Validate prodCompatVersion before upgrade
+        pre_upgrade_version_base = self.pre_upgrade_version.split("-")[0]
+        self._validate_prod_compat_version(
+            pre_upgrade_version_base, label="Pre-upgrade")
+
+        # Create infra
+        self._create_ea_upgrade_infra()
+
+        # Run COPY INTO to insert data before upgrade
+        self._copy_into_analyze_collection(
+            path=self.copy_into_path_pre_upgrade)
+
+        # Run ANALYZE COLLECTION before upgrade
+        self._run_analyze_collection(sample_size=self.analyze_sample_size,
+                                     sample_seed=self.analyze_sample_seed)
+        self._verify_sample_metadata_index(
+            sample_size=self.analyze_sample_size, sample_seed=self.analyze_sample_seed)
+
+        nodes_to_upgrade = list(self.cluster.nodes_in_cluster)
+        iteration = 1
+        while nodes_to_upgrade:
+            self.log.info("=" * 60)
+            self.log.info("Iteration {}".format(iteration))
+            self.log.info("=" * 60)
+            self.log.info("Nodes in cluster: {}".format(
+                [n.ip for n in self.cluster.nodes_in_cluster]))
+            self.log.info("Remaining nodes in cluster to be upgraded: {}".format(
+                [n.ip for n in nodes_to_upgrade]))
+            self.log.info("Current master node: {}:{}".format(
+                self.cluster.master.ip, self.cluster.master.port))
+
+            # Step 1: Pick a node to upgrade (non-master node on older version)
+            current_node_to_upgrade = self._get_non_master_node_with_older_version(
+                nodes_to_upgrade)
+            if not current_node_to_upgrade and not nodes_to_upgrade:
+                self.log.info("=" * 60)
+                self.log.info(
+                    "No non-master nodes on older version found and nodes_to_upgrade is empty. Upgrade completed!")
+                self.log.info("=" * 60)
+                break
+
+            # If the only node left to upgrade is the current master, move
+            # cluster.master off it first so it can be failed over safely
+            # and so subsequent REST calls keep working.
+            if current_node_to_upgrade.ip == self.cluster.master.ip:
+                reroute_target = None
+                for node in self.cluster.nodes_in_cluster:
+                    if node.ip != self.cluster.master.ip:
+                        reroute_target = node
+                        break
+                if reroute_target:
+                    self.log.info(
+                        "Rerouting cluster.master to {} before failing over "
+                        "the current master {}".format(
+                            reroute_target.ip, current_node_to_upgrade.ip))
+                    self._update_master_node(reroute_target)
+
+            self.log.info("Selected node to upgrade: {} (was master: {})"
+                          .format(current_node_to_upgrade.ip,
+                                  current_node_to_upgrade.ip == self.cluster.master.ip))
+
+            # Step 2: Failover the node and settle the cluster
+            if not self._failover_node(current_node_to_upgrade):
+                self.fail("Failed to failover node {}"
+                          .format(current_node_to_upgrade.ip))
+
+            # Step 3: Upgrade the failed-over node in place
+            self.log.info("Upgrading failed-over node {} to version {}"
+                          .format(current_node_to_upgrade.ip, self.upgrade_version))
+            self._upgrade_and_prepare_node(current_node_to_upgrade)
+
+            # Step 4: Add the upgraded node back in and update master
+            if not self._add_node_to_cluster(current_node_to_upgrade):
+                self.fail("Failed to add node {} back to cluster"
+                          .format(current_node_to_upgrade.ip))
+            if not self._update_master_node(current_node_to_upgrade):
+                self.log.warn(
+                    "Master update may have failed, but continuing...")
+
+            # Step 5: Remove upgraded node from nodes_to_upgrade
+            if current_node_to_upgrade in nodes_to_upgrade:
+                nodes_to_upgrade.remove(current_node_to_upgrade)
+
+            self.log.info("=" * 60)
+            self.log.info("Iteration {} completed. Remaining nodes to upgrade: {}"
+                          .format(iteration, [n.ip for n in nodes_to_upgrade]))
+            self.log.info("=" * 60)
+            iteration += 1
+
+        # Verify final state
+        self.sleep(
+            30, "Wait after final swap rebalance to allow cluster to settle")
+        self.log.info("=" * 60)
+        self.log.info("Final cluster state")
+        self.log.info("=" * 60)
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        # Verify all nodes in cluster are running upgraded version
+        self.log.info("Verifying node versions in final cluster")
+        for node in self.cluster.nodes_in_cluster:
+            _, node_info = ClusterRestAPI(node).node_details()
+            node_version = node_info.get("version", "")
+            if self.upgrade_version in node_version:
+                self.log.info("\u2713 Node {} is on upgraded version {}"
+                              .format(node.ip, node_version))
+            else:
+                self.log.warn("Node {} version {} does not contain {}"
+                              .format(node.ip, node_version, self.upgrade_version))
+
+        # Validate prodCompatVersion after upgrade
+        post_upgrade_version = self.upgrade_version.split("-")[0]
+        prod_compat_valid = self._validate_prod_compat_version(
+            post_upgrade_version, label="Post-upgrade")
+        self.assertTrue(
+            prod_compat_valid,
+            "prodCompatVersion validation failed: one or more nodes are not "
+            "reporting prodCompatVersion={}".format(post_upgrade_version))
+
+        # Verify pre-upgrade SAMPLE statistics survived the upgrade
+        self._verify_sample_metadata_index(
+            sample_size=self.analyze_sample_size, sample_seed=self.analyze_sample_seed)
+
+        # Trigger FLUSH
+        maxRetry = self.post_upgrade_retry_count
+        retry = 0
+        while (retry < maxRetry):
+            try:
+                # Run COPY INTO to upsert data post-upgrade, before
+                # re-running ANALYZE COLLECTION, so the re-analyze has
+                # fresh data
+                self.log.info(
+                    "Running COPY INTO to upsert data post-upgrade (retry {}/{})".format(retry + 1, maxRetry))
+                self._copy_into_analyze_collection(
+                    path=self.copy_into_path_post_upgrade)
+
+                # Re-run ANALYZE COLLECTION post-upgrade with
+                # sample-method=random and verify it took effect
+                self._run_analyze_collection(sample_size=self.analyze_sample_size,
+                                             sample_seed=self.analyze_sample_seed,
+                                             sample_method="random")
+                self._verify_sample_metadata_index(sample_size=self.analyze_sample_size,
+                                                   sample_seed=self.analyze_sample_seed,
+                                                   sample_method="random")
+                break
+            except Exception as e:
+                retry += 1
+                if retry >= maxRetry:
+                    self.fail(
+                        "COPY INTO/ANALYZE COLLECTION/verify failed after "
+                        "{} attempts: {}".format(maxRetry, e))
+                self.log.warn(
+                    "COPY INTO/ANALYZE COLLECTION/verify failed on "
+                    "attempt {}/{}: {} - retrying".format(
+                        retry, maxRetry, e))
+
+        self.log.info("=" * 60)
+        self.log.info("Failover upgrade test completed successfully")
+        final_nodes = [n.ip for n in self.cluster.nodes_in_cluster]
+        self.log.info("Final cluster nodes: {}"
+                      .format(", ".join(final_nodes)))
+        self.log.info("=" * 60)
+
+    def test_offline_upgrade(self):
+        """
+        Test offline upgrade from 2.0.0-1069 to 2.1.0:
+        Setup: 3-node cluster, no spare node required
+        Auto-failover is disabled for the whole upgrade and restored at the end.
+        Iteration pattern (per node, non-master first, master last):
+        1. Pick a node on the older version (cluster.master rerouted to
+           another node first, if it's the node picked)
+        2. Upgrade the node in place: stop, remove old package, install
+           new build without starting it, restore its saved state, start
+        3. The node rejoins the cluster by itself; verify all nodes are
+           active + healthy and the cluster is balanced (no failover,
+           no rebalance, no add-node)
+        4. Repeat for next node in cluster
+        """
+        self.log.info("Starting offline upgrade test")
+
+        # Verify initial setup: nodes_init nodes in cluster, no spare needed
+        self.assertEqual(
+            len(self.cluster.nodes_in_cluster), self.nodes_init,
+            "Expected {} nodes in cluster, found {}"
+            .format(self.nodes_init, len(self.cluster.nodes_in_cluster)))
+
+        # Initial cluster state
+        self.log.info("=" * 60)
+        self.log.info("Initial cluster state")
+        self.log.info("=" * 60)
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        # Validate prodCompatVersion before upgrade
+        pre_upgrade_version_base = self.pre_upgrade_version.split("-")[0]
+        self._validate_prod_compat_version(
+            pre_upgrade_version_base, label="Pre-upgrade")
+
+        # Create infra
+        self._create_ea_upgrade_infra()
+
+        # Run COPY INTO to insert data before upgrade
+        self._copy_into_analyze_collection(
+            path=self.copy_into_path_pre_upgrade)
+
+        # Run ANALYZE COLLECTION before upgrade
+        self._run_analyze_collection(sample_size=self.analyze_sample_size,
+                                     sample_seed=self.analyze_sample_seed)
+        self._verify_sample_metadata_index(
+            sample_size=self.analyze_sample_size, sample_seed=self.analyze_sample_seed)
+
+        # Auto-failover stays disabled until every node is upgraded
+        saved_auto_failover = self._set_auto_failover()
+        try:
+            nodes_to_upgrade = list(self.cluster.nodes_in_cluster)
+            iteration = 1
+            while nodes_to_upgrade:
+                self.log.info("=" * 60)
+                self.log.info("Iteration {}".format(iteration))
+                self.log.info("=" * 60)
+                self.log.info("Nodes in cluster: {}".format(
+                    [n.ip for n in self.cluster.nodes_in_cluster]))
+                self.log.info("Remaining nodes in cluster to be upgraded: {}".format(
+                    [n.ip for n in nodes_to_upgrade]))
+                self.log.info("Current master node: {}:{}".format(
+                    self.cluster.master.ip, self.cluster.master.port))
+
+                # Step 1: Pick a node to upgrade (non-master node on older version)
+                current_node_to_upgrade = self._get_non_master_node_with_older_version(
+                    nodes_to_upgrade)
+
+                # If the node being upgraded is the current master, move
+                # cluster.master off it first so REST calls keep working
+                # while it is down.
+                if current_node_to_upgrade.ip == self.cluster.master.ip:
+                    reroute_target = None
+                    for node in self.cluster.nodes_in_cluster:
+                        if node.ip != self.cluster.master.ip:
+                            reroute_target = node
+                            break
+                    if reroute_target:
+                        self.log.info(
+                            "Rerouting cluster.master to {} before upgrading "
+                            "the current master {}".format(
+                                reroute_target.ip, current_node_to_upgrade.ip))
+                        self._update_master_node(reroute_target)
+
+                self.log.info("Selected node to upgrade: {}"
+                              .format(current_node_to_upgrade.ip))
+
+                # Step 2: Upgrade the node in place
+                self._offline_upgrade_node(current_node_to_upgrade)
+
+                # Step 3: Node rejoins by itself - verify active + healthy
+                self._verify_cluster_nodes_active_healthy()
+
+                # Step 4: Remove upgraded node from nodes_to_upgrade
+                if current_node_to_upgrade in nodes_to_upgrade:
+                    nodes_to_upgrade.remove(current_node_to_upgrade)
+
+                self.log.info("=" * 60)
+                self.log.info("Iteration {} completed. Remaining nodes to upgrade: {}"
+                              .format(iteration, [n.ip for n in nodes_to_upgrade]))
+                self.log.info("=" * 60)
+                iteration += 1
+        finally:
+            self._set_auto_failover(saved_auto_failover)
+
+        # Verify final state
+        self.sleep(30, "Wait after final node upgrade to allow cluster to settle")
+        self.log.info("=" * 60)
+        self.log.info("Final cluster state")
+        self.log.info("=" * 60)
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        # Verify all nodes in cluster are running upgraded version
+        self.log.info("Verifying node versions in final cluster")
+        for node in self.cluster.nodes_in_cluster:
+            _, node_info = ClusterRestAPI(node).node_details()
+            node_version = node_info.get("version", "")
+            if self.upgrade_version in node_version:
+                self.log.info("✓ Node {} is on upgraded version {}"
+                              .format(node.ip, node_version))
+            else:
+                self.log.warn("Node {} version {} does not contain {}"
+                              .format(node.ip, node_version, self.upgrade_version))
+
+        # Validate prodCompatVersion after upgrade
+        post_upgrade_version = self.upgrade_version.split("-")[0]
+        prod_compat_valid = self._validate_prod_compat_version(
+            post_upgrade_version, label="Post-upgrade")
+        self.assertTrue(
+            prod_compat_valid,
+            "prodCompatVersion validation failed: one or more nodes are not "
+            "reporting prodCompatVersion={}".format(post_upgrade_version))
+
+        # Verify pre-upgrade SAMPLE statistics survived the upgrade
+        self._verify_sample_metadata_index(
+            sample_size=self.analyze_sample_size, sample_seed=self.analyze_sample_seed)
+
+        # Trigger FLUSH
+        maxRetry = self.post_upgrade_retry_count
+        retry = 0
+        while (retry < maxRetry):
+            try:
+                # Run COPY INTO to upsert data post-upgrade, before
+                # re-running ANALYZE COLLECTION, so the re-analyze has
+                # fresh data
+                self.log.info(
+                    "Running COPY INTO to upsert data post-upgrade (retry {}/{})".format(retry + 1, maxRetry))
+                self._copy_into_analyze_collection(
+                    path=self.copy_into_path_post_upgrade)
+
+                # Re-run ANALYZE COLLECTION post-upgrade with
+                # sample-method=random and verify it took effect
+                self._run_analyze_collection(sample_size=self.analyze_sample_size,
+                                             sample_seed=self.analyze_sample_seed,
+                                             sample_method="random")
+                self._verify_sample_metadata_index(sample_size=self.analyze_sample_size,
+                                                   sample_seed=self.analyze_sample_seed,
+                                                   sample_method="random")
+                break
+            except Exception as e:
+                retry += 1
+                if retry >= maxRetry:
+                    self.fail(
+                        "COPY INTO/ANALYZE COLLECTION/verify failed after "
+                        "{} attempts: {}".format(maxRetry, e))
+                self.log.warn(
+                    "COPY INTO/ANALYZE COLLECTION/verify failed on "
+                    "attempt {}/{}: {} - retrying".format(
+                        retry, maxRetry, e))
+
+        self.log.info("=" * 60)
+        self.log.info("Offline upgrade test completed successfully")
         final_nodes = [n.ip for n in self.cluster.nodes_in_cluster]
         self.log.info("Final cluster nodes: {}"
                       .format(", ".join(final_nodes)))

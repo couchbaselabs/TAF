@@ -20,6 +20,8 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_constants.ClusterRun import ClusterRun
 from cb_constants.CBServer import CbServer
 from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
+from cb_server_rest_util.analytics.analytics_settings import \
+    OPERATIONAL_INSIGHTS_SETTINGS_PATH
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from constants.platform_constants import os_constants
@@ -843,7 +845,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 server=cluster.master, aws_access_key=self.columnar_aws_access_key,
                 aws_secret_key=self.columnar_aws_secret_key,
                 aws_bucket_name=self.columnar_aws_bucket_name,
-                aws_bucket_region=self.columnar_aws_region)
+                aws_bucket_region=self.columnar_aws_region,
+                path=getattr(self, "analytics_settings_path",
+                             OPERATIONAL_INSIGHTS_SETTINGS_PATH))
             if not status:
                 self.fail("Failed to put aws credentials to analytics, "
                           "request error")
@@ -1826,7 +1830,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
     def configure_compute_storage_separation_for_analytics(
             self, server, aws_access_key, aws_secret_key, aws_bucket_name,
-            aws_bucket_region):
+            aws_bucket_region, path=OPERATIONAL_INSIGHTS_SETTINGS_PATH):
         """
         Method to add aws bucket to analytics for compute storage separation.
         Configures /home/couchbase/.aws/credentials on the host (per Couchbase
@@ -1837,6 +1841,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         :param aws_bucket_name:
         :param aws_bucket_region:
         :param aws_session_token: optional; for temporary credentials (e.g. STS).
+        :param path: analytics settings REST path
         :return:
         """
         rest = AnalyticsRestAPI(server)
@@ -1873,7 +1878,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.input.param("eventually_consistentcy", False),
             blob_storage_force_path_style=\
                 self.input.param("force_path_style", False),
-            blob_storage_checksum_behavior=self.blob_storage_checksum_behavior)
+            blob_storage_checksum_behavior=self.blob_storage_checksum_behavior,
+            path=path)
         if not status:
             self.log.error(f"Failed to set aws bucket config to analytics: {status} {str(content)}")
             return False

@@ -3,6 +3,9 @@ https://docs.couchbase.com/server/current/analytics/rest-settings.html
 """
 from cb_server_rest_util.connection import CBRestConnection
 
+OPERATIONAL_INSIGHTS_SETTINGS_PATH = "/settings/operationalInsights"
+LEGACY_ANALYTICS_SETTINGS_PATH = "/settings/analytics"
+
 
 class AnalyticsSettingsAPI(CBRestConnection):
     def __init__(self):
@@ -42,12 +45,12 @@ class AnalyticsSettingsAPI(CBRestConnection):
             setting_name="blob_storage_secret_access_key",
             setting_value=secret_access_key)
 
-    def get_analytics_settings(self):
+    def get_analytics_settings(self, path=OPERATIONAL_INSIGHTS_SETTINGS_PATH):
         """
         GET /settings/operationalInsights
         https://docs.couchbase.com/server/current/analytics/rest-settings.html
         """
-        api = self.base_url + "/settings/operationalInsights"
+        api = self.base_url + path
         status, content, _ = self.request(api, self.GET)
         return status, content
 
@@ -57,7 +60,8 @@ class AnalyticsSettingsAPI(CBRestConnection):
             blob_storage_scheme=None, profile=None,
             endpoint_url=None, blob_storage_list_eventually_consistent=False,
             blob_storage_force_path_style=False,
-            blob_storage_checksum_behavior=None):
+            blob_storage_checksum_behavior=None,
+            path=OPERATIONAL_INSIGHTS_SETTINGS_PATH):
         """
         POST /settings/operationalInsights
         https://docs.couchbase.com/server/current/analytics/rest-settings.html
@@ -70,7 +74,7 @@ class AnalyticsSettingsAPI(CBRestConnection):
         the S3 bucket name.
         blob_storage_scheme : For now only "s3" is supported.
         """
-        api = self.base_url + "/settings/operationalInsights"
+        api = self.base_url + path
         params = {}
         if endpoint_url:
             params["blobStorageEndpoint"] = endpoint_url

@@ -125,11 +125,16 @@ class S3LinksDatasets(ColumnarBaseTest):
                  "timeout": 3600, "analytics_timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
+        single_folder = dataset_properties["path_on_external_container"] == "level_1_folder_1"
+        if single_folder:
+            self.doc_count_per_format = self.doc_count_level_1_folder_1
         for result in results:
             if result != self.doc_count_per_format[file_format]:
                 self.fail("Doc count mismatch. Expected - {0}, Actual - {"
                           "1}".format(
                     self.doc_count_per_format[file_format], result))
+        if single_folder:
+            return
 
         # Read docs from a particular folder
         results = []

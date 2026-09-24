@@ -401,7 +401,7 @@ class ClusterUtils:
                 raise Exception("Unable to read /pools/default API")
 
             for node in result["nodes"]:
-                if node["version"].split("-")[-1] not in ("enterprise", CbServer.Services.COLUMNAR, "operational_insights"):
+                if node["version"].split("-")[-1] not in ("enterprise", CbServer.Services.COLUMNAR, "enterprise-analytics", "operational_insights"):
                     return False
             return True
 
