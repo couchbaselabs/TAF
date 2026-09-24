@@ -1320,8 +1320,7 @@ class APIBase(CouchbaseBaseTest):
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_new"] = resp.json()
             else:
-                self.fail("Error while creating API key for organization "
-                          "owner with expiry of 0.001 days")
+                self.fail(resp.json())
             # wait for key to expire
             self.log.debug("Sleeping 10 seconds for key to expire")
             time.sleep(10)
