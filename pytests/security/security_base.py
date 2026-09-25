@@ -88,11 +88,28 @@ class SecurityBase(CouchbaseBaseTest):
         self.create_initial_v4_api_keys()
         self.create_different_organization_roles()
         self.create_api_keys_for_different_roles()
+        # Record (once, on the first TC of the run) whether the project
+        # was explicitly pinned via ini/-p - only a project WE resolve
+        # or create below should ever be torn down, and only after the
+        # last TC, so the whole conf run shares a single project instead
+        # of every TC creating and deleting its own (which is what was
+        # exhausting the prod org's project-creation limit).
+        if self.input.test_params.get("case_number") == 1:
+            self.input.capella["_project_pinned"] = (
+                self.input.capella.get("project_id") is not None)
+
         self.project_id = self.input.capella.get("project_id", None)
         self.instance_id = None
         self.cmek_id = None
         if self.project_id is None:
-            self.create_project(self.prefix + "Project")
+            self.project_id = self.find_project_by_name(
+                self.tenant_id, self.prefix + "Project")
+            if self.project_id:
+                self.log.info("Reusing existing project: {}"
+                              .format(self.project_id))
+            else:
+                self.create_project(self.prefix + "Project")
+            self.input.capella["project_id"] = self.project_id
 
         self.cluster_id = self.input.capella.get("cluster_id", None)
         if self.cluster_id is None:
@@ -116,7 +133,12 @@ class SecurityBase(CouchbaseBaseTest):
         if self.input.capella.get("instance_id") is None:
             self.delete_columnar_cluster()
 
-        if self.input.capella.get("project_id") is None:
+        # The project is now shared across the whole conf run (see
+        # setUp) - only delete it if it wasn't pinned via ini/-p, and
+        # only after the last TC, instead of every TC tearing it down.
+        if (not self.input.capella.get("_project_pinned", False) and
+                self.input.test_params.get("case_number") ==
+                self.input.test_params.get("no_of_test_identified")):
             self.delete_project()
 
         self.delete_api_keys_for_different_roles()
@@ -153,6 +175,32 @@ class SecurityBase(CouchbaseBaseTest):
             self.log.critical(resp.content)
             raise Exception("Adding allowed IP failed.")
         self.log.info("IP added successfully")
+
+    def find_project_by_name(self, org_id, name):
+        """
+        Returns the ID of the first project matching `name` in the given
+        organization, or None if no such project exists. Paginates
+        through list_projects since a match could be on any page.
+        """
+        page = 1
+        while True:
+            resp = self.capellaAPI.org_ops_apis.list_projects(
+                org_id, page=page, perPage=100)
+            if resp.status_code == 429:
+                time.sleep(int(resp.headers.get("Retry-After", 5)))
+                resp = self.capellaAPI.org_ops_apis.list_projects(
+                    org_id, page=page, perPage=100)
+            if resp.status_code != 200:
+                self.log.error("Error while listing projects: {}"
+                              .format(resp.content))
+                return None
+            body = resp.json()
+            for project in body.get("data", []):
+                if project.get("name") == name:
+                    return project.get("id")
+            if not body.get("cursor", {}).get("pages", {}).get("next"):
+                return None
+            page += 1
 
     def create_project(self, project_name):
         self.log.info("Creating Project for Security test")
