@@ -27,12 +27,15 @@ class APIBase(CouchbaseBaseTest):
 
     @staticmethod
     def normalize_server_version(raw_version):
-        raw_version = str(raw_version)
-        if raw_version == "7.6.12-0000":
-            return "7.6"
-        if raw_version == "8.0.3-0000":
-            return "8.0"
-        return "8.5"
+        # "8.0.3-0000" -> "8.0", "7.6.12-0000" -> "7.6", "8.5" -> "8.5"
+        parts = str(raw_version).split("-")[0].split(".")
+        return ".".join(parts[:2])
+
+    def _get_server_version(self):
+        # -p param wins; otherwise use the [capella] section from the ini
+        return self.input.param(
+            "server_version",
+            self.input.capella.get("server_version", "7.6"))
 
     def setUp(self, nomenclature="WRAPPER", services=[]):
         CouchbaseBaseTest.setUp(self)
@@ -186,8 +189,7 @@ class APIBase(CouchbaseBaseTest):
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
-                    "version": self.normalize_server_version(
-                        self.input.param("server_version", 7.6))
+                    "version": self.normalize_server_version(self._get_server_version()),
                 },
                 "serviceGroups": [
                     {
@@ -225,8 +227,7 @@ class APIBase(CouchbaseBaseTest):
                         "cidr": "10.1.0.0/20"
                     },
                     "couchbaseServer": {
-                        "version": self.normalize_server_version(
-                        self.input.param("server_version", 7.6))
+                        "version": self.normalize_server_version(self._get_server_version()),
                     },
                     "serviceGroups": [
                         {
@@ -265,8 +266,7 @@ class APIBase(CouchbaseBaseTest):
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
-                    "version": self.normalize_server_version(
-                        self.input.param("server_version", 7.6))
+                    "version": self.normalize_server_version(self._get_server_version()),
                 },
                 "serviceGroups": [
                     {
@@ -304,8 +304,7 @@ class APIBase(CouchbaseBaseTest):
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
-                    "version": self.normalize_server_version(
-                        self.input.param("server_version", 7.6))
+                    "version": self.normalize_server_version(self._get_server_version()),
                 },
                 "serviceGroups": [
                     {
@@ -342,8 +341,7 @@ class APIBase(CouchbaseBaseTest):
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
-                    "version": self.normalize_server_version(
-                        self.input.param("server_version", 7.6))
+                    "version": self.normalize_server_version(self._get_server_version()),
                 },
                 "serviceGroups": [
                     {
@@ -380,8 +378,7 @@ class APIBase(CouchbaseBaseTest):
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
-                    "version": self.normalize_server_version(
-                        self.input.param("server_version", 7.6))
+                    "version": self.normalize_server_version(self._get_server_version()),
                 },
                 "serviceGroups": [
                     {
@@ -418,8 +415,7 @@ class APIBase(CouchbaseBaseTest):
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
-                    "version": self.normalize_server_version(
-                        self.input.param("server_version", 7.6))
+                    "version": self.normalize_server_version(self._get_server_version()),
                 },
                 "serviceGroups": [
                     {
