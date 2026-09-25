@@ -149,7 +149,7 @@ git submodule init
 git submodule update --init --force --remote
 
 echo ${py_executable}  scripts/populateIni.py -s ${servers} -d ${addPoolServerId} -a ${addPoolServers} -i ${iniFile} -p ${os} -o /tmp/testexec.$$.ini --keyValue "$cluster_info"
-${py_executable}  scripts/populateIni.py -s ${servers} -d ${addPoolServerId} -a ${addPoolServers} -i ${iniFile} -p ${os} -o /tmp/testexec.$$.ini --keyValue "$cluster_info"
+${py_executable}  scripts/populateIni.py -s ${servers} -d ${addPoolServerId} -a ${addPoolServers} -i ${WORKSPACE}/${iniFile} -p ${os} -o /tmp/testexec.$$.ini --keyValue "$cluster_info"
 
 # Get back to TAF directory
 cd ../../
