@@ -1839,6 +1839,31 @@ class Dataset_Util(Link_Util):
         self.run_jobs_in_parallel(jobs, results, 15, async_run=False)
         return all(results)
 
+    def wait_for_ingestion_by_names(self, cluster, dataset_names, num_items,
+                                    timeout=600, thread_count=15):
+        """
+        Waits, in parallel, for each of the given dataset names to finish
+        ingesting num_items documents.
+
+        Unlike wait_for_ingestion_all_datasets, this does not depend on
+        datasets having been registered as Dataset objects under
+        self.dataverses - create_dataset()/"create analytics collection"
+        does not register them there, so list_all_dataset_objs() (and
+        therefore wait_for_ingestion_all_datasets) silently sees zero
+        datasets and returns immediately for datasets created that way.
+        This variant takes the dataset names directly from the caller
+        instead, so it works regardless of how the datasets were created.
+        """
+        jobs = Queue()
+        results = []
+        for dataset_name in dataset_names:
+            jobs.put((
+                self.wait_for_ingestion_complete,
+                {"cluster": cluster, "dataset_name": dataset_name,
+                 "num_items": num_items, "timeout": timeout}))
+        self.run_jobs_in_parallel(jobs, results, thread_count, async_run=False)
+        return all(results)
+
     def validate_cbas_dataset_items_count(
             self, cluster, dataset_name, expected_count, expected_mutated_count=0,
             num_tries=12, timeout=300, analytics_timeout=300):
