@@ -97,6 +97,9 @@ if [ "$server_type" = "PROVISIONED_ONCLOUD" ]; then
   #commented below 2 lines by Shaazin
   #echo ${py_executable} signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region
   #cluster_info=`${py_executable} signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region`
+  if [ -n "$version_number" ]; then
+    cluster_info=`echo $cluster_info | sed s/}/,\ \"server_version\":\ \"$version_number\"}/`
+  fi
   if [ -n "$capella_dataplane_id" ]; then
     cluster_info="${cluster_info%\}}, \"dataplane_id\": \"$capella_dataplane_id\"}"
   fi
