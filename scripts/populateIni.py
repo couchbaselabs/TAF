@@ -165,19 +165,32 @@ def main():
         for d in data:
             print(d.strip())
 
-def update_config(config_in_file, json_object, config_out_file):
+def update_config(config_in_file, json_object, config_out_file,
+                  default_section="capella"):
     config = configparser.RawConfigParser(delimiters=(':', ':'))
     config.read(config_in_file)
     key_values = json.loads(json_object)
+
+    found_keys = set()
     for section in config.sections():
-        for key in key_values.keys():
-            try:
-                old_value = config.get(section, key)
-                config.set(section, key, key_values.get(key))
-                #print("Replaced {}==> {}".format(old_value,key_values.get(key)))
-            except Exception as e:
-                #print(e)
-                pass
+        for key, value in key_values.items():
+            if config.has_option(section, key):
+                config.set(section, key, value)
+                found_keys.add(key)
+
+    # Add keys that were passed in but missing from the template
+    missing = [k for k in key_values if k not in found_keys]
+    if missing:
+        if config.has_section(default_section):
+            target = default_section
+        elif config.sections():
+            target = config.sections()[-1]
+        else:
+            config.add_section(default_section)
+            target = default_section
+        for key in missing:
+            print("Adding missing key '{}' to [{}]".format(key, target))
+            config.set(target, key, key_values[key])
 
     try:
         if config_out_file:
