@@ -14,6 +14,8 @@ class GetBucket(GetCluster):
 
         # Initialise bucket params and create a bucket.
         self.bucket_name = self.prefix + nomenclature
+        server_version = self.normalize_server_version(
+            self.input.param("server_version", 7.6))
         self.expected_res = {
             "name": self.bucket_name + self.input.param("storageBackend", "magma"),
             "type": "couchbase",
@@ -28,7 +30,7 @@ class GetBucket(GetCluster):
             "evictionPolicy": "fullEviction",
             "priority": 0,
             "memoryAllocationInMb": 1024,  # Adding missing field
-            "vbuckets": 1024,  # Adding missing field
+            "vbuckets": 1024 if server_version == "7.6" else 128,
             "stats": {
                 "itemCount": None,
                 "opsPerSecond": None,
