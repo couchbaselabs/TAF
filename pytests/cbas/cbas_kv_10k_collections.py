@@ -128,9 +128,8 @@ class CBASKVCollectionScale(CBASBaseTest):
             self.log.info(
                 "Waiting for ingestion to complete across all analytics "
                 "datasets")
-            if not self.cbas_util.wait_for_ingestion_by_names(
-                    self.cluster, analytics_collection_names,
-                    self.num_items, timeout=1800):
+            if not self.cbas_util.wait_for_ingestion_via_status_api(
+                    self.cluster, timeout=1800):
                 self.fail(
                     "Ingestion did not complete for all analytics datasets "
                     "within timeout")

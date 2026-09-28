@@ -1839,30 +1839,50 @@ class Dataset_Util(Link_Util):
         self.run_jobs_in_parallel(jobs, results, 15, async_run=False)
         return all(results)
 
-    def wait_for_ingestion_by_names(self, cluster, dataset_names, num_items,
-                                    timeout=600, thread_count=15):
-        """
-        Waits, in parallel, for each of the given dataset names to finish
-        ingesting num_items documents.
+    def fetch_ingestion_status(self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
+        status, content, response = cbas_helper.fetch_ingestion_status(
+            username=username, password=password)
+        return status, content, response
 
-        Unlike wait_for_ingestion_all_datasets, this does not depend on
-        datasets having been registered as Dataset objects under
-        self.dataverses - create_dataset()/"create analytics collection"
-        does not register them there, so list_all_dataset_objs() (and
-        therefore wait_for_ingestion_all_datasets) silently sees zero
-        datasets and returns immediately for datasets created that way.
-        This variant takes the dataset names directly from the caller
-        instead, so it works regardless of how the datasets were created.
+    def wait_for_ingestion_via_status_api(self, cluster, link_name="Local",
+                                          timeout=600, poll_interval=10):
         """
-        jobs = Queue()
-        results = []
-        for dataset_name in dataset_names:
-            jobs.put((
-                self.wait_for_ingestion_complete,
-                {"cluster": cluster, "dataset_name": dataset_name,
-                 "num_items": num_items, "timeout": timeout}))
-        self.run_jobs_in_parallel(jobs, results, thread_count, async_run=False)
-        return all(results)
+        Waits for the CBAS link's ingestion progress to reach 1.0 (fully
+        caught up) using GET /analytics/status/ingestion, instead of
+        running a SQL++ count(*) query per dataset. The latter does not
+        scale when there are thousands of analytics datasets/collections
+        (see MB-74181).
+        """
+        counter = 0
+        last_content = None
+        while counter <= timeout:
+            status, content, _ = self.fetch_ingestion_status(cluster)
+            if status:
+                last_content = json.loads(content)
+                for link in last_content.get("links", []):
+                    if link.get("name") != link_name:
+                        continue
+                    self.log.info(
+                        "Ingestion status for link '%s': status=%s, "
+                        "progress=%s" % (
+                            link_name, link.get("status"),
+                            [state.get("progress")
+                             for state in link.get("state", [])]))
+                    if link.get("status") == "healthy" and all(
+                            state.get("progress", 0) == 1.0
+                            for state in link.get("state", [])):
+                        self.log.debug(
+                            "Ingestion for link '%s' completed in %s "
+                            "seconds." % (link_name, counter))
+                        return True
+            sleep(poll_interval)
+            counter += poll_interval
+
+        self.log.error(
+            "Ingestion for link '%s' did not complete within %ss. "
+            "Last status: %s" % (link_name, timeout, last_content))
+        return False
 
     def validate_cbas_dataset_items_count(
             self, cluster, dataset_name, expected_count, expected_mutated_count=0,
