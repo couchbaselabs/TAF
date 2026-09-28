@@ -2700,7 +2700,7 @@ class basic_ops(ClusterSetup):
 
     def test_ephemeral_auto_delete_pager_throttle(self):
         """
-        Ref: MB-63560 — 2-node cluster scenario using a frozen replica as
+        Ref: MB-63560 - 2-node cluster scenario using a frozen replica as
         the lagging DCP cursor.
 
         Setup:
@@ -2711,9 +2711,9 @@ class basic_ops(ClusterSetup):
           When node2 is frozen, the DCP replica stream from node1 to node2 stalls.
           node1's checkpoint manager cannot free entries for VBuckets whose
           replica cursor is stuck. The item pager on node1:
-            Run 1  — allowed (bytesPagerDeleted starts at 0 < pager_limit)
-            Run 2+ — throttled (bytesPagerDeleted >= limit, cursor hasn't
-                     advanced past pagedSeqno → pager_throttled increments)
+            Run 1  - allowed (bytesPagerDeleted starts at 0 < pager_limit)
+            Run 2+ - throttled (bytesPagerDeleted >= limit, cursor hasn't
+                     advanced past pagedSeqno -> pager_throttled increments)
           Memory stays above high_wm despite repeated pager invocations.
 
         Steps:
@@ -2725,9 +2725,9 @@ class basic_ops(ClusterSetup):
           4. SIGSTOP node2 memcached.
           5. Incrementally load batches of ~10 K items targeting only node1's
              active VBs (target_vbucket=); observe mem_used > high_wm on node1
-             for 3 separate batches — confirming pager is throttled.
+             for 3 separate batches - confirming pager is throttled.
           6. Sleep 60 s with pager stuck.
-          7. SIGCONT node2 — replica DCP drains, pager resumes.
+          7. SIGCONT node2 - replica DCP drains, pager resumes.
           8. Wait up to 120 s for mem_used to fall within 10 % of low_wm.
           9. Assert total active items on node1 > 100,000 (no over-deletion).
         """
@@ -2737,7 +2737,7 @@ class basic_ops(ClusterSetup):
 
         bucket = self.cluster.buckets[0]
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
-        node1 = kv_nodes[0]   # stays running — target for all loads
+        node1 = kv_nodes[0]   # stays running - target for all loads
         node2 = kv_nodes[1]   # memcached will be SIGSTOP'd
 
         shell2 = RemoteMachineShellConnection(node2)
@@ -2769,13 +2769,13 @@ class basic_ops(ClusterSetup):
             # ---- SIGSTOP node2 memcached ----
             err_sim.create(CouchbaseError.STOP_MEMCACHED)
 
-            # ---- Incremental load — node1 VBs only ----
+            # ---- Incremental load - node1 VBs only ----
             # target_vbucket filters doc_generator to emit only keys that hash
             # to node1's active VBs, so every write goes to the running node.
-            # A range of 2×load_batch covers ~load_batch effective docs at the
+            # A range of 2xload_batch covers ~load_batch effective docs at the
             # ~50 % VBucket split.
             # After each batch, compare mem_used to the previous reading.
-            # A drop means the pager ran and freed items — stop loading there.
+            # A drop means the pager ran and freed items - stop loading there.
             a_stats = cbstat1.all_stats(bucket.name)
             mem_used = int(a_stats["mem_used"])
             itrs_after_low_wm_hit = 5
@@ -2813,12 +2813,12 @@ class basic_ops(ClusterSetup):
                        a_stats.get("pager_throttled", "n/a")))
             else:
                 self.log_failure(
-                    "Pager did not activate after %d batches — "
+                    "Pager did not activate after %d batches - "
                     "mem_used=%dMB low_wm=%dMB" % (max_load_batches,
                                                    mem_used >> 20,
                                                    low_wm >> 20))
 
-            # ---- SIGCONT node2 — release DCP cursor ----
+            # ---- SIGCONT node2 - release DCP cursor ----
             err_sim.revert(CouchbaseError.STOP_MEMCACHED)
 
             # ---- Wait with pager stuck ----
@@ -2847,17 +2847,17 @@ class basic_ops(ClusterSetup):
                 final_mem = int(a_stats["mem_used"])
                 final_pct = int(final_mem * 100 / low_wm)
                 self.log_failure(
-                    "mem_used did not reach low_wm ±20%% within 120 s after "
+                    "mem_used did not reach low_wm +/-20%% within 120 s after "
                     "SIGCONT: mem_used=%dMB (%d%% of low_wm=%dMB)"
                     % (final_mem >> 20, final_pct, low_wm >> 20))
 
             # ---- Validate item count ----
             curr_items = int(
                 cbstat1.all_stats(bucket.name).get("curr_items", 0))
-            self.log.info(f"Final curr_items on node1: {curr_items}")
+            self.log.info("Final curr_items on node1: %s" % curr_items)
             if curr_items < 100000:
                 self.log_failure(
-                    f"Pager over-deleted: curr_items={curr_items} after test")
+                    "Pager over-deleted: curr_items=%s after test" % curr_items)
         finally:
             err_sim.revert(CouchbaseError.STOP_MEMCACHED)
             cbstat1.disconnect()
