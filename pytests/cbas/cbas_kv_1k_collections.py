@@ -1,10 +1,3 @@
-import json
-import Queue
-import threading
-import time
-
-import requests
-
 from cbas.cbas_base import CBASBaseTest
 from cb_constants import CbServer
 from CbasLib.CBASOperations import CBASHelper
@@ -25,42 +18,15 @@ class CBASKVCollectionScale(CBASBaseTest):
     def tearDown(self):
         super(CBASKVCollectionScale, self).tearDown()
 
-    def run_cbas_statement(self, session, cbas_helper, statement, timeout=120):
-        """
-        Run a statement on /analytics/service over a reused keep-alive session.
-        Avoids per-statement GET /nodes/self and TCP+TLS handshake that
-        execute_statement_on_cbas_util does (~720ms/statement when the
-        testrunner is far from the cluster).
-        """
-        headers = cbas_helper._create_capi_headers(connection="keep-alive")
-        params = json.dumps({"statement": statement,
-                             "timeout": "{0}s".format(timeout)})
-        self.log.debug("Running query on cbas: %s" % statement)
-        start = time.time()
-        response = session.post(
-            cbas_helper.cbas_base_url + "/analytics/service",
-            data=params, headers=headers, timeout=timeout + 30, verify=False)
-        content = response.json()
-        self.log.debug("Query status: %s, took %.0f ms: %s, results: %s"
-                       % (content.get("status"),
-                          (time.time() - start) * 1000, statement,
-                          content.get("results")))
-        return content.get("status"), content.get("errors"), \
-            content.get("results")
-
     def test_create_10k_collections_on_kv_cluster(self):
         def get_name_sort_key(name): return (
             0, int(name.rsplit("-", 1)[1])
         ) if name.rsplit("-", 1)[-1].isdigit() else (1, name)
 
-        self.sleep(900, "Pausing for manual Analytics memory configuration")
-
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.bucket_spec)
         buckets_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = True
-        # Create all scopes/collections with a single manifest import call
-        # instead of one REST call per collection
-        buckets_spec[MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT] = True
+        # buckets_spec[MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT] = True
         buckets_spec["buckets"] = {}
 
         for bucket_idx in range(self.num_buckets):
@@ -139,12 +105,6 @@ class CBASKVCollectionScale(CBASBaseTest):
             if not self.cbas_util.disconnect_link(self.cluster, "Local"):
                 self.fail("Failed to disconnect link Local")
 
-            try:
-                requests.packages.urllib3.disable_warnings()
-            except Exception:
-                pass
-            cbas_helper = CBASHelper(self.cluster.cbas_cc_node)
-            session = requests.Session()
             analytics_collection_names = []
             for i, kv_entity in enumerate(
                     kv_entities[:self.num_analytics_collections], 0):
@@ -154,15 +114,12 @@ class CBASKVCollectionScale(CBASBaseTest):
                 self.log.info(
                     "Creating analytics collection: {0}".format(
                         analytics_collection_name))
-                status, errors, _ = self.run_cbas_statement(
-                    session, cbas_helper,
-                    "create analytics collection {0} on {1};".format(
-                        analytics_collection_name, kv_entity))
-                if status != "success":
+                if not self.cbas_util.create_dataset(
+                        self.cluster, analytics_collection_name, kv_entity,
+                        analytics_collection=True):
                     self.fail(
-                        "Failed to create analytics collection {0} on {1}: "
-                        "{2}".format(analytics_collection_name, kv_entity,
-                                     errors))
+                        "Failed to create analytics collection {0} on {1}".format(
+                            analytics_collection_name, kv_entity))
 
             self.log.info("Connecting link Local")
             if not self.cbas_util.connect_link(self.cluster, "Local", timeout=600, analytics_timeout=600):
@@ -177,58 +134,14 @@ class CBASKVCollectionScale(CBASBaseTest):
                     "Ingestion did not complete for all analytics datasets "
                     "within timeout")
 
-            # Validate item count of all analytics collections using
-            # parallel count(*) queries (1 query per collection instead of 2)
-            num_threads = int(self.input.param("count_validation_threads", 16))
-            name_queue = Queue.Queue()
             for analytics_collection_name in analytics_collection_names:
-                name_queue.put(analytics_collection_name)
-            failed_collections = list()
-            lock = threading.Lock()
-
-            def validate_count_worker():
-                worker_session = requests.Session()
-                while True:
-                    try:
-                        name = name_queue.get_nowait()
-                    except Queue.Empty:
-                        return
-                    count = None
-                    try:
-                        status, _, results = self.run_cbas_statement(
-                            worker_session, cbas_helper,
-                            "select count(*) as cnt from {0};".format(name),
-                            timeout=300)
-                        if status == "success":
-                            count = results[0]["cnt"]
-                    except Exception as e:
-                        self.log.warning(
-                            "Count query failed for {0}: {1}".format(name, e))
-                    # Retry via existing util (with retries) only on mismatch
-                    if count != self.num_items and \
-                            not self.cbas_util.validate_cbas_dataset_items_count(
-                                self.cluster, name, self.num_items):
-                        with lock:
-                            failed_collections.append(name)
-
-            self.log.info(
-                "Validating item count of {0} analytics collections using "
-                "{1} threads".format(
-                    len(analytics_collection_names), num_threads))
-            workers = [threading.Thread(target=validate_count_worker)
-                       for _ in range(num_threads)]
-            for worker in workers:
-                worker.start()
-            for worker in workers:
-                worker.join()
-
-            if failed_collections:
-                self.fail(
-                    "Item count mismatch for {0} analytics collections. "
-                    "Expected: {1}. Collections: {2}".format(
-                        len(failed_collections), self.num_items,
-                        failed_collections))
-        self.log.info(
-            "Successfully created {0} KV collections and {1} analytics "
-            "collections".format(len(kv_entities),
-                                 len(analytics_collection_names)))
+                self.log.info(
+                    "Validating analytics collection count: {0}".format(
+                        analytics_collection_name))
+                if not self.cbas_util.validate_cbas_dataset_items_count(
+                        self.cluster, analytics_collection_name,
+                        self.num_items):
+                    self.fail(
+                        "Item count mismatch for analytics collection {0}. "
+                        "Expected: {1}".format(
+                            analytics_collection_name, self.num_items))
