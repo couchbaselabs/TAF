@@ -605,7 +605,8 @@ class FusionBillingTest(FusionBackupRestoreBase):
             "FROM %s p WHERE p.`_type` = \"%s\" "
             "AND p.clusterId = \"%s\" "
             "AND p.fusionDetails.downloadCompletedAt IS NOT NULL "
-            "AND p.fusionDetails.downloadCompletedAt != \"\""
+            "AND p.fusionDetails.downloadCompletedAt != \"\" "
+            "AND p.fusionDetails.downloadCompletedAt != \"0001-01-01T00:00:00Z\""
             % (self.KS, self.TYPE_PAGER, cid))
 
     def _kv_spec(self, cluster_id=None):
@@ -808,7 +809,7 @@ class FusionBillingTest(FusionBackupRestoreBase):
                 "data + billing docs)" % cid)
             return
 
-        time.sleep(120)  # Allow initial sync to S3 before rebalance
+        self.force_fusion_log_store_sync(cid, proj)
         orig, new = self.trigger_fusion_rebalance(cid, project_id=proj)
         if not self.wait_for_rebalance_complete(cid, project_id=proj):
             self.fail(
@@ -904,7 +905,8 @@ class FusionBillingTest(FusionBackupRestoreBase):
                 "SELECT COUNT(*) AS n FROM %s p WHERE p.`_type` = \"%s\" "
                 "AND p.clusterId = \"%s\" "
                 "AND p.fusionDetails.downloadCompletedAt IS NOT NULL "
-                "AND p.fusionDetails.downloadCompletedAt != \"\""
+                "AND p.fusionDetails.downloadCompletedAt != \"\" "
+                "AND p.fusionDetails.downloadCompletedAt != \"0001-01-01T00:00:00Z\""
                 % (self.KS, self.TYPE_PAGER, self.cluster_id))
             pager_done_n = (pager_done[0].get("n") if pager_done else None)
             self.fail(
@@ -1734,12 +1736,16 @@ class FusionBillingTest(FusionBackupRestoreBase):
         # other. That is testable WITHOUT the nonexistent planUUID field:
         # if it happens, the day's total creditQuantity will be short of
         # the sum of both plans' independently-computed costs. ----
-        self._maybe_trigger_billing_jobs()
-        variable_recs = self._n1ql(
-            "SELECT v.creditQuantity, v.usageDate "
-            "FROM %s v WHERE v.`_type` = \"%s\" AND v.databaseId = \"%s\" "
-            "AND v.usageCategory = \"Fusion 2\""
-            % (self.KS, self.TYPE_VARIABLE, self.cluster_id))
+        def _fetch_variable():
+            self._maybe_trigger_billing_jobs()
+            return self._n1ql(
+                "SELECT v.creditQuantity, v.usageDate "
+                "FROM %s v WHERE v.`_type` = \"%s\" AND v.databaseId = \"%s\" "
+                "AND v.usageCategory = \"Fusion 2\""
+                % (self.KS, self.TYPE_VARIABLE, self.cluster_id))
+
+        variable_recs = self._poll(
+            _fetch_variable, "the pager-biller job to write a variable record")
         self.assertTrue(
             variable_recs,
             "No billing.variable record at all for cluster %s after 2 "
@@ -2856,12 +2862,21 @@ class FusionBillingTest(FusionBackupRestoreBase):
             "SELECT DISTINCT v.databaseId FROM %s v "
             "WHERE v.`_type` = \"%s\" AND v.usageCategory = \"Fusion 2\""
             % (self.KS, self.TYPE_VARIABLE)) if r.get("databaseId")}
+        # The pager biller runs daily at 18:30 UTC for the previous day, so
+        # only pagerTasks created before the last billed day can be checked.
+        now = time.time()
+        billed_until = now - now % 86400
+        if time.gmtime(now)[3:5] < (18, 30):
+            billed_until -= 86400
+        cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(billed_until))
         moved = {r.get("clusterId") for r in self._n1ql(
             "SELECT DISTINCT p.clusterId FROM %s p "
             "WHERE p.`_type` = \"%s\" "
+            "AND p.createdAt < \"%s\" "
             "AND p.fusionDetails.downloadCompletedAt IS NOT NULL "
-            "AND p.fusionDetails.downloadCompletedAt != \"\""
-            % (self.KS, self.TYPE_PAGER)) if r.get("clusterId")}
+            "AND p.fusionDetails.downloadCompletedAt != \"\" "
+            "AND p.fusionDetails.downloadCompletedAt != \"0001-01-01T00:00:00Z\""
+            % (self.KS, self.TYPE_PAGER, cutoff)) if r.get("clusterId")}
         unpriced = sorted(moved - priced)
         self.log.info(
             "[fleet-variable-coverage] %s cluster(s) moved accelerator data; "

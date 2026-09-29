@@ -22,6 +22,7 @@ from pytests.Capella.RestAPIv4.api_base import APIBase
 from pytests.aGoodDoctor.fusion.fusion_aws_util import (
     FusionAWSUtil, resolve_fusion_aws_credentials)
 from pytests.aGoodDoctor.fusion.fusion_log_collector import FusionFailureLogsMixin
+from pytests.aGoodDoctor.fusion.fusion_monitor_util import FusionMonitorUtil
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from sirius_client_framework.sirius_setup import SiriusSetup
@@ -244,6 +245,7 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
         # setup (CIDR + DB user + its 60s propagation wait) happens ONCE per
         # cluster instead of once per bucket. See _setup_cluster_access.
         self._cluster_access_cache = {}
+        self._guest_vols_seen = {}
         self._clusters_created = []
         # Clusters provisioned fresh for THIS test only (never pooled/reused):
         # every target, plus the source of a guest-volume test (its per-test
@@ -1212,9 +1214,9 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
         resp = self.capellaAPI.do_internal_request(
             url, method="POST", params=json.dumps({}))
         if resp.status_code not in [200, 202]:
-            self.log.warning(
-                "express-scaling/enable returned {}: {}".format(
-                    resp.status_code, resp.content))
+            self.fail(
+                "express-scaling/enable on {} returned {}: {}".format(
+                    cluster_id, resp.status_code, resp.content))
         else:
             self.log.info(
                 "Fusion enable triggered on cluster {}".format(cluster_id))
@@ -1732,21 +1734,22 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
 
         vol_ids = set()
         if rebalance:
+            self.force_fusion_log_store_sync(cid, proj, aws_util)
             # Fusion rebalance so the target has its own guest volumes. Records
             # the baseline node count so tearDown scales it back.
             self._target_original_nodes, new_nodes = (
                 self.trigger_fusion_rebalance(cid, project_id=proj))
-            if not self.wait_for_rebalance_complete(cid, project_id=proj):
+            aws_util = aws_util or self.fusion_aws_util
+            if not self.wait_for_rebalance_complete(cid, project_id=proj,
+                                                    aws_util=aws_util):
                 self.fail(
                     "Target Fusion rebalance did not complete on {}".format(
                         cid))
             self.log.info(
                 "Target Fusion rebalance complete ({} -> {} nodes)".format(
                     self._target_original_nodes, new_nodes))
-            aws_util = aws_util or self.fusion_aws_util
             if aws_util:
-                guest = aws_util.get_guest_volumes_for_cluster(cid)
-                for vols in guest.values():
+                for vols in self._guest_vols_seen[cid].values():
                     vol_ids.update(vols)
                 self.log.info(
                     "Target {} has {} guest volume(s) before restore: "
@@ -2646,10 +2649,18 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
                 return spec.get("count")
         return raw[0].get("count")
 
-    def wait_for_rebalance_complete(self, cluster_id, project_id=None):
-        """Poll until cluster returns to healthy after rebalance."""
+    def wait_for_rebalance_complete(self, cluster_id, project_id=None,
+                                    aws_util=None):
+        """Poll until cluster returns to healthy after rebalance.
+
+        With aws_util, also record every attached guest volume seen while the
+        rebalance runs into self._guest_vols_seen[cluster_id]. The CP deletes
+        guest volumes within seconds of the rebalance finishing, so a read
+        taken after the cluster is healthy races that cleanup."""
         project_id = project_id or self.project_id
         deadline = time.time() + self.rebalance_timeout
+        seen = self._guest_vols_seen[cluster_id] = {}
+        vol_node = {}
 
         self.log.info(
             "Waiting for rebalance to complete on cluster {}".format(cluster_id))
@@ -2681,7 +2692,26 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
             state = payload.json().get("currentState", "")
             self.log.info(
                 "Cluster {} state: {}".format(cluster_id, state))
+            if aws_util:
+                try:
+                    for node, vols in aws_util.get_guest_volumes_for_cluster(
+                            cluster_id).items():
+                        if node != "unattached":
+                            vol_node.update(dict.fromkeys(vols, node))
+                    # A volume moves between instances mid-rebalance; count it
+                    # once, on the node it was last attached to.
+                    seen.clear()
+                    for vol, node in vol_node.items():
+                        seen.setdefault(node, set()).add(vol)
+                except Exception as exc:
+                    self.log.warning("guest-volume read on {} during "
+                                     "rebalance failed: {}".format(cluster_id, exc))
             if state == self.CLUSTER_HEALTHY:
+                if aws_util:
+                    self.log.info(
+                        "Guest volumes seen during rebalance on {}: {}".format(
+                            cluster_id,
+                            {n: sorted(v) for n, v in seen.items()}))
                 return True
             if state in ["rebalanceFailed", "deploymentFailed", "scaleFailed"]:
                 self.log.error(
@@ -2694,6 +2724,81 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
             "Rebalance did not complete within {}s".format(
                 self.rebalance_timeout))
         return False
+
+    def force_fusion_log_store_sync(self, cluster_id, project_id=None,
+                                    aws_util=None):
+        """POST /controller/fusion/syncLogStore on one KV node, then wait for
+        /fusion/status snapshotPendingBytes to reach 0. A Fusion rebalance
+        only accelerates data already in the log store, and the sync manager
+        does not upload below enableSyncThresholdMB (102400 MB on sandbox)."""
+        project_id = project_id or self.project_id
+        # Re-adds the 0.0.0.0/0 allowlist entry, which a restore wipes;
+        # without it every node times out on 18091.
+        self._setup_cluster_access(cluster_id, project_id)
+        # Clusters here are created through the API, not ProvisionedBaseTestCase,
+        # so there is no CBCluster to reuse; build the minimal shape
+        # set_admin_credentials needs.
+        cluster = types.SimpleNamespace(id=cluster_id,
+                                        master=types.SimpleNamespace())
+        FusionMonitorUtil(self.log, aws_util or self.fusion_aws_util) \
+            .set_admin_credentials(cluster)
+        user, pwd = cluster.rest_username, cluster.rest_password
+        nodes_url = "{}/v2/organizations/{}/projects/{}/clusters/{}/nodes" \
+            .format(self.capellaAPI.internal_url, self.organisation_id,
+                    project_id, cluster_id)
+        # Right after a restore the nodes are new and their DNS may lag, so
+        # re-read the node list and try each node (KV first) until one answers.
+        resp, base, last_err = None, None, None
+        connect_deadline = time.time() + 900
+        while resp is None and time.time() < connect_deadline:
+            hosts = []
+            nodes = self.capellaAPI.do_internal_request(nodes_url, method="GET")
+            if nodes.status_code == 200:
+                hosts = [n["data"]["hostname"] for n in sorted(
+                    nodes.json()["data"],
+                    key=lambda n: "Data" not in n["data"].get("services", []))]
+            else:
+                last_err = f"GET nodes {nodes.status_code}: {nodes.content}"
+            for host in hosts:
+                try:
+                    resp = requests.post(
+                        f"https://{host}:18091/controller/fusion/syncLogStore",
+                        auth=(user, pwd), verify=False, timeout=(10, 120))
+                    base = f"https://{host}:18091"
+                    break
+                except requests.exceptions.ConnectionError as exc:
+                    last_err = exc
+            if resp is None:
+                time.sleep(15)
+        if resp is None:
+            self.fail(f"Could not reach any node of {cluster_id} for "
+                      f"syncLogStore: {last_err}")
+        # 408 means the server stopped waiting (~60s); the sync keeps running.
+        self.log.info(f"Forced Fusion log-store sync on {cluster_id} ({base}): "
+                      f"{resp.status_code} {resp.text[:200]}")
+        timeout = int(self.input.param("sync_wait_timeout", 3600))
+        deadline = time.time() + timeout
+        pending = None
+        while time.time() < deadline:
+            try:
+                status = requests.get(f"{base}/fusion/status",
+                                      auth=(user, pwd), verify=False,
+                                      timeout=(10, 60))
+            except requests.exceptions.ConnectionError:
+                time.sleep(15)
+                continue
+            if status.status_code == 200:
+                pending = sum(
+                    b.get("snapshotPendingBytes", 0)
+                    for n in (status.json().get("nodes") or {}).values()
+                    for b in (n.get("buckets") or {}).values())
+                self.log.info(f"Fusion pending bytes on {cluster_id}: "
+                              f"{pending}")
+                if pending == 0:
+                    return
+            time.sleep(15)
+        self.fail(f"Fusion pending bytes on {cluster_id} did not reach 0 "
+                  f"within {timeout}s (last: {pending})")
 
     def regenerate_guest_volumes_via_rebalance(self, cluster_id,
                                                project_id=None, aws_util=None):
@@ -2709,15 +2814,19 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
             "Post-restore: triggering a Fusion rebalance on {} to regenerate "
             "guest volumes (restore restores primary data only)".format(
                 cluster_id))
+        self.force_fusion_log_store_sync(cluster_id, project_id, aws_util)
         self.trigger_fusion_rebalance(cluster_id, project_id=project_id)
         if not self.wait_for_rebalance_complete(cluster_id,
-                                                project_id=project_id):
+                                                project_id=project_id,
+                                                aws_util=aws_util):
             self.fail(
                 "Post-restore Fusion rebalance did not complete on {}".format(
                     cluster_id))
         if not aws_util:
             return {}
-        return self._settle_guest_volumes(cluster_id, aws_util)
+        return {n: sorted(v) for n, v in
+                self._guest_vols_seen[cluster_id].items()} \
+            or self._settle_guest_volumes(cluster_id, aws_util)
 
     def _settle_guest_volumes(self, cluster_id, aws_util, timeout=None):
         """Return the per-node guest-volume map, tolerating attach/tag lag.
@@ -2915,20 +3024,22 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
         if source_has_guest_volumes:
             self.log.info("=== Step 3: Source Fusion rebalance (guest "
                           "volumes) ===")
+            self.force_fusion_log_store_sync(
+                self.source_cluster_id, self.source_project_id)
             self._source_original_nodes, _ = self.trigger_fusion_rebalance(
                 self.source_cluster_id, project_id=self.source_project_id)
             if not self.wait_for_rebalance_complete(
-                    self.source_cluster_id, project_id=self.source_project_id):
+                    self.source_cluster_id, project_id=self.source_project_id,
+                    aws_util=self.fusion_aws_util):
                 self.fail("Source Fusion rebalance did not complete")
             # Record the source guest-volume count at backup time, mapped by
             # node — this is what the count-mismatch and node-mapping
             # snapshot_verification tests asserted; logged here so every
             # source-with-guest-volumes matrix case carries the same evidence.
             if self.fusion_aws_util:
-                # Settle-poll: guest volumes attach/tag a little after the
-                # rebalance reports healthy, so a single read can race them.
-                sg = self._settle_guest_volumes(
-                    self.source_cluster_id, self.fusion_aws_util)
+                sg = self._guest_vols_seen[self.source_cluster_id] \
+                    or self._settle_guest_volumes(
+                        self.source_cluster_id, self.fusion_aws_util)
                 by_node = {n: len(v) for n, v in sg.items()
                            if n != "unattached"}
                 self._source_guest_vol_count = sum(by_node.values())
@@ -3010,6 +3121,8 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
         self.wait_for_restore_complete(
             self.target_cluster_id, project_id=self.target_project_id,
             expected_bucket_names=self.source_bucket_names)
+        # Restore replaces the nodes and deletes DB users; re-create access.
+        self._cluster_access_cache.pop(self.target_cluster_id, None)
 
         # --- Validations ---
         self.log.info("=== Step 9: Verifying data integrity ===")
