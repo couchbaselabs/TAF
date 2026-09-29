@@ -89,7 +89,12 @@ def main():
     # Create root logs directory
     abs_path = os.path.dirname(os.path.abspath(sys.argv[0]))
     # Create testrunner logs subdirectory
-    str_time = time.strftime("%y-%b-%d_%H-%M-%S", time.localtime())
+    now = time.time()
+    str_time = time.strftime("%y-%b-%d_%H-%M-%S", time.localtime(now))
+    # Include microseconds so two runs triggered within the same second
+    # (e.g. concurrent builds sharing a workspace) never collide on the
+    # same root_log_dir / report file.
+    str_time = "%s-%06d" % (str_time, int((now % 1) * 1e6))
     root_log_dir = os.path.join(abs_path,
                                 "logs%stestrunner-%s" % (os.sep, str_time))
     if not os.path.exists(root_log_dir):
