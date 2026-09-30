@@ -11,6 +11,7 @@ TAF drives node-local CLI tools.
 
 import base64
 
+from constants.platform_constants import os_constants
 from global_vars import logger
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -60,12 +61,17 @@ class EAUDFLibraryClient:
             self.log.error(f"Could not resolve the current node UUID on {self.node.ip}")
             return None
         node_id = output[0].strip()
-        sock = f"/opt/enterprise-analytics/var/{node_id}_ea_lib.sock"
-        exists, _ = self.shell.execute_command(f"test -S {sock} && echo present")
-        if not exists or "present" not in exists[0]:
-            self.log.error(f"Expected UDF library socket {sock} on {self.node.ip} does not exist")
-            return None
-        return sock
+        # Install root differs by build: /opt/couchbase from 3.0.0
+        # (operational insights), /opt/enterprise-analytics before that.
+        candidates = [f"{root}/var/{node_id}_ea_lib.sock"
+                      for root in ("/opt/couchbase", "/opt/enterprise-analytics")]
+        for sock in candidates:
+            exists, _ = self.shell.execute_command(f"test -S {sock} && echo present")
+            if exists and "present" in exists[0]:
+                return sock
+        self.log.error(
+            f"Expected UDF library socket (tried {candidates}) on {self.node.ip} does not exist")
+        return None
 
     def upload_library(self, scope, name, local_pyz_path, lib_type="python", username=None, password=None):
         """
@@ -297,7 +303,6 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
     provisioned), False if provisioning failed.
     """
     log = logger.get("test")
-    image = "build-docker.couchbase.com/cb-vanilla/enterprise-analytics-udf:2.3.0"
     container_name = UDF_EXECUTOR_CONTAINER_NAME
     socket_path = "/var/run/udf-sockets/pyudf.socket"
     runsc_path = "/usr/local/bin/runsc"
@@ -305,6 +310,21 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
 
     shell = RemoteMachineShellConnection(server)
     try:
+        # The sidecar image name tracks the product rename, not just the
+        # install root: a build under /opt/enterprise-analytics (pre-3.0.0)
+        # needs the old enterprise-analytics-udf:2.3.0 image, while a build
+        # under /opt/couchbase (3.0.0 / Operational Insights onwards) needs
+        # operational-insights-udf:3.0.0 instead. Mismatching them doesn't
+        # fail cleanly -- the old image against a new-build JVM makes every
+        # UDF call hang indefinitely on response delivery rather than
+        # erroring (MB-74322), which is far harder to diagnose than a
+        # missing-socket or wrong-path error would be.
+        if os_constants.ea_platform_constants(shell) is \
+                os_constants.LinuxEnterpriseAnalytics:
+            image = "build-docker.couchbase.com/cb-vanilla/enterprise-analytics-udf:2.3.0"
+        else:
+            image = "build-docker.couchbase.com/cb-vanilla/operational-insights-udf:3.0.0"
+
         couchbase_id_out, _ = shell.execute_command(
             "id -u couchbase && id -g couchbase")
         if not couchbase_id_out or len(couchbase_id_out) < 2:
@@ -434,8 +454,13 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
         # mode, where CBAS (running as couchbase) can no longer write into
         # its own applications directory. Refuse rather than manufacture
         # that state and have it surface later as an unrelated error.
+        #
+        # The service creates the directory as the node finishes starting,
+        # which can trail cluster init by a while on the second node, so
+        # wait for it rather than treating "not yet" as "never".
         apps_present, _ = shell.execute_command(
-            "test -d {0} && echo present".format(applications_dir))
+            "for i in $(seq 1 120); do test -d {0} && echo present && break; "
+            "sleep 1; done".format(applications_dir))
         if not apps_present or "present" not in apps_present[0]:
             log.error(
                 "Analytics applications directory {0} does not exist on "
