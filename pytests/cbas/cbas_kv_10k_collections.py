@@ -176,6 +176,7 @@ class CBASKVCollectionScale(CBASBaseTest):
                 self.fail(
                     "Ingestion did not complete for all analytics datasets "
                     "within timeout")
+                self.sleep(900, "Pausing for manual cbcollect")
 
             # Validate item count of all analytics collections using
             # parallel count(*) queries (1 query per collection instead of 2)
