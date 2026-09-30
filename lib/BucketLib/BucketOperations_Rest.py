@@ -1059,13 +1059,15 @@ class BucketHelper(RestConnection):
                         cid = collection_data["uid"]
                         return cid
 
-    def import_collection_using_manifest(self, bucket_name, manifest_data):
+    def import_collection_using_manifest(self, bucket_name, manifest_data,
+                                         timeout=60):
         url = "pools/default/buckets/%s/scopes" \
               % urllib.quote_plus(bucket_name)
         json_header = self.get_headers_for_content_type_json()
         api = self.baseUrl + url
         status, content, _ = self._http_request(api, 'PUT', manifest_data,
-                                                headers=json_header)
+                                                headers=json_header,
+                                                timeout=timeout)
         if not status:
             raise Exception(content)
         return json.loads(content)

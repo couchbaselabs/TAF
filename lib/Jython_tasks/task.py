@@ -5067,8 +5067,11 @@ class BucketCreateFromSpecTask(Task):
                 scope["collections"].append(col)
             json_content["scopes"].append(scope)
 
+        # Large manifests (e.g. 10k collections) can take well over the
+        # default 60s REST timeout for the server to apply
         self.bucket_helper.import_collection_using_manifest(
-            self.bucket_spec["name"], str(json_content).replace("'", '"'))
+            self.bucket_spec["name"], str(json_content).replace("'", '"'),
+            timeout=600)
 
     def create_bucket(self):
         self.bucket_obj.threadsNumber = 3
