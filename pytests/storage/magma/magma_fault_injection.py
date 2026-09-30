@@ -15,8 +15,10 @@ class MagmaFaultInjection(MagmaBaseTest):
 
         self.script_path = os.path.abspath(__file__)
         self.local_test_path = os.path.dirname(self.script_path)
-        split_path = self.local_test_path.split("/")
-        self.local_fi_scripts_path = "/" + os.path.join("/".join(split_path[1:4]), "scripts", "io_fault_injection")
+        # pytests/storage/magma/ -> 3 levels up is the repo root, on any
+        # workspace layout (Jenkins remote roots differ per slave)
+        repo_root = os.path.abspath(os.path.join(self.local_test_path, "..", "..", ".."))
+        self.local_fi_scripts_path = os.path.join(repo_root, "scripts", "io_fault_injection")
         self.log.info(f"Local fault injection scripts path: {self.local_fi_scripts_path}")
 
         threads = []
