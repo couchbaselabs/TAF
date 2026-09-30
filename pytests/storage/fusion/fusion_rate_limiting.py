@@ -98,23 +98,28 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         """
         Parse the accelerator-cli download-files log captured in
         self.fusion_rebalance_output (written by run_rebalance()) and assert
-        the achieved average download throughput stays within rate_limit.
+        the download was actually throttled.
 
         There is no cbstat for this stage (log store -> guest volumes), so
         this reads accelerator-cli's own timestamped log lines instead of
-        polling a stat like monitor_rate_dynamic() does. Assumes a single
-        accelerator-cli invocation contributed to the log (i.e. a
-        single-node rebalance-in): -rate-limit caps each invocation
-        independently, so a combined multi-node total would not need to
-        respect the same cap.
+        polling a stat like monitor_rate_dynamic() does.
+
+        accelerator-cli's limiter is a token bucket with burst == rate, so
+        the first rate_limit bytes go through for free and an upper bound
+        on the achieved rate would be flaky. The check is therefore a lower
+        bound on elapsed time: (total_bytes - burst) / rate_limit. The limiter
+        is per accelerator-cli process, so this requires exactly one process
+        (single-node rebalance-in with manifest_parts=1).
         """
-        ts_line = re.compile(r'^(?:\[\S+\]\s*)?(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})\s+(.*)$')
-        ts_format = "%Y/%m/%d %H:%M:%S"
+        # accelerator-cli timestamps carry microseconds: 2026/09/30 02:45:12.165307
+        ts_line = re.compile(r'^(?:\[\S+\]\s*)?(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+(.*)$')
+        ts_format = "%Y/%m/%d %H:%M:%S.%f"
 
         start_time = None
         last_complete_time = None
         total_downloaded_bytes = 0
         files_completed = 0
+        downloads_started = 0
 
         with open(self.fusion_rebalance_output) as f:
             for line in f:
@@ -127,8 +132,10 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
                 except ValueError:
                     continue
 
-                if start_time is None and re.search(r'Files to download: \d+ \(\d+ bytes\)', message):
-                    start_time = timestamp
+                if re.search(r'Files to download: \d+ \(\d+ bytes\)', message):
+                    downloads_started += 1
+                    if start_time is None:
+                        start_time = timestamp
                     continue
 
                 complete_match = re.search(r'Download complete for .+ \((\d+) bytes\)', message)
@@ -145,20 +152,32 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
                            f"{self.fusion_rebalance_output} -- accelerator-cli "
                            "did not report downloading any files")
 
-        elapsed_seconds = (last_complete_time - start_time).total_seconds()
-        self.assertGreater(elapsed_seconds, 0,
-                           "Download completed too quickly to measure a rate "
-                           "(log timestamps have 1s resolution) -- increase "
-                           "the test's dataset size")
+        if downloads_started != 1:
+            self.fail(f"Expected exactly 1 accelerator-cli download in "
+                      f"{self.fusion_rebalance_output}, found {downloads_started}: "
+                      "the rate limiter is per process, so the check needs a "
+                      "single-node rebalance-in with manifest_parts=1")
 
-        achieved_rate_bps = total_downloaded_bytes / elapsed_seconds
+        elapsed_seconds = (last_complete_time - start_time).total_seconds()
+        achieved_rate_bps = total_downloaded_bytes / max(elapsed_seconds, 1e-6)
+        # Burst == rate, so the first rate_limit bytes are not throttled
+        min_expected_seconds = (total_downloaded_bytes - rate_limit) / rate_limit
         self.log.info(f"[DOWNLOAD RATE] {files_completed} files, "
                       f"{total_downloaded_bytes} bytes over {elapsed_seconds:.1f}s "
                       f"= {achieved_rate_bps / (1024*1024):.2f} MB/s "
-                      f"(limit={rate_limit / (1024*1024):.2f} MB/s)")
-        self.assertLessEqual(achieved_rate_bps, rate_limit * 1.05,
-                            f"Achieved download rate {achieved_rate_bps} bytes/sec "
-                            f"exceeded limit {rate_limit} bytes/sec")
+                      f"(limit={rate_limit / (1024*1024):.2f} MB/s, "
+                      f"min expected {min_expected_seconds:.1f}s)")
+        if min_expected_seconds < 5:
+            self.fail(f"Dataset too small to observe throttling: "
+                      f"{total_downloaded_bytes} bytes at {rate_limit} bytes/sec "
+                      f"should take only {min_expected_seconds:.1f}s -- increase "
+                      "num_items or lower rate_limit")
+        # 10% slack under the theoretical minimum, so log timestamps do not flake
+        self.assertGreaterEqual(elapsed_seconds, min_expected_seconds * 0.9,
+                                f"Download took {elapsed_seconds:.1f}s, faster than the "
+                                f"{min_expected_seconds:.1f}s minimum at {rate_limit} "
+                                "bytes/sec -- the rate limit was not applied (was "
+                                "file linking skipped?)")
 
     def custom_data_load(self):
         total_data_mb = (self.num_items * self.doc_size) / (1024 * 1024)
@@ -271,9 +290,13 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
             self.custom_data_load()
 
             # Run a Fusion rebalance with the accelerator's download step
-            # capped via -rate-limit
+            # capped via -rate-limit. skip_file_linking: on the NFS log store
+            # accelerator-cli otherwise hard-links files (no bytes read), which
+            # bypasses the limiter. manifest_parts=1: the limiter is per
+            # accelerator-cli process and the wrapper starts one per part.
             self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1,
-                               rate_limit=self.rate_limit)
+                               rate_limit=self.rate_limit,
+                               skip_file_linking=True, manifest_parts=1)
 
             # Validate the achieved rate from accelerator-cli's own log
             self.parse_accelerator_download_rate(self.rate_limit)
