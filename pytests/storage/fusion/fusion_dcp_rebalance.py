@@ -24,8 +24,7 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
         self.extent_migration_rate_limit = self.input.param("extent_migration_rate_limit", 10 * 1024 * 1024)  # 10 MB/s default
         self.wait_for_extent_migration = self.input.param("wait_for_extent_migration", True)  # Wait for migration by default
-        split_path = self.local_test_path.split("/")
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
+        self.fusion_output_dir = os.path.join(self.repo_root, "fusion_output")
         self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
         subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
 

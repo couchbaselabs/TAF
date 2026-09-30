@@ -86,12 +86,14 @@ class FusionBase(BaseTestCase):
 
             self.log.info(f"Full script path: {self.script_path}")
             self.log.info(f"Test file directory: {self.local_test_path}")
-            split_path = self.local_test_path.split("/")
+            # pytests/storage/fusion/ -> 3 levels up is the repo root, on any
+            # workspace layout (Jenkins remote roots differ per slave)
+            self.repo_root = os.path.abspath(os.path.join(self.local_test_path, "..", "..", ".."))
 
-            self.local_scripts_path = "/" + os.path.join("/".join(split_path[1:4]), "scripts", "fusion_scripts")
+            self.local_scripts_path = os.path.join(self.repo_root, "scripts", "fusion_scripts")
             self.log.info(f"Local scripts path: {self.local_scripts_path}")
 
-            self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
+            self.fusion_output_dir = os.path.join(self.repo_root, "fusion_output")
             self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
             subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
 

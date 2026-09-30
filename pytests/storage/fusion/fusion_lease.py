@@ -14,8 +14,7 @@ class FusionLease(MagmaBaseTest, FusionBase):
     def setUp(self):
         super(FusionLease, self).setUp()
 
-        split_path = self.local_test_path.split("/")
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
+        self.fusion_output_dir = os.path.join(self.repo_root, "fusion_output")
         subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
         self.volume_ids = []
         self.retry_rebalance_util = RetryRebalanceUtil()
