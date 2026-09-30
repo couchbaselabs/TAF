@@ -80,7 +80,7 @@ class PostOnOffSchedule(GetAnalyticsClusters):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -88,12 +88,12 @@ class PostOnOffSchedule(GetAnalyticsClusters):
                 }
             }, {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedul",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedul",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule/onOffSchedul",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule/onOffSchedul",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -170,7 +170,7 @@ class PostOnOffSchedule(GetAnalyticsClusters):
                     organization, project, analyticsCluster,
                     self.expected_res["timezone"], self.expected_res["days"])
             self.columnarAPI.schedule_on_off_endpoint = \
-                "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule"
+                "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule"
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)

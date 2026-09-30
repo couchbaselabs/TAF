@@ -43,7 +43,7 @@ class ListAnalyticsClusters(GetAnalyticsClusters):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/analyticsClusters",
+                "url": "/v3/organizations/{}/operationalInsightsClusters",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -56,7 +56,7 @@ class ListAnalyticsClusters(GetAnalyticsClusters):
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/analyticsClusters/analyticsCluster",
+                "url": "/v4/organizations/{}/operationalInsightsClusters/analyticsCluster",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -97,7 +97,7 @@ class ListAnalyticsClusters(GetAnalyticsClusters):
                           list_organization_level_analytics_clusters(
                             organization))
             self.columnarAPI.org_level_analytics_clusters_endpoint = \
-                "/v4/organizations/{}/analyticsClusters"
+                "/v4/organizations/{}/operationalInsightsClusters"
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

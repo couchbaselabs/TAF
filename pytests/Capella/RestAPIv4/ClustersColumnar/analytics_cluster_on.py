@@ -22,7 +22,7 @@ class PostActivationState(GetAnalyticsClusters):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/activationState",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/activationState",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -30,12 +30,12 @@ class PostActivationState(GetAnalyticsClusters):
                 }
             }, {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/activationStat",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/activationStat",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/activationState/activationStat",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/activationState/activationStat",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -110,7 +110,7 @@ class PostActivationState(GetAnalyticsClusters):
                 result = self.columnarAPI.turn_analytics_cluster_on(
                     organization, project, analyticsCluster)
             self.columnarAPI.on_off_endpoint = \
-                ("/v4/organizations/{}/projects/{}/analyticsClusters/{}/"
+                ("/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/"
                  "activationState")
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):

@@ -25,7 +25,7 @@ class RestoreAnalyticsCloudSnapshotBackup(
                 "description": "Restore cloud snapshot backup with valid path"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackups",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackups",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {

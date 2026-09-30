@@ -20,17 +20,17 @@ class ListAnalyticsCloudSnapshotRestores(AnalyticsCloudSnapshotBackupBase):
                 "description": "List cloud snapshot restores with valid path"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackups/restores",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackups/restores",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace restores with restore",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackups/restore",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackups/restore",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add invalid segment to URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackups/restores/invalid",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackups/restores/invalid",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {

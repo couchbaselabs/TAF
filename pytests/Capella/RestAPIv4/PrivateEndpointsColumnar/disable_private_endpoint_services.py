@@ -24,13 +24,13 @@ class DeletePrivateEndpointService(GetAnalyticsClusters):
             },
             {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             },
             {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointServic",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointServic",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             },
@@ -71,7 +71,7 @@ class DeletePrivateEndpointService(GetAnalyticsClusters):
                     organization, project, analytics_cluster)
 
             self.columnarAPI.private_network_service_endpoint = (
-                "/v4/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService")
+                "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService")
             self.validate_testcase(result, [202, 500], testcase, failures)
 
         if failures:

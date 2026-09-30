@@ -22,7 +22,7 @@ class DeleteAnalyticsClusters(GetAnalyticsClusters):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -35,7 +35,7 @@ class DeleteAnalyticsClusters(GetAnalyticsClusters):
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/analyticsCluster",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/analyticsCluster",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -110,7 +110,7 @@ class DeleteAnalyticsClusters(GetAnalyticsClusters):
                 result = self.columnarAPI.delete_analytics_cluster(
                     organization, project, analyticsCluster)
             self.columnarAPI.analytics_clusters_endpoint = \
-                "/v4/organizations/{}/projects/{}/analyticsClusters"
+                "/v4/organizations/{}/projects/{}/operationalInsightsClusters"
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
             if result.status_code == 202:

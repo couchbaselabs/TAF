@@ -20,17 +20,17 @@ class CreateAnalyticsCloudSnapshotBackup(AnalyticsCloudSnapshotBackupBase):
                 "description": "Create cloud snapshot backup with valid path"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackups",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackups",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace cloudSnapshotBackups with cloudSnapshotBackup",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackup",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackup",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add invalid segment to URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackups/backup",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackups/backup",
                 "expected_status_code": 405,
                 "expected_error": ""
             }, {

@@ -15,7 +15,7 @@ class AnalyticsCloudSnapshotBackupBase(GetAnalyticsClusters):
         self.default_retention = 168
         self.backup_id = None
         self.backups_endpoint_default = \
-            "/v4/organizations/{}/projects/{}/analyticsClusters/{}/cloudSnapshotBackups"
+            "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/cloudSnapshotBackups"
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)

@@ -40,14 +40,14 @@ class DeleteAnalyticsCloudSnapshotBackupSchedule(
         testcases = [
             {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}"
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}"
                        "/cloudSnapshotBackupSchedule",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace cloudSnapshotBackupSchedule with "
                                "cloudSnapshotBackupSched",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}"
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}"
                        "/cloudSnapshotBackupSched",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
@@ -89,7 +89,7 @@ class DeleteAnalyticsCloudSnapshotBackupSchedule(
                 self.columnarAPI.delete_cloud_snapshot_backup_schedule,
                 organization, project, analytics_cluster)
             self.columnarAPI.cloud_snapshot_backup_schedule_endpoint = \
-                "/v4/organizations/{}/projects/{}/analyticsClusters/{}/" \
+                "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/" \
                 "cloudSnapshotBackupSchedule"
             if self.validate_testcase(result, [204], testcase, failures):
                 self.recreate_schedule()

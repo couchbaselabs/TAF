@@ -14,13 +14,13 @@ class PostUnassociate(PostAssociate):
         testcases = [
             {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService/endpoints/{}/unassociate",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpoints/{}/unassociate",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             },
             {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService/endpoints/{}/unassociat",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpoints/{}/unassociat",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             },
@@ -61,7 +61,7 @@ class PostUnassociate(PostAssociate):
                     organization, project, analytics_cluster, endpoint)
 
             self.columnarAPI.unassociate_private_network_endpoint = (
-                "/v4/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService/endpoints/{}/unassociate")
+                "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpoints/{}/unassociate")
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:

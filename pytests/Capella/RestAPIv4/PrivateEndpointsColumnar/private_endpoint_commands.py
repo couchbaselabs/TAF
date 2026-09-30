@@ -38,13 +38,13 @@ class PostEndpointCommand(GetAnalyticsClusters):
             },
             {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService/endpointCommand",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpointCommand",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             },
             {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService/endpointComman",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpointComman",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             },
@@ -84,7 +84,7 @@ class PostEndpointCommand(GetAnalyticsClusters):
                     organization, project, analytics_cluster, self.expected_res)
 
             self.columnarAPI.private_network_command_endpoint = (
-                "/v4/organizations/{}/projects/{}/analyticsClusters/{}/privateEndpointService/endpointCommand")
+                "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpointCommand")
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

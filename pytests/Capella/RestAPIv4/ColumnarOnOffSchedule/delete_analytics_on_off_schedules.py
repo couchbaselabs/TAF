@@ -23,7 +23,7 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule",
+                "url": "/v3/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -31,12 +31,12 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
                 }
             }, {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedul",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedul",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule/onOffSchedul",
+                "url": "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule/onOffSchedul",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -111,7 +111,7 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
                 result = self.columnarAPI.delete_on_off_schedule(
                     organization, project, analyticsCluster)
             self.columnarAPI.schedule_on_off_endpoint = \
-                "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule"
+                "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule"
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Deletion successful")
                 time.sleep(2)
