@@ -84,6 +84,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
             dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
             dr_on_off.turn_on_cluster(timeout=1200)
 
+        node_reset_error = None
         if self.num_nodes["data"] != self.initial_kv_nodes:
             delta = self.initial_kv_nodes - self.num_nodes["data"]
             try:
@@ -94,7 +95,15 @@ class FusionClusterOnOffTest(_FusionTestBase):
                     self.pod, self.tenant, self.cluster,
                     self.rebalance_config("data", delta), timeout=self.rebalance_timeout)])
             except Exception as e:
+                # Do not swallow this: a cluster that can't rebalance back to
+                # its original node count post-test is itself a real product
+                # bug (see AV-145977 — restore left a cluster permanently
+                # unbalanced, and this exact reset step is what first exposed
+                # it). Cleanup below still runs regardless; the failure is
+                # re-raised after it so this doesn't mask a later, unrelated
+                # test's own failure on a cluster this left stuck.
                 self.log.error(f"Failed to reset KV nodes: {e}")
+                node_reset_error = e
         for bucket in list(self.cluster.buckets):
             self.log.info(f"Teardown: Cleaning up bucket {bucket.name}")
             try:
@@ -103,6 +112,10 @@ class FusionClusterOnOffTest(_FusionTestBase):
                 pass
         self.cluster.buckets = []
         super().tearDown()
+        if node_reset_error is not None:
+            self.fail(
+                f"tearDown failed to reset cluster {self.cluster.id} back to "
+                f"{self.initial_kv_nodes} KV node(s): {node_reset_error}")
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -868,6 +881,10 @@ class FusionClusterOnOffTest(_FusionTestBase):
         6.  In-place restore completes; cluster returns to healthy.
         7.  Fusion S3 log-store bucket is empty after restore (cleanFusionBucket ran).
         8.  Item count per bucket is non-zero after restore.
+        9.  Fusion reaches a stable 'enabled' state after restore (see AV-145977).
+        10. tearDown's post-test scale-down (back to the initial KV node count)
+            completes successfully — tearDown fails the test if it doesn't,
+            rather than silently swallowing the error.
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
@@ -1032,6 +1049,14 @@ class FusionClusterOnOffTest(_FusionTestBase):
                     self.sleep(30 * retry, "Retrying allow_my_ip after restore")
                 else:
                     raise
+
+        # Re-add the DB user — restore wipes it just like it wipes the IP
+        # allowlist above. create_db_user() already treats "user already
+        # exists" as a no-op, so this is safe to call unconditionally.
+        CapellaAPI.create_db_user(
+            self.pod, self.tenant, self.cluster.id, self.rest_username, self.rest_password)
+        self.log.info(f"Re-added DB user on {self.cluster.id} after restore")
+
         # Poll until every node responds on the REST port — the allowlist rule
         # can take several minutes to propagate even after allow_my_ip returns
         # successfully.
@@ -1062,6 +1087,25 @@ class FusionClusterOnOffTest(_FusionTestBase):
                     time.sleep(poll_interval)
         self.find_master(self.tenant, self.cluster)
         self.log.info(f"In-place restore {restore_id} completed")
+
+        # ------------------------------------------------------------------
+        # Phase 4b: wait for fusion to settle to 'enabled' after restore
+        # ------------------------------------------------------------------
+        # Restore leaves fusion mid-transition (it can be stuck logging
+        # "still enabling" indefinitely — see AV-145977). Wait for it here,
+        # at the point of failure, rather than letting a later rebalance
+        # (e.g. tearDown's scale-down) hit an unbalanced cluster blind.
+        self._wait_for_fusion_state(
+            self.tenant, self.cluster, "enabled", timeout=self.fusion_infra_timeout)
+        self.log.info(
+            f"Fusion confirmed 'enabled' and cluster healthy on "
+            f"{self.cluster.id} after in-place restore")
+
+        # The test's own tearDown() resets the KV node count back to
+        # initial_kv_nodes and now fails loudly if that rebalance doesn't
+        # succeed (see tearDown() above) — that's this test's assertion that
+        # a post-restore node-count change actually completes; no separate
+        # scale-down is triggered here to avoid duplicating it.
 
         # ------------------------------------------------------------------
         # Phase 5: verify item count per bucket
