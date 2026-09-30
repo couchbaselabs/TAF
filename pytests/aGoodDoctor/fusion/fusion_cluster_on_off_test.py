@@ -266,6 +266,15 @@ class FusionClusterOnOffTest(_FusionTestBase):
             f"Fusion is not 'enabled' after cluster turn-on: {fusion_status}")
         self.log.info("Fusion state is 'enabled' after cluster turn-on")
 
+        self.log.info(f"Forcing fusion log-store sync on cluster {self.cluster.id}")
+        self.fusion_monitor.set_admin_credentials(self.cluster)
+        sync_status, sync_content = FusionRestAPI(self.cluster.master).sync_log_store()
+        if not sync_status:
+            self.log.warning(
+                f"Failed to force fusion log-store sync on {self.cluster.id}: {sync_content}")
+        else:
+            self.log.info(f"Forced fusion log-store sync on {self.cluster.id}")
+
         sync_timeout = self.input.param("sync_wait_timeout", 3600)
         self.log.info("Waiting for pending bytes to drain to 0 after turn-on")
         self._wait_for_pending_bytes_zero(self.cluster, timeout=sync_timeout)
