@@ -4,16 +4,47 @@ import threading
 import time
 
 import requests
+from java.lang import Runtime, System
 
 from cbas.cbas_base import CBASBaseTest
 from cb_constants import CbServer
+from TestInput import TestInputSingleton
+from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
 from CbasLib.CBASOperations import CBASHelper
-from collections_helper.collections_spec_constants import MetaConstants
+from collections_helper.collections_spec_constants import MetaConstants, \
+    MetaCrudParams
 
 
 class CBASKVCollectionScale(CBASBaseTest):
 
     def setUp(self):
+        # Improvement 1: 4 Analytics data paths per Analytics node => 4
+        # partitions per node (partitions otherwise follow vCPU count).
+        # Must be set before the nodes join the cluster, i.e. before base
+        # setUp.
+        # self.input is only available after the base setUp
+        test_input = TestInputSingleton.input
+        self.num_cbas_paths = int(test_input.param("num_cbas_paths", 4))
+        cbas_paths = ["/data/cbas/{0}".format(i)
+                      for i in range(self.num_cbas_paths)]
+        # Servers follow services_init order (e.g. kv-kv-cbas-cbas)
+        services = [service for cluster_services in
+                    test_input.param("services_init",
+                                     "kv:n1ql:index").split("|")
+                    for service in cluster_services.split("-")]
+        for server, server_services in zip(test_input.servers, services):
+            if "cbas" in server_services.split(":") and \
+                    not server.cbas_path:
+                server.cbas_path = str(cbas_paths)
+                shell = RemoteMachineShellConnection(server)
+                try:
+                    shell.execute_command(
+                        "chattr -i /data ; mkdir -p {0} ; "
+                        "chown -R couchbase:couchbase /data/cbas".format(
+                            " ".join(cbas_paths)))
+                finally:
+                    shell.disconnect()
         super(CBASKVCollectionScale, self).setUp()
         self.cluster = self.cb_clusters.values()[0]
         self.num_buckets = int(self.input.param("num_buckets", 1))
@@ -24,6 +55,18 @@ class CBASKVCollectionScale(CBASBaseTest):
 
     def tearDown(self):
         super(CBASKVCollectionScale, self).tearDown()
+
+    def log_heap(self, tag, force_gc=False):
+        """Log JVM heap usage of the testrunner; returns used/max ratio."""
+        if force_gc:
+            System.gc()
+        rt = Runtime.getRuntime()
+        used = rt.totalMemory() - rt.freeMemory()
+        mx = rt.maxMemory()
+        self.log.info("HEAP[%s] used=%dMB max=%dMB (%.0f%%)"
+                      % (tag, used // 1048576, mx // 1048576,
+                         100.0 * used / mx))
+        return float(used) / mx
 
     def run_cbas_statement(self, session, cbas_helper, statement, timeout=120):
         """
@@ -48,12 +91,55 @@ class CBASKVCollectionScale(CBASBaseTest):
         return content.get("status"), content.get("errors"), \
             content.get("results")
 
+    def configure_analytics_10k_test(self):
+        """
+        Analytics configuration for the 10k collection test (MB-74181):
+        set and verify the cluster wide cbasMemoryQuota (storage settings are
+        left at defaults, no restart needed), then verify that every
+        Analytics node reports one partition per data path.
+        """
+        cbas_quota = int(self.input.param("cbas_memory_quota", 90112))
+        rest = RestConnection(self.cluster.master)
+        if not rest.set_service_mem_quota(
+                {CbServer.Settings.CBAS_MEM_QUOTA: cbas_quota}):
+            self.fail("Failed to set cbasMemoryQuota to {0}".format(
+                cbas_quota))
+        applied_quota = rest.get_pools_default().get(
+            CbServer.Settings.CBAS_MEM_QUOTA)
+        self.assertEqual(
+            applied_quota, cbas_quota,
+            "cbasMemoryQuota mismatch. Expected: {0}, Actual: {1}".format(
+                cbas_quota, applied_quota))
+        self.log.info("Updated cbasMemoryQuota: {0} MB".format(applied_quota))
+
+        # GET /analytics/cluster: "partitions" lists data partitions with
+        # their node and path (metadata partition -1 is only in
+        # "partitionsTopology", so it is not counted here)
+        response = self.cbas_util.fetch_analytics_cluster_response(
+            self.cluster)
+        node_names = {node["nodeId"]: node["nodeName"]
+                      for node in response["nodes"]}
+        node_paths = dict()
+        for partition in response["partitions"]:
+            node_paths.setdefault(
+                node_names[partition["nodeId"]], []).append(partition["path"])
+        self.assertEqual(
+            len(node_paths), len(self.cluster.cbas_nodes),
+            "Analytics node count mismatch: {0}".format(node_paths))
+        for node, paths in node_paths.items():
+            self.log.info("Analytics node {0}: {1} partitions, paths: "
+                          "{2}".format(node, len(paths), sorted(paths)))
+            self.assertEqual(
+                len(paths), self.num_cbas_paths,
+                "Partition count mismatch on {0}. Expected: {1}".format(
+                    node, self.num_cbas_paths))
+
     def test_create_10k_collections_on_kv_cluster(self):
         def get_name_sort_key(name): return (
             0, int(name.rsplit("-", 1)[1])
         ) if name.rsplit("-", 1)[-1].isdigit() else (1, name)
 
-        self.sleep(900, "Pausing for manual Analytics memory configuration")
+        self.configure_analytics_10k_test()
 
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.bucket_spec)
@@ -74,28 +160,34 @@ class CBASKVCollectionScale(CBASBaseTest):
             }
             for scope_idx in range(self.num_scopes):
                 scope_name = "scope-{0}".format(scope_idx)
-                collections = {}
-                for collection_idx in range(self.num_collections):
-                    collection_name = "collection-{0}".format(collection_idx)
-                    collections[collection_name] = {
-                        MetaConstants.NUM_ITEMS_PER_COLLECTION: self.num_items
-                    }
                 scopes[scope_name] = {
                     MetaConstants.REMOVE_DEFAULT_COLLECTION: True,
-                    "collections": collections
+                    "collections": {
+                        "collection-{0}".format(i): {
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION:
+                                self.num_items}
+                        for i in range(self.num_collections)}
                 }
             buckets_spec["buckets"][bucket_name] = {"scopes": scopes}
 
         self.log.info(
             "Creating and loading {0} docs in KV collections".format(
                 self.num_items))
+        # Improvement 3: distinct key per collection so docs spread across
+        # vbuckets instead of all landing in one vbucket
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+            self.doc_spec_name)
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.UNIQUE_DOC_KEY_PER_COLLECTION] = True
         self.collectionSetUp(
-            self.cluster, load_data=True, buckets_spec=buckets_spec)
+            self.cluster, load_data=True, buckets_spec=buckets_spec,
+            doc_loading_spec=doc_loading_spec)
+        self.log_heap("after collectionSetUp", force_gc=True)
 
         expected = self.num_buckets * self.num_scopes * self.num_collections
         kv_entries = []
-        target_buckets = set(
-            ["bucket-{0}".format(i) for i in range(self.num_buckets)])
+        target_buckets = {"bucket-{0}".format(i)
+                          for i in range(self.num_buckets)}
 
         for bucket in self.cluster.buckets:
             if bucket.name not in target_buckets:
@@ -129,6 +221,21 @@ class CBASKVCollectionScale(CBASBaseTest):
             "Collection creation mismatch. Expected: {0}, Actual: {1}".format(
                 expected, len(kv_entities)))
 
+        # Names are built; drop the 10k-entry spec/tuple list so the
+        # testrunner heap is not held by them
+        buckets_spec = None
+        kv_entries = None
+        collections = None
+        # The create loop below only uses REST; close the SDK clients so their
+        # background threads/buffers don't keep allocating during the loop.
+        # (shutdown() resets the pool, so a second call in tearDown is safe)
+        try:
+            if self.cluster.sdk_client_pool:
+                self.cluster.sdk_client_pool.shutdown()
+        except Exception as e:
+            self.log.warning("SDK client pool shutdown failed: {0}".format(e))
+        self.log_heap("after releasing spec/entries + SDK pool", force_gc=True)
+
         if self.num_analytics_collections:
             self.assertTrue(
                 self.num_analytics_collections <= len(kv_entities),
@@ -145,9 +252,26 @@ class CBASKVCollectionScale(CBASBaseTest):
                 pass
             cbas_helper = CBASHelper(self.cluster.cbas_cc_node)
             session = requests.Session()
+            # Recycle the HTTP session periodically: a single long-lived
+            # Jython SSL session appears to retain memory per request
+            recycle_every = max(1, int(
+                self.input.param("session_recycle_every", 2500)))
             analytics_collection_names = []
+            self.log_heap("before analytics collection creation",
+                          force_gc=True)
             for i, kv_entity in enumerate(
                     kv_entities[:self.num_analytics_collections], 0):
+                if i % recycle_every == 0:
+                    self.log_heap("creating #{0} pre-gc".format(i))
+                    if self.log_heap("creating #{0} post-gc".format(i),
+                                     force_gc=True) > 0.90:
+                        self.fail(
+                            "Testrunner JVM heap nearly exhausted while "
+                            "creating analytics collection #{0}; aborting "
+                            "instead of hanging in GC".format(i))
+                if i and i % recycle_every == 0:
+                    session.close()
+                    session = requests.Session()
                 analytics_collection_name = "analytics_{0}".format(i)
                 analytics_collection_names.append(analytics_collection_name)
 
@@ -176,7 +300,6 @@ class CBASKVCollectionScale(CBASBaseTest):
                 self.fail(
                     "Ingestion did not complete for all analytics datasets "
                     "within timeout")
-                self.sleep(900, "Pausing for manual cbcollect")
 
             # Validate item count of all analytics collections using
             # parallel count(*) queries (1 query per collection instead of 2)

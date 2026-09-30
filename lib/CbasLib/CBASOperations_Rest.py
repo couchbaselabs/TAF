@@ -362,7 +362,7 @@ class CBASHelper(RestConnection):
         return status, content, response
 
     def fetch_ingestion_status(self, method="GET", username=None,
-                               password=None):
+                               password=None, timeout=600):
         if not username:
             username = self.username
         if not password:
@@ -370,7 +370,7 @@ class CBASHelper(RestConnection):
         headers = self._create_capi_headers(username, password)
         api = self.cbas_base_url + "/analytics/status/ingestion"
         status, content, response = self._http_request(
-            api, method=method, headers=headers)
+            api, method=method, headers=headers, timeout=timeout)
         return status, content, response
 
     def fetch_dcp_state_on_cbas(self, dataset,  method="GET",

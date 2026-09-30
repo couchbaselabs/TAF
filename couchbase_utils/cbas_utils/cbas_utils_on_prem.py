@@ -1839,10 +1839,11 @@ class Dataset_Util(Link_Util):
         self.run_jobs_in_parallel(jobs, results, 15, async_run=False)
         return all(results)
 
-    def fetch_ingestion_status(self, cluster, username=None, password=None):
+    def fetch_ingestion_status(self, cluster, username=None, password=None,
+                               timeout=600):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = cbas_helper.fetch_ingestion_status(
-            username=username, password=password)
+            username=username, password=password, timeout=timeout)
         return status, content, response
 
     def wait_for_ingestion_via_status_api(self, cluster, link_name="Local",

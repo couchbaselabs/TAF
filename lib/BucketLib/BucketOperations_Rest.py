@@ -7,8 +7,12 @@ Created on Sep 25, 2017
 import json
 import time
 import urllib
+from io import BytesIO
+
+import requests
 
 from bucket import Bucket
+from cb_constants import CbServer
 from common_lib import sleep
 from custom_exceptions.exception import \
     GetBucketInfoFailed, \
@@ -1065,9 +1069,24 @@ class BucketHelper(RestConnection):
               % urllib.quote_plus(bucket_name)
         json_header = self.get_headers_for_content_type_json()
         api = self.baseUrl + url
-        status, content, _ = self._http_request(api, 'PUT', manifest_data,
-                                                headers=json_header,
-                                                timeout=timeout)
+        if CbServer.use_https:
+            # A large str body stalls in Jython's SSL layer (a single
+            # sendall() of a ~290KB manifest never completes and the server
+            # closes the connection after ~300s with an empty reply).
+            # Sending it as a file-like object makes httplib write it in
+            # small blocks.
+            if isinstance(manifest_data, unicode):
+                manifest_data = manifest_data.encode("utf-8")
+            response = requests.put(api, data=BytesIO(manifest_data),
+                                    headers=json_header, timeout=timeout,
+                                    verify=False)
+            status = response.status_code in [200, 201, 202, 204]
+            content = response.content
+        else:
+            status, content, _ = self._http_request(api, 'PUT',
+                                                    manifest_data,
+                                                    headers=json_header,
+                                                    timeout=timeout)
         if not status:
             raise Exception(content)
         return json.loads(content)

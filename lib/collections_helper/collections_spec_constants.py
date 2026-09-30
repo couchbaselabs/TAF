@@ -58,6 +58,9 @@ class MetaCrudParams(object):
         # Doc loading options supported
         COMMON_DOC_KEY = "doc_key"
         DOC_KEY_SIZE = "doc_key_size"
+        # If True, collection name is appended to the doc key so that
+        # docs of different collections land in different vbuckets
+        UNIQUE_DOC_KEY_PER_COLLECTION = "unique_doc_key_per_collection"
         DOC_SIZE = "doc_size"
         RANDOMIZE_VALUE = "randomize_value"
         RANDOMIZE_DOC_SIZE = "randomize_doc_size"

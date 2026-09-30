@@ -420,7 +420,9 @@ class DocLoaderUtils(object):
                                         op_type,
                                         collection,
                                         num_items,
-                                        doc_key,
+                                        doc_key + c_name + "-"
+                                        if unique_doc_key_per_collection
+                                        else doc_key,
                                         doc_size=doc_size,
                                         target_vbuckets=target_vbs,
                                         mutation_num=mutation_num,
@@ -463,6 +465,8 @@ class DocLoaderUtils(object):
         doc_size = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.DOC_SIZE, 256)
         doc_key_size = input_spec["doc_crud"].get(MetaCrudParams.DocCrud.DOC_KEY_SIZE, 8)
+        unique_doc_key_per_collection = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.UNIQUE_DOC_KEY_PER_COLLECTION, False)
         # Fetch randomize_value to use for doc_loading
         randomize_value = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.RANDOMIZE_VALUE, False)
