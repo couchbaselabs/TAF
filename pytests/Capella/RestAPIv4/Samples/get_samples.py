@@ -13,7 +13,7 @@ class GetSample(GetCluster):
     def setUp(self, nomenclature="Samples_Get"):
         GetCluster.setUp(self, nomenclature)
         server_version = self.normalize_server_version(
-            self.input.param("server_version", 7.6))
+            self._get_server_version())
         self.expected_res = {
             "name": self.input.param("sample_bucket", "travel-sample"),
             "type": "couchbase",

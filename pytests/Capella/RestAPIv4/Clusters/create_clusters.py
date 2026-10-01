@@ -35,7 +35,8 @@ class CreateCluster(GetProject):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": str(self.input.param("server_version", 7.6))
+                "version": self.normalize_server_version(
+                    self._get_server_version())
             },
             "serviceGroups": [
                 {

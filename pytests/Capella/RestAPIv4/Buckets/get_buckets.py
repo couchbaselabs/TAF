@@ -15,8 +15,7 @@ class GetBucket(GetCluster):
         # Initialise bucket params and create a bucket.
         self.bucket_name = self.prefix + nomenclature
         server_version = self.normalize_server_version(
-            self.input.param("server_version", 7.6))
-        self.log.info("server_version being used: {}".format(server_version))
+            self._get_server_version())
         self.expected_res = {
             "name": self.bucket_name + self.input.param("storageBackend", "magma"),
             "type": "couchbase",
