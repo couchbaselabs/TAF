@@ -433,10 +433,10 @@ class CapellaUtils(object):
                                                   tenant.projects[0],
                                                   cluster.id, bucket_id,
                                                   bucket_params)
-        code = resp.status
+        code = resp.status_code
         if 200 > code or code >= 300:
             CapellaUtils.log.critical("Bucket update failed: %s" % resp.content)
-        return resp.status
+        return resp.status_code
 
     @staticmethod
     def scale(pod, tenant, cluster, specs, timeout=600):
