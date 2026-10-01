@@ -16,10 +16,11 @@ class GetBucket(GetCluster):
         self.bucket_name = self.prefix + nomenclature
         server_version = self.normalize_server_version(
             self._get_server_version())
+        storage_backend = self.input.param("storageBackend", "magma")
         self.expected_res = {
-            "name": self.bucket_name + self.input.param("storageBackend", "magma"),
+            "name": self.bucket_name + storage_backend,
             "type": "couchbase",
-            "storageBackend": self.input.param("storageBackend", "magma"),
+            "storageBackend": storage_backend,
             "bucketConflictResolution": "seqno",
             "durabilityLevel": "none",
             "replicas": 1,
@@ -30,7 +31,8 @@ class GetBucket(GetCluster):
             "evictionPolicy": "fullEviction",
             "priority": 0,
             "memoryAllocationInMb": 1024,  # Adding missing field
-            "vbuckets": 1024 if server_version == "7.6" else 128,
+            "vbuckets": 1024 if (server_version == "7.6" or
+                                storage_backend == "couchstore") else 128,
             "stats": {
                 "itemCount": None,
                 "opsPerSecond": None,
@@ -53,7 +55,7 @@ class GetBucket(GetCluster):
                 "message": "BucketID is invalid."
             }
         ]
-        if self.input.param("storageBackend", "magma") == "couchstore":
+        if storage_backend == "couchstore":
             self.expected_res["memoryAllocationInMb"] = 100
         else:
             self.expected_res["memoryAllocationInMb"] = 1024
