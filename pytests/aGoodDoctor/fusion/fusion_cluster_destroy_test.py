@@ -84,7 +84,28 @@ class FusionClusterDestroyTest(_FusionTestBase):
         # and destroys any leftover cluster in tearDown.
         BaseTestCase.setUp(self)
         hostedOPD.__init__(self)
+        try:
+            self._setUp_body()
+        except Exception:
+            # unittest never calls tearDown() if setUp() raises -- so
+            # tearDown's careful _ensure_cluster_destroyed() safety net
+            # (which this class's own docstring says covers "no matter
+            # where or how the test failed, including setUp") would
+            # otherwise never run for a failure here, leaking whatever
+            # cluster was already created above (confirmed happening in
+            # practice: test_suite_executor_cloud-TAF/18019 leaked 3
+            # clusters this way when _ensure_fusion_state below failed).
+            # Run the same cleanup directly before letting the failure
+            # propagate as a normal setUp error.
+            try:
+                self._ensure_cluster_destroyed()
+            except Exception as cleanup_err:
+                self.log.error(
+                    f"[setUp] Cleanup after setUp failure also failed for "
+                    f"cluster {getattr(self.cluster, 'id', '?')}: {cleanup_err}")
+            raise
 
+    def _setUp_body(self):
         self.aws_region = self.input.param("region", "us-east-1")
         self.aws_access_key, self.aws_secret_key, self.aws_session_token, self.aws_iam = \
             resolve_fusion_aws_credentials(self.input, region=self.aws_region)
