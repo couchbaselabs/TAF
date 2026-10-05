@@ -1806,6 +1806,7 @@ class OPD:
 
         self.backup_repo = self.input.param("repo_name", "magma")
         self.restore_timeout = self.input.param("restore_timeout", 12 * 60 * 60)
+        self.cbcontbk_cmd_timeout = 86400
 
         # An archive on NFS has a fixed path; anywhere else local it lives on
         # the backup node's data path, which setup_backup_tools() resolves.
@@ -2058,7 +2059,8 @@ class OPD:
                 backupmgr_cloud_provider=self.backup_location.cloud_provider,
                 contbk_cloud_provider=self.cont_bkp_location.cloud_provider,
                 backupmgr_obj_staging_dir=self.backup_location.obj_staging_dir,
-                contbk_obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+                contbk_obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
+                cbcontbk_cmd_timeout=self.cbcontbk_cmd_timeout)
 
         # The wrappers only exist now, so this is the first point at which the
         # KMS key provisioned in setup_backup_encryption() can be handed over.

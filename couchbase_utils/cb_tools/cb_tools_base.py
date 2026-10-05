@@ -48,14 +48,20 @@ class CbCmdBase:
         """
         self.shellConn.disconnect()
 
-    def _execute_cmd(self, cmd):
+    def _execute_cmd(self, cmd, timeout=None):
         """
         Executed the given command in the target shell
         Arguments:
         :cmd - Command to execute
+        :timeout - Seconds to wait for the command to finish. None leaves
+                   execute_command's own default (600s) in place; pass a
+                   value for tools whose commands legitimately run longer,
+                   since that default is what aborts the SSH read
 
         Returns:
         :output - Output for the command execution
         :error  - Buffer containing warnings/errors from the execution
         """
-        return self.shellConn.execute_command(cmd)
+        if timeout is None:
+            return self.shellConn.execute_command(cmd)
+        return self.shellConn.execute_command(cmd, timeout=timeout)

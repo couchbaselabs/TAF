@@ -226,7 +226,8 @@ class BackupLocation(object):
 class ContinuousBackupUtil(object):
     def __init__(self, shell_conn, username, password, log=None,
                  backupmgr_cloud_provider=None, contbk_cloud_provider=None,
-                 backupmgr_obj_staging_dir=None, contbk_obj_staging_dir=None):
+                 backupmgr_obj_staging_dir=None, contbk_obj_staging_dir=None,
+                 cbcontbk_cmd_timeout=None):
         self.shell_conn = shell_conn
         self.username = username
         self.password = password
@@ -247,7 +248,8 @@ class ContinuousBackupUtil(object):
                                     log=self.log,
                                     cbcontbk_cloud_provider=contbk_cloud_provider,
                                     backup_cloud_provider=backupmgr_cloud_provider,
-                                    obj_staging_dir=contbk_obj_staging_dir)
+                                    obj_staging_dir=contbk_obj_staging_dir,
+                                    cmd_timeout=cbcontbk_cmd_timeout)
 
     @staticmethod
     def enable_continuous_backup(bucket_util, cluster, buckets,

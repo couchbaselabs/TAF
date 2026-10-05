@@ -8,21 +8,32 @@ from cb_constants import CbServer
 
 
 class CbContBk(CbCmdBase):
-    # Hard wall-clock ceiling for any cbcontbk command. The largest restores
-    # in the suite complete well under a minute; the ceiling only exists so
-    # a dead SSH connection or hung cbcontbk process fails the test instead
-    # of blocking the run indefinitely.
+    # Default hard wall-clock ceiling for any cbcontbk command. The largest
+    # restores in the functional suites complete well under a minute; the
+    # ceiling only exists so a dead SSH connection or hung cbcontbk process
+    # fails the test instead of blocking the run indefinitely.
+    # Datasets big enough to need longer than this -- volume tests being the
+    # case in point -- pass `cmd_timeout` instead of editing this.
     CMD_TIMEOUT = 900
+
+    # Headroom given to the watchdog thread on top of the SSH read timeout,
+    # so the read's own error (which names the node and the command) is the
+    # one that surfaces.
+    TIMEOUT_GRACE = 60
 
     def __init__(self, shell_conn, username="Administrator",
                  password="password", log=None,
                  cbcontbk_cloud_provider=None, backup_cloud_provider=None,
-                 kms_provider=None, obj_staging_dir=None):
+                 kms_provider=None, obj_staging_dir=None, cmd_timeout=None):
         """
         :param cbcontbk_cloud_provider: provider backing the continuous-backup
                                         location (cbcontbk's -l)
         :param backup_cloud_provider: provider backing the traditional backup
                                       archive (cbcontbk's -a)
+        :param cmd_timeout: wall-clock ceiling in seconds for every cbcontbk
+                            command this instance runs. Defaults to
+                            CMD_TIMEOUT; raise it for datasets whose restores
+                            legitimately run longer than that
         :param obj_staging_dir: default --obj-staging-dir for every command;
                                 the staging dir is a property of the
                                 node/object-store pairing rather than of an
@@ -49,6 +60,7 @@ class CbContBk(CbCmdBase):
         self.backup_cloud_provider = backup_cloud_provider
         self.kms_provider = kms_provider
         self.obj_staging_dir = obj_staging_dir
+        self.cmd_timeout = cmd_timeout or self.CMD_TIMEOUT
         if log:
             self.log = log
         else:
@@ -102,26 +114,36 @@ class CbContBk(CbCmdBase):
         return cmd
 
     def _execute_cmd(self, cmd):
-        """Run the command with a hard timeout via a daemon thread.
+        """Run the command under two timeouts, both derived from
+        `cmd_timeout`.
 
-        Scoped to cbcontbk so the shared shell library stays untouched:
-        some paramiko internals have no timeout of their own, and an
-        abandoned daemon thread (unlike a ThreadPoolExecutor worker) can
-        never block interpreter exit."""
+        The inner one is the SSH read timeout, handed to execute_command --
+        without it the shell library applies its own 600s default and aborts
+        the read long before `cmd_timeout` is up, no matter how high
+        `cmd_timeout` is set. It is the one that normally fires, and its
+        error names the node, the elapsed seconds and the command.
+
+        The outer one is a daemon-thread watchdog for the cases the inner
+        timeout cannot cover: some paramiko internals have no timeout of
+        their own. It is given TIMEOUT_GRACE seconds of headroom so the
+        inner, better-worded error wins whenever both are armed. The thread
+        is a daemon (unlike a ThreadPoolExecutor worker) so an abandoned one
+        can never block interpreter exit."""
         result = dict()
 
         def _run():
             try:
-                result["value"] = CbCmdBase._execute_cmd(self, cmd)
+                result["value"] = CbCmdBase._execute_cmd(
+                    self, cmd, timeout=self.cmd_timeout)
             except Exception as e:
                 result["exception"] = e
 
         runner = threading.Thread(target=_run, daemon=True)
         runner.start()
-        runner.join(timeout=self.CMD_TIMEOUT)
+        runner.join(timeout=self.cmd_timeout + self.TIMEOUT_GRACE)
         if runner.is_alive():
             raise Exception(f"cbcontbk command timed out after "
-                            f"{self.CMD_TIMEOUT}s: {cmd}")
+                            f"{self.cmd_timeout + self.TIMEOUT_GRACE}s: {cmd}")
         if "exception" in result:
             raise result["exception"]
         return result["value"]
