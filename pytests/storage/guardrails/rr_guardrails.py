@@ -58,7 +58,8 @@ class RRGuardrails(GuardrailsBase):
         self.generate_docs(doc_ops=doc_ops)
         generator = getattr(self, "gen_" + doc_ops)
         self.java_doc_loader(generator=generator, doc_ops=doc_ops,
-                             ops_rate=ops_rate if ops_rate is not None else self.ops_rate)
+                             ops_rate=ops_rate if ops_rate is not None else self.ops_rate,
+                             skip_default=True)
 
     def test_rr_guardrail_with_data_growth(self):
 
@@ -68,11 +69,26 @@ class RRGuardrails(GuardrailsBase):
         self.log.info("Starting initial data load...")
         self.initial_data_load_until_guardrail_limit(self.rr_guardrail_threshold)
 
-        self.sleep(30, "Wait for 30 seconds after the RR guardrail is hit")
-        result = self.check_cm_resource_limit_reached(self.cluster, "resident_ratio")
-        self.log.info("CM result = {}".format(result))
-        result_bucket = result[self.bucket.name]
-        self.assertTrue(1 in result_bucket, "CM resource limit for resident ratio is set to 0")
+        # cm_resource_limit_reached is an eventually-consistent, server-side
+        # metric (ep-engine stats -> Prometheus scrape -> ns_server guardrail
+        # evaluation), so poll it instead of trusting a single fixed sleep.
+        cm_check_timeout = 120
+        cm_check_interval = 10
+        cm_check_end_time = time.time() + cm_check_timeout
+        result = {}
+        result_bucket = []
+        self.sleep(cm_check_interval, "Wait before checking cm_resource_limit_reached")
+        while time.time() < cm_check_end_time:
+            result = self.check_cm_resource_limit_reached(self.cluster, "resident_ratio")
+            self.log.info("CM result = {}".format(result))
+            result_bucket = result.get(self.bucket.name, [])
+            if 1 in result_bucket:
+                break
+            self.sleep(cm_check_interval, "Wait before re-checking cm_resource_limit_reached")
+        self.assertTrue(1 in result_bucket,
+                       "CM resource limit for resident ratio is set to 0 "
+                       "after waiting {}s; last result = {}".format(
+                           cm_check_timeout, result))
         self.bucket_util.print_bucket_stats(self.cluster)
 
         self.log.info("Current node resident ratios = {}".format(
@@ -1104,7 +1120,12 @@ class RRGuardrails(GuardrailsBase):
     def initial_data_load_until_guardrail_limit(self, guardrail_limit, create_start=0, create_end=2500000):
         self.create_start = create_start
         self.create_end = create_end
-        end_time = time.time() + self.timeout
+        start_time = time.time()
+        end_time = start_time + self.timeout
+        # If check_resident_ratio() never returns a single sample for this
+        # bucket within this window, the metric path is broken and waiting
+        # out the full self.timeout only delays a guaranteed failure.
+        no_sample_timeout = min(120, self.timeout)
 
         # java_doc_loader only assigns percentages for the ops present in
         # doc_ops; reset all of them first before this create load.
@@ -1119,17 +1140,37 @@ class RRGuardrails(GuardrailsBase):
         doc_loading_tasks, print_ops_tasks = self.java_doc_loader(
             generator=self.gen_create, doc_ops="create", wait=False)
 
+        def stop_loading_tasks():
+            for task in doc_loading_tasks:
+                task.end_task()
+            for task in print_ops_tasks:
+                task.end_task()
+
         current_rr = self.check_resident_ratio(self.cluster)
 
         while (not self.check_if_rr_guardrail_breached(self.bucket, current_rr, guardrail_limit)) and \
                                             time.time() < end_time:
+            if self.bucket.name not in current_rr and \
+                    time.time() - start_time > no_sample_timeout:
+                stop_loading_tasks()
+                self.fail(
+                    "check_resident_ratio() never returned a sample for "
+                    "bucket '{}' after {}s of polling; the resident ratio "
+                    "guardrail was never confirmed breached. Check the "
+                    "warnings logged above for the raw Prometheus "
+                    "responses".format(self.bucket.name, no_sample_timeout))
             self.sleep(2, "Wait for a few seconds before next RR check")
             current_rr = self.check_resident_ratio(self.cluster)
             self.log.info("Current resident ratio = {}".format(current_rr))
 
+        if not self.check_if_rr_guardrail_breached(self.bucket, current_rr, guardrail_limit):
+            stop_loading_tasks()
+            self.fail(
+                "Timed out after {}s waiting for resident ratio of bucket "
+                "'{}' to drop below guardrail threshold {}; last observed "
+                "samples = {}".format(self.timeout, self.bucket.name,
+                                     guardrail_limit, current_rr))
+
         self.sleep(1)
         self.log.info("Stopping all doc loading tasks after hitting RR guardrail")
-        for task in doc_loading_tasks:
-            task.end_task()
-        for task in print_ops_tasks:
-            task.end_task()
+        stop_loading_tasks()

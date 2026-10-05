@@ -43,6 +43,25 @@ class GuardrailsBase(StorageBase):
                                                                self.cluster.nodes_in_cluster)
         self.log.info("KV nodes {}".format(self.cluster.kv_nodes))
 
+    def _prometheus_result(self, server, query):
+        """
+        Runs a Prometheus query against `server` and returns its
+        data.result list, or [] if the node couldn't be queried or
+        returned something unusable. A node that is mid-ejection during
+        a rebalance (lib/Jython_tasks/task.py prunes it from
+        cluster.kv_nodes as soon as the rebalance marks it "to remove",
+        which can be before it's actually gone) can return a non-JSON
+        body for a short window; callers should treat that the same as
+        "no sample yet" rather than crash.
+        """
+        status, res = ClusterRestAPI(server).query_prometheus(query)
+        if not status or not isinstance(res, dict) or not res.get("data", {}).get("result"):
+            self.log.warning(
+                "{}: {} query returned no usable data, status={}, "
+                "raw response={}".format(server.ip, query, status, res))
+            return []
+        return res["data"]["result"]
+
     def check_resident_ratio(self, cluster):
         """
         This function returns a dictionary which contains resident ratios
@@ -54,13 +73,11 @@ class GuardrailsBase(StorageBase):
         bucket_rr = dict()
         for server in cluster.kv_nodes:
             kv_ep_max_size = dict()
-            _, res = ClusterRestAPI(server).query_prometheus("kv_ep_max_size")
-            for item in res["data"]["result"]:
+            for item in self._prometheus_result(server, "kv_ep_max_size"):
                 bucket_name = item["metric"]["bucket"]
                 kv_ep_max_size[bucket_name] = float(item["value"][1])
 
-            _, res = ClusterRestAPI(server).query_prometheus("kv_logical_data_size_bytes")
-            for item in res["data"]["result"]:
+            for item in self._prometheus_result(server, "kv_logical_data_size_bytes"):
                 if item["metric"]["state"] == "active":
                     bucket_name = item["metric"]["bucket"]
                     if bucket_name not in kv_ep_max_size:
@@ -68,8 +85,24 @@ class GuardrailsBase(StorageBase):
                         # freshly created bucket can appear in this one
                         # before kv_ep_max_size has a series for it. Skip
                         # it; the caller polls and will pick it up next time
+                        self.log.warning(
+                            "{}: bucket '{}' has kv_logical_data_size_bytes "
+                            "but no kv_ep_max_size sample yet, "
+                            "kv_ep_max_size series seen={}".format(
+                                server.ip, bucket_name, list(kv_ep_max_size.keys())))
                         continue
                     logical_data_bytes = float(item["value"][1])
+                    if logical_data_bytes == 0:
+                        # Bucket has no logical data yet (e.g. just created,
+                        # or mid-rebalance before any items landed). Resident
+                        # ratio is undefined until there is data to divide
+                        # by; skip it, the caller polls and will pick up a
+                        # real sample on the next iteration.
+                        self.log.warning(
+                            "{}: bucket '{}' reported kv_logical_data_size_bytes=0, "
+                            "skipping resident ratio sample".format(
+                                server.ip, bucket_name))
+                        continue
                     resident_ratio = (kv_ep_max_size[bucket_name] / logical_data_bytes) * 100
                     resident_ratio = min(resident_ratio, 100)
                     if bucket_name not in bucket_rr:
@@ -96,9 +129,7 @@ class GuardrailsBase(StorageBase):
 
         result = dict()
         for server in cluster.kv_nodes:
-            _, res = ClusterRestAPI(server).query_prometheus("cm_resource_limit_reached")
-
-            for item in res["data"]["result"]:
+            for item in self._prometheus_result(server, "cm_resource_limit_reached"):
                 if item["metric"]["resource"] == metric:
                     if metric != "disk_usage":
                         bucket_name = item["metric"]["bucket"]

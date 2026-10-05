@@ -51,7 +51,8 @@ class MaxDataGuardrails(GuardrailsBase):
         self.generate_docs(doc_ops=doc_ops)
         generator = getattr(self, "gen_" + doc_ops)
         self.java_doc_loader(generator=generator, doc_ops=doc_ops,
-                             ops_rate=ops_rate if ops_rate is not None else self.ops_rate)
+                             ops_rate=ops_rate if ops_rate is not None else self.ops_rate,
+                             skip_default=True)
 
 
     def test_max_data_per_bucket_with_data_growth(self):
