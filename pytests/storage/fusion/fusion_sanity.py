@@ -39,6 +39,15 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.crash_allowed = threading.Event()
         self.crash_allowed.set()
 
+        self.logstore_fault = False
+        self.logstore_fault_max_hold = self.input.param("logstore_fault_max_hold", 5)
+        self.logstore_fault_max_gap = self.input.param("logstore_fault_max_gap", 20)
+        self.logstore_fault_allowed = threading.Event()
+        self.logstore_fault_lock = threading.Lock()
+        self.logstore_fault_loop = True
+        self.logstore_faults_injected = 0
+        self.logstore_fault_th = None
+
         self.kvstore_stats = dict()
         for bucket in self.cluster.buckets:
             self.kvstore_stats[bucket.name] = dict()
@@ -47,6 +56,11 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
 
     def tearDown(self):
+
+        if self.logstore_fault_th is not None:
+            self.logstore_fault_loop = False
+            self.logstore_fault_allowed.set()
+            self.logstore_fault_th.join()
 
         super(FusionSanity, self).tearDown()
 
@@ -95,6 +109,117 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         with open(stat_file_path, "w") as f:
             json.dump(self.kvstore_stats, f, indent=4)
 
+    def test_fusion_lifecycle_logstore_faults(self):
+        '''
+        Lifecycle test with log store write permission removed at random
+        during every update workload, followed by an idle period and a check
+        that no volume checkpoint references a deleted log
+        '''
+        if self.input.param("aggressive_variant", False):
+            self.fail("Faults are injected during update workloads, which "
+                      "aggressive_variant skips")
+        if self.fusion_max_pending_upload_bytes == 0:
+            self.fail("fusion_max_pending_upload_bytes=0 turns the sync manager "
+                      "off, and with it the log store janitor this test needs")
+
+        self.logstore_fault = True
+        self.logstore_broken_volumes = []
+        self.logstore_fault_th = threading.Thread(target=self.inject_logstore_write_faults)
+        self.logstore_fault_th.start()
+
+        self.test_fusion_data_lifecycle()
+
+        self.log.info(f"No volume lost a referenced log after "
+                      f"{self.logstore_faults_injected} log store faults")
+
+    def inject_logstore_write_faults(self):
+        '''
+        While allowed, removes write permission from every volume directory on
+        the log store for 1 to logstore_fault_max_hold seconds, every 5 to
+        logstore_fault_max_gap seconds
+        '''
+        log_store_path = self.fusion_log_store_uri.split("://")[-1]
+        volume_dirs = " ".join(
+            f"{log_store_path}/kv/{self.get_bucket_uuid(bucket.name)}/kvstore-*"
+            for bucket in self.cluster.buckets)
+
+        ssh = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            while self.logstore_fault_loop:
+                self.logstore_fault_allowed.wait()
+                time.sleep(random.randint(5, self.logstore_fault_max_gap))
+                with self.logstore_fault_lock:
+                    if not (self.logstore_fault_loop and self.logstore_fault_allowed.is_set()):
+                        continue
+                    hold = random.randint(1, self.logstore_fault_max_hold)
+                    ssh.execute_command(f"chmod a-w {volume_dirs}")
+                    time.sleep(hold)
+                    ssh.execute_command(f"chmod ug+w {volume_dirs}")
+                    self.logstore_faults_injected += 1
+        finally:
+            ssh.execute_command(f"chmod ug+w {volume_dirs}")
+            ssh.disconnect()
+
+    def pause_logstore_faults(self):
+        self.logstore_fault_allowed.clear()
+        with self.logstore_fault_lock:
+            pass
+        self.log.info(f"Log store faults paused, {self.logstore_faults_injected} injected so far")
+
+    def validate_volume_checkpoints(self):
+        '''
+        Fails if the checkpoint of any volume, or a log its manifest
+        references, is no longer on the log store
+        '''
+        log_store_path = self.fusion_log_store_uri.split("://")[-1]
+        broken = []
+
+        ssh = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            for bucket in self.cluster.buckets:
+                bucket_uuid = self.get_bucket_uuid(bucket.name)
+                for vb in range(int(bucket.numVBuckets)):
+                    volume_id = f"kv/{bucket_uuid}/kvstore-{vb}"
+                    volume_dir = f"{log_store_path}/{volume_id}"
+
+                    o, _ = ssh.execute_command(
+                        "/opt/couchbase/bin/fusion/metadata_dump "
+                        f"--uri chronicle://{self.cluster.master.ip}:8091 "
+                        f"--volume-id {volume_id}")
+                    try:
+                        checkpoint = json.loads("".join(o))["checkpoint"]["logID"]
+                    except (ValueError, KeyError):
+                        continue
+
+                    o, _ = ssh.execute_command(f"ls {volume_dir}")
+                    present = {name[:-2] if name.endswith(".p") else name: name
+                               for name in o
+                               if name.startswith("log-") and not name.endswith(".tmp")}
+                    if checkpoint not in present:
+                        broken.append(f"{bucket.name} kvstore-{vb}: checkpoint {checkpoint} "
+                                      f"deleted, logs present {sorted(present.values())}")
+                        continue
+
+                    o, _ = ssh.execute_command(
+                        f"/opt/couchbase/bin/fusion/log_dump -l {volume_dir}/{present[checkpoint]}")
+                    referenced = [line.strip().replace("LogID: Term=", "log-").replace(" Seqno=", ".")
+                                  for line in o if line.strip().startswith("LogID: Term=")][1:]
+                    missing = [log_id for log_id in referenced if log_id not in present]
+                    if missing:
+                        broken.append(f"{bucket.name} kvstore-{vb}: checkpoint {checkpoint} "
+                                      f"references deleted {missing}, logs present "
+                                      f"{sorted(present.values())}")
+        finally:
+            ssh.disconnect()
+
+        self.logstore_broken_volumes = broken
+        if broken:
+            self.log.error(f"The log store janitor deleted logs still referenced by a "
+                           f"checkpoint, after {self.logstore_faults_injected} log store "
+                           f"faults. Rebalancing these volumes fails: {broken}")
+        else:
+            self.log.info("Every volume checkpoint and the logs it references are present")
+
     def run_fusion_rebalance_cycle(self):
         aggressive_variant = self.input.param("aggressive_variant", False)
         self.validate_reupload = self.input.param("validate_reupload", False)
@@ -114,9 +239,18 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 while num_upsert_iterations > 0:
                     self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
                     num_upsert_iterations -= 1
+                    if self.logstore_fault:
+                        self.logstore_fault_allowed.set()
                     self.perform_workload(self.deleted_upto,
                                           self.deleted_upto + self.num_items,
                                           doc_op="update")
+                    if self.logstore_fault:
+                        self.sleep(self.fusion_upload_interval + 30,
+                                   "Faults stay on through each volume's last sync")
+                        self.pause_logstore_faults()
+                        self.sleep(120 + self.fusion_upload_interval + 30,
+                                   "Idle so the log store janitor runs")
+                        self.validate_volume_checkpoints()
                     self.sleep(30, "Wait after update workload")
 
                 sleep_time = 120 + self.fusion_upload_interval + 30
@@ -155,6 +289,10 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             finally:
                 if self.crash_during_test:
                     self.resume_crashing()
+
+            if self.logstore_fault and self.logstore_broken_volumes:
+                self.fail(f"Fusion rebalance passed, but these volumes still reference "
+                          f"deleted logs: {self.logstore_broken_volumes}")
 
             if not aggressive_variant:
                 # Wait for doc load to complete
