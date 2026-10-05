@@ -14,7 +14,6 @@ import requests
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID
-from custom_exceptions.exception import ServerUnavailableException
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -541,29 +540,15 @@ class CRLTest(CRLBase):
         # Step 11 -- request envelope: oversized body, undecodable JSON,
         # and ?just_validate=1 validating without applying.
         #
-        # The server rejects the >20MB body almost instantly, but under
-        # CI's low-latency network some client/requests versions surface
-        # that as a connection-level SSLError instead of a clean 413 --
-        # confirmed via direct repro. Short timeout + tolerate either
-        # outcome as a pass, since both mean the body was rejected.
-        oversized_body = json.dumps({"directory": "x" * (21 * 1024 * 1024)})
-        try:
-            status, content, response = self.crl_utils.post_settings_raw(
-                self.rest, oversized_body, timeout=20,
-            )
-            self.assertEqual(
-                response.status_code, 413,
-                f"A >20MB body should 413: got {response.status_code}",
-            )
-        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError,
-                ServerUnavailableException) as exc:
-            self.log.info(
-                f"Oversized body was rejected via a connection-level error "
-                f"rather than a clean 413 ({type(exc).__name__}: {exc}) -- "
-                f"accepted as a pass: this is the client's own large write "
-                f"racing the server's correct early rejection, not a "
-                f"server-side failure (see comment above)"
-            )
+        # Oversized body: headers only, declaring a >20MB Content-Length.
+        # ns_server 413s on the header alone; streaming a real 21MB body
+        # races its early close and surfaces as an SSLError on CI.
+        status_code, content = self.crl_utils.post_settings_declared_length(
+            self.rest, 21 * 1024 * 1024, query="just_validate=1",
+        )
+        self.assertEqual(
+            status_code, 413, f"A >20MB body should 413: got {status_code}: {content}",
+        )
 
         status, content, response = self.crl_utils.post_settings_raw(self.rest, "{not valid json")
         self.assertEqual(response.status_code, 400, f"Undecodable JSON should 400: {content}")
@@ -1750,9 +1735,12 @@ class CRLTest(CRLBase):
             f"Expected the missing-CRL cert to classify as 'undetermined': {content}",
         )
         self.log.info("Missing-CRL cert confirmed 'undetermined' via diagnostics/validate")
-        self.crl_utils.wait_for_log_text(
-            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined",
-            ["policy=permissive, treat as valid", "leafMissing"],
+        # The permissive clause's own warning (cb_crl.erl apply_policy).
+        # assert_log_line flushes ale's buffered sinks first, then greps
+        # once for this exact cert's line -- no timing window to race.
+        self.crl_utils.assert_log_line(
+            shell, self.rest, self.DEBUG_LOG_PATH,
+            'CN=leafMissing</ud>" (policy=permissive, treat as valid)',
         )
 
         # Permissive fails open on an expired applicable CRL too, a
@@ -1795,10 +1783,12 @@ class CRLTest(CRLBase):
             f"expired CRL, distinct from the missing-CRL case: {content}",
         )
         self.log.info("Expired-CRL cert confirmed 'undetermined' via diagnostics/validate")
-        # Polled for the same reason as the missing-CRL case above.
-        self.crl_utils.wait_for_log_text(
-            shell, self.DEBUG_LOG_PATH, "Certificate status undetermined",
-            ["policy=permissive, treat as valid", "leafExpired"],
+        # The permissive clause's own warning (cb_crl.erl apply_policy).
+        # assert_log_line flushes ale's buffered sinks first, then greps
+        # once for this exact cert's line -- no timing window to race.
+        self.crl_utils.assert_log_line(
+            shell, self.rest, self.DEBUG_LOG_PATH,
+            'CN=leafExpired</ud>" (policy=permissive, treat as valid)',
         )
 
         # Permissive -> Require: same immediate-effect check as above.

@@ -555,6 +555,54 @@ class CRLUtils:
         headers = api.get_headers_for_content_type_json()
         return api.request(url, "POST", body, headers=headers, timeout=timeout)
 
+    @staticmethod
+    def post_settings_declared_length(rest, declared_length, query="", timeout=30):
+        """
+        POST /settings/crl sending only the request headers, with
+        Content-Length set to `declared_length`, and no body at all --
+        for the oversized-body (>20MB) rejection check.
+
+        ns_server decides the 413 from Content-Length alone, before reading
+        any body (confirmed live on 8.5.0-1257: curl's Expect: 100-continue
+        gets 413 with 0 bytes uploaded; this headers-only probe got 413
+        40/40 over both 8091 and 18091). Actually streaming a 21MB body
+        instead races the server's early reply-and-close against the
+        client's still-in-progress write, which some clients surface as a
+        connection-level SSLError/ECONNRESET rather than the 413 -- that's
+        what made the requests-based version of this check fail on CI.
+
+        Any connection-level error is raised, not swallowed: with no body
+        in flight there's nothing left to race, so one means a real
+        problem.
+
+        Returns (status_code, content_text).
+        """
+        base_url = (
+            getattr(rest, "baseUrl", None) or getattr(rest, "base_url", None)
+        ).rstrip("/")
+        username = getattr(rest, "username", None) or getattr(rest, "rest_username", None)
+        password = getattr(rest, "password", None) or getattr(rest, "rest_password", None)
+        parsed = urllib.parse.urlparse(base_url)
+        if parsed.scheme == "https":
+            conn = http.client.HTTPSConnection(
+                parsed.hostname, parsed.port, timeout=timeout,
+                context=ssl._create_unverified_context(),
+            )
+        else:
+            conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=timeout)
+        path = ENDPOINT_CRL_SETTINGS + (f"?{query}" if query else "")
+        try:
+            conn.putrequest("POST", path, skip_accept_encoding=True)
+            auth_value = base64.b64encode(f"{username}:{password}".encode()).decode()
+            conn.putheader("Authorization", f"Basic {auth_value}")
+            conn.putheader("Content-Type", "application/json")
+            conn.putheader("Content-Length", str(int(declared_length)))
+            conn.endheaders()
+            response = conn.getresponse()
+            return response.status, response.read().decode("utf-8", "replace")
+        finally:
+            conn.close()
+
     def list_files(self, rest):
         """GET /settings/crl/files. Returns (status_bool, content_list)."""
         api = self._crl_api(rest)
@@ -1495,27 +1543,45 @@ class CRLUtils:
             time.sleep(poll_interval)
         return False
 
+    @staticmethod
+    def flush_server_logs(rest):
+        """
+        Forces every ale log sink on the node `rest` is bound to to write
+        its buffered lines to disk, via diag/eval ale:sync_all_sinks().
+        ale_disk_sink batches debug.log writes for up to 1000ms
+        (batch_timeout), so a line logged moments ago may not be on disk
+        yet -- calling this first makes a single grep deterministic, with
+        no sleep/poll needed.
+        """
+        status, content = rest.diag_eval("ale:sync_all_sinks().")
+        if not status:
+            raise AssertionError(f"ale:sync_all_sinks() diag/eval failed: {content}")
+
     @classmethod
-    def wait_for_log_text(cls, shell_conn, log_path, grep_pattern,
-                          expected_substrings, max_wait=10, interval=1):
+    def assert_log_line(cls, shell_conn, rest, log_path, literal):
         """
-        Polls grep_remote_log() until every string in expected_substrings
-        appears, or max_wait elapses -- covers the log write not having
-        reached disk yet at the moment of the first read.
+        Flushes the server's log sinks, then asserts that `literal` (a
+        fixed string, matched with grep -F) appears in `log_path` or its
+        most recent rotation -- so a rotation landing between the event
+        and the read can't hide the line. `literal` should be specific to
+        the one event being checked (e.g. include the cert subject), not a
+        generic prefix that other events also produce.
+
+        Returns the matching line(s).
         """
-        deadline = time.monotonic() + max_wait
-        log_text = ""
-        while time.monotonic() < deadline:
-            log_text = grep_remote_log(shell_conn, log_path, grep_pattern, lines=5)
-            if all(s in log_text for s in expected_substrings):
-                return log_text
-            time.sleep(interval)
-        missing = [s for s in expected_substrings if s not in log_text]
-        raise AssertionError(
-            f"Expected {expected_substrings} in the log matching "
-            f"{grep_pattern!r} within {max_wait}s -- still missing "
-            f"{missing} after polling, last seen: {log_text!r}"
+        cls.flush_server_logs(rest)
+        quoted = shlex.quote(literal)
+        out, _ = shell_conn.execute_command(
+            f"{{ grep -aF {quoted} {log_path}; "
+            f"zcat {log_path}.1.gz 2>/dev/null | grep -aF {quoted}; }} | tail -n 5"
         )
+        text = "\n".join(out) if out else ""
+        if literal not in text:
+            raise AssertionError(
+                f"Expected a log line containing {literal!r} in {log_path} "
+                f"after flushing the server's log sinks, found none"
+            )
+        return text
 
     @classmethod
     def wait_for_crl_log_text(cls, shell_conn, debug_log_path, ip, port,
