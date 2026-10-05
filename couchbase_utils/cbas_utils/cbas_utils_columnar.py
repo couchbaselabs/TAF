@@ -5600,7 +5600,7 @@ class Index_Util(View_Util):
             distance_function="euclidean_squared",
             min_probe_fraction=None, k_multiplier=None,
             where_clause=None, field="id", username=None, password=None,
-            timeout=300, analytics_timeout=300):
+            timeout=300, analytics_timeout=300, warnings=0):
         """
         Runs an ANN vector search:
         LET qvec = [...]
@@ -5633,6 +5633,8 @@ class Index_Util(View_Util):
         :param field str, name of the field to project in the
             SELECT VALUE clause, defaults to "id". Pass an INCLUDE'd
             scalar facet field (e.g. "color") to select that instead.
+        :param warnings int, max number of warnings the server should
+            return in the response (0 returns none).
         :return tuple, same as execute_statement_on_cbas_util - i.e.
             (status, metrics, errors, results, handle, warnings).
         """
@@ -5661,7 +5663,8 @@ class Index_Util(View_Util):
 
         return self.execute_statement_on_cbas_util(
             cluster, statement, username=username, password=password,
-            timeout=timeout, analytics_timeout=analytics_timeout)
+            timeout=timeout, analytics_timeout=analytics_timeout,
+            warnings=warnings)
 
     def get_all_index_objs(self):
         """

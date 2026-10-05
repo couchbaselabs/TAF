@@ -330,12 +330,16 @@ class LSMSampling(ColumnarOnPremBase):
         actual_dump_count = self.cbas_util.get_dump_index_count(
             self.columnar_cluster, self.collection_name, index_row["IndexName"])
         print(
-            f"DUMP_INDEX row count for {self.collection_name}: {actual_dump_count}; expected {expected_dump_count} (SampleCardinalityTarget={target}, num_partitions={self.num_partitions})")
-        if actual_dump_count != expected_dump_count:
+            f"DUMP_INDEX row count for {self.collection_name}: {actual_dump_count}; expected >= {expected_dump_count} (SampleCardinalityTarget={target}, num_partitions={self.num_partitions})")
+        # MB-74219: the server intentionally over-samples (per-partition
+        # target is padded to account for tombstone-heavy partitions), so the
+        # DUMP_INDEX count can exceed ceil(target / partitions) * partitions.
+        # Only the lower bound is guaranteed.
+        if actual_dump_count < expected_dump_count:
             self.fail(
-                "DUMP_INDEX row count mismatch for {0}: "
+                "DUMP_INDEX row count too low for {0}: "
                 "SampleCardinalityTarget={1}, num_partitions={2} => "
-                "expected {3}, got {4}".format(
+                "expected at least {3}, got {4}".format(
                     self.collection_name, target, self.num_partitions,
                     expected_dump_count, actual_dump_count))
 

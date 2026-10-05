@@ -164,7 +164,7 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         self.sleep = common_sleep
 
         self.upgrade_version = self.input.param(
-            "upgrade_version", "2.1.0-1367")
+            "post_upgrade_version", "2.1.0-1367")
         self.pre_upgrade_version = self.input.param(
             "pre_upgrade_version", "2.0.0-1069")
         self.nodes_init = self.input.param("nodes_init", 2)
@@ -186,7 +186,7 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         # super().setUp() re-reads/overwrites some of the params above
         # with its own (different) defaults - re-assert ours.
         self.upgrade_version = self.input.param(
-            "upgrade_version", "2.1.0-1367")
+            "post_upgrade_version", "2.1.0-1367")
         self.pre_upgrade_version = self.input.param(
             "pre_upgrade_version", "2.0.0-1069")
         self.nodes_init = self.input.param("nodes_init", 2)
@@ -1249,6 +1249,8 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             "sample_seed={}) are present in Metadata.Index for {}".format(
                 sample_size, sample_method, sample_seed,
                 self.analyze_collection_name))
+        self.sleep(
+            10, "Wait for Metadata.Index to be updated after ANALYZE COLLECTION")
         if not self.cbas_util.verify_sample_present_in_Metadata(
                 self.cluster, self.analyze_collection_name, "Default",
                 sample_method=sample_method, sample_size=sample_size,
@@ -1981,6 +1983,7 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                 self._run_analyze_collection(sample_size=self.analyze_sample_size,
                                              sample_seed=self.analyze_sample_seed,
                                              sample_method="random")
+
                 self._verify_sample_metadata_index(sample_size=self.analyze_sample_size,
                                                    sample_seed=self.analyze_sample_seed,
                                                    sample_method="random")

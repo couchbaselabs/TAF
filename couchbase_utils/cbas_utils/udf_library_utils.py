@@ -11,7 +11,6 @@ TAF drives node-local CLI tools.
 
 import base64
 
-from constants.platform_constants import os_constants
 from global_vars import logger
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -319,8 +318,9 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
         # UDF call hang indefinitely on response delivery rather than
         # erroring (MB-74322), which is far harder to diagnose than a
         # missing-socket or wrong-path error would be.
-        if os_constants.ea_platform_constants(shell) is \
-                os_constants.LinuxEnterpriseAnalytics:
+        ea_root_out, _ = shell.execute_command(
+            "test -d /opt/enterprise-analytics/bin && echo present")
+        if ea_root_out and "present" in ea_root_out[0]:
             image = "build-docker.couchbase.com/cb-vanilla/enterprise-analytics-udf:2.3.0"
         else:
             image = "build-docker.couchbase.com/cb-vanilla/operational-insights-udf:3.0.0"

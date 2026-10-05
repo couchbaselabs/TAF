@@ -575,7 +575,8 @@ class VectorSearch(ColumnarOnPremBase):
             num_clusters=self.num_clusters,
             cross_pollination_m=self.cross_pollination_m,
             rng_factor=self.rng_factor,
-            extra_with_params=self.extra_with_params)
+            extra_with_params=self.extra_with_params,
+            require_success=not self.expected_error)
 
         if not self.expected_error and not self.cbas_util.verify_vector_index_present_in_Metadata(
                 self.columnar_cluster, self.remote_dataset.name,
@@ -1382,18 +1383,26 @@ class VectorSearch(ColumnarOnPremBase):
 
     def test_invalid_embeddings_ann(self):
         """
-        Pass null for vector_field in ann_distance(<vector_field>, <query_vector>,  <distance_function>). Catch the error/warning
+        Pass null for vector_field in ann_distance(<vector_field>, <query_vector>,  <distance_function>).
+        A null argument makes ann_distance() return null for every row,
+        with no warning (works as designed, see MB-74243 discussion).
+        Project the distance and verify it is null:
+        LET qvec = [...]
+        SELECT i.id, ann_distance(null, qvec, "<distance_function>") AS d
+        FROM <dataset> i
+        ORDER BY d
+        LIMIT <k>;
         """
         qvec = self.generate_random_vector(self.dimension)
         statement = (
             'LET qvec = {0}\n'
-            'SELECT VALUE i.id\n'
-            'FROM {1} i\n'
-            'ORDER BY ann_distance(null, qvec, "{2}")\n'
+            'SELECT i.id, ann_distance(null, qvec, "{1}") AS d\n'
+            'FROM {2} i\n'
+            'ORDER BY d\n'
             'LIMIT {3};'
         ).format(
-            json.dumps(qvec), self.remote_dataset.full_name,
-            self.distance_function, self.k)
+            json.dumps(qvec), self.distance_function,
+            self.remote_dataset.full_name, self.k)
 
         status, _, errors, results, _, warnings = \
             self.cbas_util.execute_statement_on_cbas_util(
@@ -1403,12 +1412,20 @@ class VectorSearch(ColumnarOnPremBase):
             "warnings={2} results={3}".format(
                 status, errors, warnings, results))
 
-        if not warnings:
+        if status != "success":
             self.fail(
-                "ann_distance(null, qvec, ...) on {0} did not "
-                "throw warning".format(
-                    self.remote_dataset.full_name,
-                    warnings))
+                "ann_distance(null, qvec, ...) on {0} failed: {1}".format(
+                    self.remote_dataset.full_name, errors))
+        if not results:
+            self.fail(
+                "ann_distance(null, qvec, ...) on {0} returned no "
+                "rows".format(self.remote_dataset.full_name))
+        non_null = [row for row in results if row.get("d") is not None]
+        if non_null:
+            self.fail(
+                "ann_distance(null, qvec, ...) on {0} should return null "
+                "for every row, got: {1}".format(
+                    self.remote_dataset.full_name, non_null))
 
     def test_null_query_vector(self):
         """
@@ -1426,20 +1443,26 @@ class VectorSearch(ColumnarOnPremBase):
             self.columnar_cluster, self.remote_dataset.full_name,
             self.vector_field, qvec, 1,
             distance_function=self.distance_function,
-            where_clause="i.color='Green'", field="color")
+            where_clause="i.color='Green'", field="color", warnings=10)
         self.log.info(
             "test_null_query_vector: qvec={0} status={1} errors={2} "
             "warnings={3} results={4}".format(
                 qvec, status, errors, warnings, results))
 
-        if not warnings:
+        # The query succeeds; the dimension mismatch is reported as a
+        # warning (returned only when max-warnings is requested).
+        expected_warning = (
+            "Vector dimension mismatch: expected {0} dimensions, but got "
+            "{1}".format(self.dimension, len(qvec)))
+        warning_msgs = [w.get("msg", "") for w in (warnings or [])]
+        if not any(expected_warning in msg for msg in warning_msgs):
             self.fail(
-                "ANN search with an all-zero {0}-dim qvec against "
-                "the {1}-dim field {2} on {3} did not warn with "
-                .format(
+                "ANN search with an all-zero {0}-dim qvec against the "
+                "{1}-dim field {2} on {3} did not warn with: {4}, got "
+                "warnings: {5}".format(
                     len(qvec), self.dimension, self.vector_field,
-                    self.remote_dataset.full_name,
-                    warnings))
+                    self.remote_dataset.full_name, expected_warning,
+                    warning_msgs))
 
     def test_different_dimension_embeddings_qvec(self):
         """
@@ -1642,27 +1665,31 @@ class VectorSearch(ColumnarOnPremBase):
             dataset, self.vector_field, self.dimension, self.similarity,
             require_success=False)
 
-    def test_include_array(self):
+    def test_no_include_plan(self):
         """
         Data has array field says tags: len: 3-5
-        Create index example:
-        CREATE INDEX idx_include
+        MB-73435 (Not a Bug): the vector index supports only "scalar"
+        predicates, so `WHERE "bestseller" IN ds.tags` can't use an index
+        built with INCLUDE (`tags`). An index with no INCLUDE fields can
+        only serve a query without a WHERE clause (it can't cover the
+        predicate), so use idx_no_include.
+
+        Create index:
+        CREATE INDEX idx_no_include
         ON testTag(embedding VECTOR)
-        INCLUDE (`tags`)
         TYPE VTREE
         WITH {"dimension": 128, "similarity": "euclidean_squared"}
         EXCLUDE UNKNOWN KEY;
 
         Run query:
         explain text
-        LET qvec = [27, 184, 156, 15, 202, 81, 231, 94, 160, 132, 199, 57, 153, 85, 218, 154, 203, 76, 93, 136, 199, 166, 227, 126, 193, 41, 154, 116, 37, 47, 78, 102, 54, 222, 113, 62, 163, 59, 38, 87, 45, 148, 151, 21, 84, 98, 193, 233, 74, 200, 57, 88, 108, 88, 101, 207, 61, 101, 252, 49, 114, 44, 167, 177, 213, 0, 49, 207, 223, 153, 73, 209, 36, 208, 119, 101, 183, 219, 180, 110, 98, 254, 151, 99, 179, 75, 239, 141, 71, 65, 78, 76, 13, 0, 227, 134, 115, 238, 146, 98, 249, 120, 127, 189, 37, 136, 9, 126, 219, 237, 43, 14, 220, 234, 187, 68, 226, 197, 184, 57, 78, 62, 23, 25, 142, 69, 207, 97]
-        SELECT ds.tags
+        LET qvec = [...]
+        SELECT ds.id
         FROM testTag ds
-        WHERE "bestseller" IN ds.tags
         ORDER BY ann_distance(ds.embedding, qvec, "l2_squared")
         LIMIT 10;
 
-        Verify idx_include used in the plan
+        Verify idx_no_include used in the plan
         """
         dataset = self.create_standalone_vector_dataset({
             "embedding_field": self.vector_field,
@@ -1671,15 +1698,14 @@ class VectorSearch(ColumnarOnPremBase):
         self.index_name, _ = self._create_and_track_vector_index(
             dataset, self.vector_field, self.dimension, self.similarity,
             index_name=self.cbas_util.format_name(
-                "idx_include_{0}".format(self.vector_field)),
-            index_type=self.index_type, include_fields=["tags"])
+                "idx_no_include_{0}".format(self.vector_field)),
+            index_type=self.index_type)
 
         qvec = self.generate_random_vector(self.dimension)
         query = (
             'LET qvec = {0}\n'
-            'SELECT ds.tags\n'
+            'SELECT ds.id\n'
             'FROM {1} ds\n'
-            'WHERE "bestseller" IN ds.tags\n'
             'ORDER BY ann_distance(ds.{2}, qvec, "{3}")\n'
             'LIMIT 10;'
         ).format(
@@ -1690,8 +1716,8 @@ class VectorSearch(ColumnarOnPremBase):
                 self.columnar_cluster, query, index_used=True,
                 index_name=self.index_name):
             self.fail(
-                "EXPLAIN didn't confirm vector index {0} (INCLUDE "
-                "tags) is used for the ANN query on {1}".format(
+                "EXPLAIN didn't confirm vector index {0} (no INCLUDE "
+                "fields) is used for the ANN query on {1}".format(
                     self.index_name, dataset.full_name))
 
         status, _, errors, results, _, warnings = \
@@ -1702,8 +1728,8 @@ class VectorSearch(ColumnarOnPremBase):
             "results={3}".format(status, errors, warnings, results))
         if status != "success":
             self.fail(
-                "ANN query with an INCLUDE'd tags filter on {0} "
-                "failed: {1}".format(dataset.full_name, errors))
+                "ANN query on {0} failed: {1}".format(
+                    dataset.full_name, errors))
 
     def test_dimension_mismatch(self):
         """
@@ -1797,20 +1823,24 @@ class VectorSearch(ColumnarOnPremBase):
         status, _, errors, results, _, warnings = self.cbas_util.ann_distance(
             self.columnar_cluster, dataset.full_name,
             self.vector_field, qvec, self.k,
-            distance_function=self.distance_function)
+            distance_function=self.distance_function, warnings=10)
         self.log.info(
             "test_string_query_vector: qvec(type=str)={0} status={1} "
             "errors={2} warnings={3} results={4}".format(
                 qvec, status, errors, warnings, results))
 
+        # A string-typed qvec doesn't fail the query: it succeeds and the
+        # server reports the problem as a warning (the server only returns
+        # warnings when asked for via max-warnings).
         if self.expected_error:
-            if not self.cbas_util.validate_error_and_warning_in_response(
-                    status, errors, self.expected_error):
+            warning_msgs = [w.get("msg", "") for w in (warnings or [])]
+            if not any(self.expected_error in msg for msg in warning_msgs):
                 self.fail(
                     "ANN search with a string-typed qvec on {0} did "
-                    "not fail with the expected error: {1}".format(
-                        self.remote_dataset.full_name,
-                        self.expected_error))
+                    "not warn with the expected message: {1}, got "
+                    "warnings: {2}".format(
+                        dataset.full_name, self.expected_error,
+                        warning_msgs))
 
     def test_restart_node_during_vector_index_creation(self):
         """
@@ -1850,7 +1880,8 @@ class VectorSearch(ColumnarOnPremBase):
                     num_clusters=self.num_clusters,
                     cross_pollination_m=self.cross_pollination_m,
                     rng_factor=self.rng_factor, timeout=600,
-                    analytics_timeout=600, error_holder=error_holder)
+                    analytics_timeout=600, error_holder=error_holder,
+                    require_success=False)
             except Exception as exc:
                 error["exc"] = exc
 
