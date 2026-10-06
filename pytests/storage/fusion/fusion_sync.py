@@ -1641,6 +1641,26 @@ class FusionSync(MagmaBaseTest, FusionBase):
             self.bucket_util._wait_warmup_completed(bucket, wait_time=600)
 
 
+    def get_total_snapshot_pending_bytes(self):
+        node_stats = self.get_fusion_status_stats()
+        if not node_stats:
+            self.fail("GET /fusion/status returned no node stats")
+        return sum(stats["snapshot_pending_bytes"]
+                   for stats in node_stats.values())
+
+
+    def wait_for_snapshot_pending_bytes(self, max_bytes, timeout=600,
+                                        force_sync=False):
+        end_time = time.time() + timeout
+        while True:
+            if force_sync:
+                FusionRestAPI(self.cluster.master).sync_log_store()
+            pending = self.get_total_snapshot_pending_bytes()
+            if pending <= max_bytes or time.time() > end_time:
+                return pending
+            self.sleep(15, f"Wait for snapshotPendingBytes <= {max_bytes}")
+
+
     def test_orphan_resync_respects_max_log_size(self):
         """
         MB-74045 - a Fusion log segment must never exceed 2 * MaxLogSize,
@@ -1778,3 +1798,90 @@ class FusionSync(MagmaBaseTest, FusionBase):
                 f"Violations:\n  " + "\n  ".join(offenders)
                 + "\nFusion recovery log lines:\n  "
                 + "\n  ".join(recovery_lines))
+
+
+    def test_orphan_extents_counted_in_pending_sync_bytes(self):
+        """
+        MB-69349: after disable -> enable, orphan extents must be counted as
+        pending, keeping Fusion in 'enabling' until they are reuploaded.
+        """
+        hold_time = self.input.param("hold_time", 120)
+        threshold_bytes = self.enable_sync_threshold * 1024 * 1024
+        cluster_rest = ClusterRestAPI(self.cluster.master)
+        fusion_rest = FusionRestAPI(self.cluster.master)
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+
+        self.log.info("Enabling Fusion")
+        self.configure_fusion()
+        self.enable_fusion()
+
+        pending = self.wait_for_snapshot_pending_bytes(0, force_sync=True)
+        if pending:
+            self.fail(f"snapshotPendingBytes still {pending} after forced "
+                      f"syncs")
+
+        log_store_bytes = 0
+        for bucket in self.cluster.buckets:
+            segments = self.get_log_store_segments(bucket)
+            log_store_bytes += sum(sum(files.values())
+                                   for files in segments.values())
+        if log_store_bytes <= threshold_bytes:
+            self.fail(f"Log store holds {log_store_bytes} bytes, not above "
+                      f"enableSyncThresholdMB. Increase num_items/doc_size")
+
+        self.log.info("Stopping Fusion syncs by setting "
+                      "fusion_sync_rate_limit to 0")
+        status, content = cluster_rest.manage_global_memcached_setting(
+            fusion_sync_rate_limit=0)
+        self.assertTrue(status, f"Failed to stop Fusion syncs: {content}")
+        try:
+            self.disable_fusion()
+            _, _, syncs_before = self.get_fusion_sync_stats()
+
+            status, content = fusion_rest.enable_fusion()
+            self.assertTrue(status, f"Enabling Fusion failed: {content}")
+            self.sleep(30, "Wait after enabling Fusion")
+            self.log.info("Fusion recovery log lines:\n  " + "\n  ".join(
+                self.get_fusion_recovery_log_lines()))
+
+            end_time = time.time() + hold_time
+            while time.time() < end_time:
+                _, content = fusion_rest.get_fusion_status()
+                pending = self.get_total_snapshot_pending_bytes()
+                self.log.info(f"Fusion state: {content['state']}, "
+                              f"snapshotPendingBytes: {pending}")
+                if content["state"] != "enabling" or pending <= threshold_bytes:
+                    _, _, syncs = self.get_fusion_sync_stats()
+                    self.assertEqual(syncs, syncs_before,
+                                     "Fusion synced with "
+                                     "fusion_sync_rate_limit=0")
+                    self.fail(f"MB-69349: Fusion is '{content['state']}' "
+                              f"with {pending} bytes pending before the "
+                              f"orphan extents are reuploaded")
+                self.sleep(15, "Wait while Fusion syncs are stopped")
+        finally:
+            self.log.info("Restoring fusion_sync_rate_limit")
+            cluster_rest.manage_global_memcached_setting(
+                fusion_sync_rate_limit=self.fusion_sync_rate_limit)
+
+        if not self.monitor_fusion_state_transition(state="enabled",
+                                                    timeout=600):
+            self.fail("Fusion not enabled after resuming syncs")
+
+        pending = self.wait_for_snapshot_pending_bytes(0)
+        if pending:
+            self.fail(f"snapshotPendingBytes still {pending} after resuming "
+                      f"syncs")
+
+        for bucket in self.cluster.buckets:
+            segments = self.get_log_store_segments(bucket)
+            empty = [path for path, files in segments.items() if not files]
+            if empty:
+                self.fail(f"No log files after resync in: {empty}")
+
+        self.log.info("Validating item count")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
