@@ -59,6 +59,10 @@ cont_bk.restore(archive_path, repo_name, location, temp_dir, obj_staging_dir="/t
 
 See [cloud_provider_utils/AGENTS.md](../cloud_provider_utils/AGENTS.md) for the provider interface and per-provider env vars.
 
+## CbCli
+
+- One method per `couchbase-cli` subcommand. To support a new flag, add an optional kwarg (default `None`) to the existing method — do not add a second method that builds the same subcommand.
+
 ## CbImport / Cbstats / Cbepctl
 
 - `CbImport` — bulk data import via cbimport CLI.

@@ -97,9 +97,22 @@ class CbCli(CbCmdBase):
             cmd += " --update-notifications %s" % update_notifications
         return self._execute_cmd(cmd)
 
-    def cluster_settings(self, data_ramsize, index_ramsize, fts_ramsize,
-                         cluster_name, cluster_username,
-                         cluster_password, cluster_port):
+    def cluster_settings(self, data_ramsize=None, index_ramsize=None,
+                         fts_ramsize=None, cluster_name=None,
+                         cluster_username=None, cluster_password=None,
+                         cluster_port=None, throttle_enabled=None,
+                         node_capacity=None, read_unit_size=None,
+                         write_unit_size=None):
+        """
+        couchbase-cli setting-cluster
+        Rate-limiting (throttle) options map to
+        /pools/default/settings/memcached/global
+        :param throttle_enabled: 1 / 0
+        :param node_capacity: Units per second shared by all buckets
+        :param read_unit_size: Bytes read that consume one unit
+        :param write_unit_size: Bytes written that consume one unit
+        :return: output, error
+        """
         cmd = "%s setting-cluster -c localhost:%s -u %s -p %s" \
               % (self.cbstatCmd, self.__get_http_port(),
                  self.username, self.password)
@@ -119,6 +132,14 @@ class CbCli(CbCmdBase):
             cmd += " --cluster-name " + str(cluster_name)
         if cluster_port:
             cmd += " --cluster-port " + str(cluster_port)
+        if throttle_enabled is not None:
+            cmd += " --throttle-enabled %s" % throttle_enabled
+        if node_capacity is not None:
+            cmd += " --node-capacity %s" % node_capacity
+        if read_unit_size is not None:
+            cmd += " --read-unit-size %s" % read_unit_size
+        if write_unit_size is not None:
+            cmd += " --write-unit-size %s" % write_unit_size
         return self._execute_cmd(cmd)
 
     def add_node(self, server, service):

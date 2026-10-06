@@ -177,19 +177,173 @@ class KVRateLimitingTests(ClusterSetup):
         self.log.info(f"Throttle metrics from cbstats: {throttle_stats}")
         self.assertTrue(len(throttle_stats) > 0, "No throttle stats found in cbstats")
 
+    # Rate-limiting knobs CE must refuse ("KV Rate Limiting should be EE only")
+    CE_BUCKET_THROTTLE_CASES = (
+        {Bucket.throttleReserved: 10, Bucket.throttleHardLimit: 100},
+        {Bucket.throttleReserved: 10},
+        {Bucket.throttleHardLimit: 100},
+    )
+    CE_MCD_THROTTLE_CASES = (
+        {"throttle_enabled": "true"},
+        {"throttle_enabled": "false"},
+        {"node_capacity": 500},
+        {"read_unit_size": 4096},
+        {"write_unit_size": 1024},
+        {"throttle_enabled": "true", "node_capacity": 500},
+    )
+    MCD_THROTTLE_SETTINGS = ("throttle_enabled", "node_capacity",
+                             "read_unit_size", "write_unit_size")
+
+    def _assert_ce_bucket_throttle_errors(self, errors, params, op):
+        """
+        ns_server rejects each throttle param on its own:
+        {"<param>": "\"<param>\" can only be set in Enterprise edition"}
+        """
+        for param in params:
+            self.assertIn(param, errors,
+                          f"{op}: missing '{param}' error. Got: {errors}")
+            self.assertIn("can only be set in enterprise edition",
+                          errors[param].lower(),
+                          f"{op}: unexpected '{param}' error: {errors[param]}")
+
+    def _assert_ce_cli_throttle_errors(self, output, params, exp_err_fmt, op):
+        """
+        Match the exact per-param message so an unrelated EE-only error
+        (e.g. couchbase-cli's default magma backend) cannot satisfy it
+        """
+        if isinstance(output, list):
+            output = "\n".join(output)
+        self.assertNotIn("SUCCESS", output, f"{op} succeeded on CE: {output}")
+        for param in params:
+            exp_err = exp_err_fmt % param
+            self.assertIn(exp_err.lower(), output.lower(),
+                          f"{op}: expected '{exp_err}'. Got: {output}")
+
+    def _get_bucket_throttle_limits(self, bucket_name):
+        status, content = self.bucket_rest.get_bucket_info(bucket_name)
+        self.assertTrue(status, f"Failed to get bucket {bucket_name}: "
+                                f"{content}")
+        return {Bucket.throttleReserved: content.get(Bucket.throttleReserved),
+                Bucket.throttleHardLimit: content.get(Bucket.throttleHardLimit)}
+
     def test_rate_limiting_unavailable_in_ce(self):
         """
         Validate Rate Limiting feature is unavailable in Community Edition (CE).
-        Verification:
-        - Check if rate limiting stats are 0 or empty after bucket creation
-          with rate limiting parameters in CE.
+        Every way of configuring KV rate limiting must be rejected:
+        1. REST bucket-create with throttleReserved / throttleHardLimit
+        2. REST bucket-edit of an existing bucket with the same params
+        3. memcached throttle_enabled / node_capacity / read_unit_size /
+           write_unit_size via the global and per-node endpoints, and
+           throttling stays disabled in the effective memcached config
+        4. couchbase-cli bucket-create / bucket-edit / setting-cluster
+        5. Bucket throttle stats stay at their unthrottled defaults
         """
+        if self.cluster_util.is_enterprise_edition(self.cluster):
+            self.fail("Test requires a Community Edition cluster")
+
         # ep-engine reports a disabled hard limit as UINT64_MAX (no cap),
         # not 0 -- 0 would mean "zero throughput allowed", the opposite of
         # unrestricted.
         UNLIMITED_HARD_LIMIT = 2 ** 64 - 1
 
         bucket_name = self.bucket.name
+        new_bucket = "throttle_ce_bucket"
+
+        self.log.info("Step 1: REST bucket-create with throttle params")
+        for case in self.CE_BUCKET_THROTTLE_CASES:
+            op = f"REST bucket-create {case}"
+            params = {Bucket.name: new_bucket, Bucket.ramQuotaMB: 100,
+                      Bucket.replicaNumber: 0,
+                      Bucket.storageBackend: Bucket.StorageBackend.couchstore}
+            params.update(case)
+            status, response = self.bucket_rest.create_bucket(params)
+            self.assertFalse(status, f"{op} succeeded on CE")
+            self._assert_ce_bucket_throttle_errors(
+                response.json().get("errors", {}), case, op)
+            status, _ = self.bucket_rest.get_bucket_info(new_bucket)
+            self.assertFalse(status, f"{op}: bucket created despite EE error")
+
+        self.log.info("Step 2: REST bucket-edit with throttle params")
+        limits_before = self._get_bucket_throttle_limits(bucket_name)
+        self.log.info(f"Throttle limits on CE bucket: {limits_before}")
+        for case in self.CE_BUCKET_THROTTLE_CASES:
+            op = f"REST bucket-edit {case}"
+            status, content = self.bucket_rest.edit_bucket(bucket_name, case)
+            self.assertFalse(status, f"{op} succeeded on CE")
+            self._assert_ce_bucket_throttle_errors(
+                content.get("errors", {}), case, op)
+            self.assertEqual(self._get_bucket_throttle_limits(bucket_name),
+                             limits_before, f"{op}: bucket limits changed")
+
+        self.log.info("Step 3: memcached throttle settings (global, node)")
+        endpoints = {
+            "global": self.cluster_rest.manage_global_memcached_setting,
+            "node": lambda **kw: self.cluster_rest.
+            manage_node_memcached_setting(settings=kw)}
+        for scope, manage_setting in endpoints.items():
+            for case in self.CE_MCD_THROTTLE_CASES:
+                op = f"{scope} memcached setting {case}"
+                status, content = manage_setting(**case)
+                self.assertFalse(status, f"{op} succeeded on CE: {content}")
+                # ns_server reports only the first EE-only param it finds
+                self.assertTrue(
+                    any(f"parameter {param} requires enterprise edition"
+                        in str(content).lower() for param in case),
+                    f"{op}: unexpected error: {content}")
+            status, content = manage_setting()
+            self.assertTrue(status, f"GET {scope} memcached settings failed: "
+                                    f"{content}")
+            for setting in self.MCD_THROTTLE_SETTINGS:
+                self.assertNotIn(setting, content,
+                                 f"{scope} '{setting}' persisted on CE: "
+                                 f"{content}")
+        status, content = self.cluster_rest.get_effective_memcached_setting()
+        self.assertTrue(status, f"GET effective memcached settings failed: "
+                                f"{content}")
+        self.log.info(f"Effective throttle_enabled on CE: "
+                      f"{content.get('throttle_enabled')}")
+        self.assertNotEqual(content.get("throttle_enabled"), True,
+                            f"Throttling effectively enabled on CE: {content}")
+
+        self.log.info("Step 4: couchbase-cli throttle options")
+        bucket_err = '"%s" can only be set in enterprise edition'
+        for case in self.CE_BUCKET_THROTTLE_CASES:
+            op = f"CLI bucket-create {case}"
+            # couchbase-cli defaults to magma, which CE rejects on its own
+            bucket_dict = {Bucket.name: new_bucket,
+                           Bucket.bucketType: Bucket.Type.MEMBASE,
+                           Bucket.storageBackend:
+                               Bucket.StorageBackend.couchstore,
+                           Bucket.ramQuotaMB: 100,
+                           Bucket.replicaNumber: 0}
+            bucket_dict.update(case)
+            try:
+                output = self.cb_cli.create_bucket(bucket_dict)
+            except Exception as e:
+                output = str(e)
+            self._assert_ce_cli_throttle_errors(output, case, bucket_err, op)
+            status, _ = self.bucket_rest.get_bucket_info(new_bucket)
+            self.assertFalse(status, f"{op}: bucket created despite EE error")
+
+            op = f"CLI bucket-edit {case}"
+            try:
+                output = self.cb_cli.edit_bucket(bucket_name, **case)
+            except Exception as e:
+                output = str(e)
+            self._assert_ce_cli_throttle_errors(output, case, bucket_err, op)
+            self.assertEqual(self._get_bucket_throttle_limits(bucket_name),
+                             limits_before, f"{op}: bucket limits changed")
+
+        for case in ({"throttle_enabled": 1}, {"throttle_enabled": 0},
+                     {"node_capacity": 500}, {"read_unit_size": 4096},
+                     {"write_unit_size": 1024}):
+            op = f"CLI setting-cluster {case}"
+            output, error = self.cb_cli.cluster_settings(**case)
+            self._assert_ce_cli_throttle_errors(
+                output + error, case,
+                "parameter %s requires enterprise edition", op)
+
+        self.log.info("Step 5: bucket throttle stats")
         throttle_stats = self.get_throttle_stats(bucket_name)
         self.log.info(f"CE throttle stats: {throttle_stats}")
 
