@@ -14,6 +14,7 @@ from couchbase_utils.security_utils.crl_utils import (
     get_audit_event,
 )
 from membase.api.rest_client import RestConnection
+from platform_constants.os_constants import Linux, Mac, Windows
 from pytests.onPrem_basetestcase import OnPremBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -22,35 +23,42 @@ class JWTTokenTest(OnPremBaseTest):
     Basic JWT auth sanity test for Couchbase.
     """
 
-    AUDIT_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/current-audit.log"
+    # Linux default; setUp replaces it with the node's actual per-OS path.
+    AUDIT_LOG_PATH = f"{Linux.COUCHBASE_LOGS_PATH.rstrip('/')}/current-audit.log"
 
     def setUp(self):
         super(JWTTokenTest, self).setUp()
 
+        # Per-OS install layout, taken from the same constants CbCmdBase
+        # uses. Deriving it from the shell object's own cb_path instead only
+        # works on Linux -- WindowsConstants and UnixConstants both leave
+        # cb_path "", so on Windows this used to fail setUp outright with
+        # "Unable to derive Couchbase CLI path from remote install dir".
+        # The Windows spellings below are already backslash-escaped for
+        # interpolation into a (cygwin) shell command line, so they go in
+        # verbatim -- quoting them again would send the backslash to the
+        # remote shell as a literal.
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
         try:
-            install_dir = getattr(shell_conn, "default_install_dir", None)
-            if not install_dir:
-                install_dir = getattr(shell_conn, "cb_path", None)
-                if install_dir:
-                    shell_conn.default_install_dir = install_dir.rstrip("/")
-
-            self.default_install_dir = getattr(shell_conn, "default_install_dir", None)
-            self.cli_bin_dir = (
-                f"{self.default_install_dir.rstrip('/')}/bin"
-                if self.default_install_dir else None
-            )
+            os_type = shell_conn.info.type.lower()
         finally:
             shell_conn.disconnect()
 
-        self.binary_path = self.input.param("couchbase_cli_path", None)
-        if not self.binary_path:
-            if not self.cli_bin_dir:
-                self.fail(
-                    "Unable to derive Couchbase CLI path from remote install dir. "
-                    "Please pass `couchbase_cli_path` in conf."
-                )
-            self.binary_path = f"{self.cli_bin_dir}/couchbase-cli"
+        self.is_windows = os_type == Windows.NAME
+        if self.is_windows:
+            cli_bin_dir = Windows.COUCHBASE_BIN_PATH
+            logs_dir = Windows.COUCHBASE_LOGS_PATH
+        elif os_type == Mac.NAME:
+            cli_bin_dir = Mac.COUCHBASE_BIN_PATH
+            logs_dir = f"{Mac.CB_PATH}var/lib/couchbase/logs"
+        else:
+            cli_bin_dir = Linux.COUCHBASE_BIN_PATH
+            logs_dir = Linux.COUCHBASE_LOGS_PATH
+        self.AUDIT_LOG_PATH = f"{logs_dir.rstrip('/')}/current-audit.log"
+
+        cli_name = "couchbase-cli.exe" if self.is_windows else "couchbase-cli"
+        self.binary_path = self.input.param("couchbase_cli_path", None) \
+            or f"{cli_bin_dir.rstrip('/')}/{cli_name}"
 
         self.issuer_name = self.input.param("issuer_name", "custom-issuer")
         self.user_name = self.input.param("user_name", "jwt_user")

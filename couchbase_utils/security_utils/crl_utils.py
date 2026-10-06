@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import socket
 import ssl
 import tempfile
@@ -92,6 +93,17 @@ class CRLUtils:
     every REST-facing method takes a `rest_connection` as first argument and
     builds a CRLAPI (CBRestConnection) via the _crl_api() shim.
     """
+
+    # Windows nodes are reached over cygwin sshd, so anything that touches
+    # the filesystem from here -- shell commands and paramiko's sftp alike --
+    # must address the install through the cygwin mount, not through
+    # x509main.WININSTALLPATH's native "C:/Program Files/..." spelling (same
+    # reason x509main._delete_inbox_folder special-cases /cygdrive). The
+    # native path is still what ns_server itself expects, so REST *settings*
+    # values (e.g. /settings/crl's `directory`) keep using WININSTALLPATH --
+    # see _server_var_lib_dir below.
+    WIN_SHELL_INSTALLPATH = \
+        "/cygdrive/c/Program Files/Couchbase/Server/var/lib/couchbase/"
 
     def __init__(self, log=None):
         self.log = log
@@ -523,12 +535,16 @@ class CRLUtils:
         status, content, _ = api.post_crl_settings(fields)
         return status, self.parse_content(content)
 
-    def post_settings_raw(self, rest, body, query=""):
+    def post_settings_raw(self, rest, body, query="", timeout=300):
         """
         POST /settings/crl with a raw, already-encoded body (str/bytes) and
         an optional literal query string -- for request-envelope shape
         tests (oversized body, undecodable JSON, ?just_validate=1) that
         set_settings()'s dict -> json.dumps() path can't produce.
+
+        Pass a shorter `timeout` for requests expected to fail fast (e.g.
+        an oversized body) -- otherwise connection.py's retry-on-error
+        loop can turn a fast rejection into a long, needless hang.
 
         Returns (status_bool, content, response).
         """
@@ -537,7 +553,55 @@ class CRLUtils:
         if query:
             url = f"{url}?{query}"
         headers = api.get_headers_for_content_type_json()
-        return api.request(url, "POST", body, headers=headers)
+        return api.request(url, "POST", body, headers=headers, timeout=timeout)
+
+    @staticmethod
+    def post_settings_declared_length(rest, declared_length, query="", timeout=30):
+        """
+        POST /settings/crl sending only the request headers, with
+        Content-Length set to `declared_length`, and no body at all --
+        for the oversized-body (>20MB) rejection check.
+
+        ns_server decides the 413 from Content-Length alone, before reading
+        any body (confirmed live on 8.5.0-1257: curl's Expect: 100-continue
+        gets 413 with 0 bytes uploaded; this headers-only probe got 413
+        40/40 over both 8091 and 18091). Actually streaming a 21MB body
+        instead races the server's early reply-and-close against the
+        client's still-in-progress write, which some clients surface as a
+        connection-level SSLError/ECONNRESET rather than the 413 -- that's
+        what made the requests-based version of this check fail on CI.
+
+        Any connection-level error is raised, not swallowed: with no body
+        in flight there's nothing left to race, so one means a real
+        problem.
+
+        Returns (status_code, content_text).
+        """
+        base_url = (
+            getattr(rest, "baseUrl", None) or getattr(rest, "base_url", None)
+        ).rstrip("/")
+        username = getattr(rest, "username", None) or getattr(rest, "rest_username", None)
+        password = getattr(rest, "password", None) or getattr(rest, "rest_password", None)
+        parsed = urllib.parse.urlparse(base_url)
+        if parsed.scheme == "https":
+            conn = http.client.HTTPSConnection(
+                parsed.hostname, parsed.port, timeout=timeout,
+                context=ssl._create_unverified_context(),
+            )
+        else:
+            conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=timeout)
+        path = ENDPOINT_CRL_SETTINGS + (f"?{query}" if query else "")
+        try:
+            conn.putrequest("POST", path, skip_accept_encoding=True)
+            auth_value = base64.b64encode(f"{username}:{password}".encode()).decode()
+            conn.putheader("Authorization", f"Basic {auth_value}")
+            conn.putheader("Content-Type", "application/json")
+            conn.putheader("Content-Length", str(int(declared_length)))
+            conn.endheaders()
+            response = conn.getresponse()
+            return response.status, response.read().decode("utf-8", "replace")
+        finally:
+            conn.close()
 
     def list_files(self, rest):
         """GET /settings/crl/files. Returns (status_bool, content_list)."""
@@ -916,7 +980,27 @@ class CRLUtils:
                 self.log.warning(f"Failed to delete CRL file {filename} in teardown")
         self.created_files = []
 
-    def reset_crl_settings(self, rest):
+    def default_crl_dir(self, server):
+        """The node's own default /settings/crl `directory`, spelled the way
+        ns_server spells it (native Windows path, not the cygwin one the
+        shell uses). Falls back to the Linux default if the node can't be
+        reached -- this only ever feeds teardown's best-effort reset."""
+        try:
+            shell = RemoteMachineShellConnection(server)
+        except Exception as exc:
+            if self.log:
+                self.log.warning(
+                    f"Could not determine the CRL directory default on "
+                    f"{server.ip}, assuming the Linux one: {exc}"
+                )
+            return f"{x509main.LININSTALLPATH}{x509main.CHAINFILEPATH}/crls"
+        try:
+            return f"{self._server_var_lib_dir(shell)}" \
+                   f"{x509main.CHAINFILEPATH}/crls"
+        finally:
+            shell.disconnect()
+
+    def reset_crl_settings(self, rest, server=None):
         """
         Reset every /settings/crl field back to its documented default, not
         just policyPerScope. Found the hard way: a test that configures
@@ -926,11 +1010,20 @@ class CRLUtils:
         policyPerScope left `urls` still pointed at it -- generating
         continuous "unexpected HTTP status 404" warnings on the node with
         no test still running to explain them.
+
+        `server` is what the per-OS `directory` default is derived from;
+        without it the Linux default is assumed, which is wrong on a
+        Windows cluster (it would leave the node polling a path that
+        doesn't exist there).
         """
+        directory = (
+            self.default_crl_dir(server) if server is not None
+            else f"{x509main.LININSTALLPATH}{x509main.CHAINFILEPATH}/crls"
+        )
         self.set_settings(
             rest,
             policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
-            directory="/opt/couchbase/var/lib/couchbase/inbox/crls",
+            directory=directory,
             dirPollIntervalMs=60000,
             checkIntermediateCerts=False,
             urls=[],
@@ -988,16 +1081,43 @@ class CRLUtils:
         self.temp_pem_files = []
 
     @staticmethod
-    def _ca_dir(shell):
-        """Returns the OS-appropriate inbox/CA path for the connected shell's host."""
+    def _var_lib_dir(shell):
+        """Returns the node's var/lib/couchbase dir as the *shell/sftp* on
+        that host can address it -- cygwin-mounted on Windows. Use this for
+        anything that reads or writes files over the SSH connection."""
         os_type = shell.extract_remote_info().distribution_type
         if os_type == "windows":
-            install_path = x509main.WININSTALLPATH
-        elif os_type == "Mac":
-            install_path = x509main.MACINSTALLPATH
-        else:
-            install_path = x509main.LININSTALLPATH
-        return f"{install_path}{x509main.CHAINFILEPATH}/CA"
+            return CRLUtils.WIN_SHELL_INSTALLPATH
+        if os_type == "Mac":
+            return x509main.MACINSTALLPATH
+        return x509main.LININSTALLPATH
+
+    @staticmethod
+    def _server_var_lib_dir(shell):
+        """Returns the node's var/lib/couchbase dir as *ns_server* spells it
+        -- native "C:/Program Files/..." on Windows. Use this for paths that
+        are handed to the server over REST, never for shell/sftp access."""
+        os_type = shell.extract_remote_info().distribution_type
+        if os_type == "windows":
+            return x509main.WININSTALLPATH
+        if os_type == "Mac":
+            return x509main.MACINSTALLPATH
+        return x509main.LININSTALLPATH
+
+    @staticmethod
+    def _copy_to_remote(shell, local_path, remote_path):
+        """copy_file_local_to_remote swallows IOError and just returns False,
+        so a failed upload would otherwise surface much later as a confusing
+        server-side "file does not exist" -- raise at the actual failure."""
+        if not shell.copy_file_local_to_remote(local_path, remote_path):
+            raise AssertionError(
+                f"Failed to copy {local_path} to {shell.ip}:{remote_path}"
+            )
+
+    @staticmethod
+    def _ca_dir(shell):
+        """Returns the OS-appropriate inbox/CA path for the connected shell's host."""
+        return f"{CRLUtils._var_lib_dir(shell)}{x509main.CHAINFILEPATH}/CA"
 
     @staticmethod
     def _ca_remote_filename(ca_cert):
@@ -1029,15 +1149,18 @@ class CRLUtils:
         shell = RemoteMachineShellConnection(server)
         try:
             ca_dir = self._ca_dir(shell)
-            shell.execute_command(f"mkdir -p {ca_dir}")
+            # Quoted: the Windows install path contains a space, and an
+            # unquoted one word-splits into two mkdir arguments, leaving
+            # inbox/CA uncreated and the upload below with nowhere to land.
+            shell.execute_command(f"mkdir -p {shlex.quote(ca_dir)}")
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=".pem", mode="wb"
             ) as tmp_file:
                 tmp_file.write(pem_bytes)
                 local_path = tmp_file.name
             try:
-                shell.copy_file_local_to_remote(
-                    local_path, f"{ca_dir}/{remote_filename}"
+                self._copy_to_remote(
+                    shell, local_path, f"{ca_dir}/{remote_filename}"
                 )
             finally:
                 os.remove(local_path)
@@ -1086,14 +1209,7 @@ class CRLUtils:
         """Returns the OS-appropriate inbox path (no /CA suffix) for the
         connected shell's host -- same per-OS switch as _ca_dir, minus the
         CA-specific subfolder, shared by deploy_node_cert/deploy_client_cert."""
-        os_type = shell.extract_remote_info().distribution_type
-        if os_type == "windows":
-            install_path = x509main.WININSTALLPATH
-        elif os_type == "Mac":
-            install_path = x509main.MACINSTALLPATH
-        else:
-            install_path = x509main.LININSTALLPATH
-        return f"{install_path}{x509main.CHAINFILEPATH}"
+        return f"{CRLUtils._var_lib_dir(shell)}{x509main.CHAINFILEPATH}"
 
     def deploy_node_cert(self, rest, server, cert, key):
         """
@@ -1112,7 +1228,7 @@ class CRLUtils:
         shell = RemoteMachineShellConnection(server)
         try:
             inbox_dir = self._inbox_dir(shell)
-            shell.execute_command(f"mkdir -p {inbox_dir}")
+            shell.execute_command(f"mkdir -p {shlex.quote(inbox_dir)}")
             for filename, pem_bytes in (
                 (x509main.CHAINCERTFILE, self.cert_to_pem(cert)),
                 (x509main.NODECAKEYFILE, self.key_to_pem(key)),
@@ -1123,8 +1239,8 @@ class CRLUtils:
                     tmp_file.write(pem_bytes)
                     local_path = tmp_file.name
                 try:
-                    shell.copy_file_local_to_remote(
-                        local_path, f"{inbox_dir}/{filename}"
+                    self._copy_to_remote(
+                        shell, local_path, f"{inbox_dir}/{filename}"
                     )
                 finally:
                     os.remove(local_path)
@@ -1152,7 +1268,7 @@ class CRLUtils:
         shell = RemoteMachineShellConnection(server)
         try:
             inbox_dir = self._inbox_dir(shell)
-            shell.execute_command(f"mkdir -p {inbox_dir}")
+            shell.execute_command(f"mkdir -p {shlex.quote(inbox_dir)}")
             for filename, pem_bytes in (
                 ("client_chain.pem", self.cert_to_pem(cert)),
                 ("client_pkey.key", self.key_to_pem(key)),
@@ -1163,8 +1279,8 @@ class CRLUtils:
                     tmp_file.write(pem_bytes)
                     local_path = tmp_file.name
                 try:
-                    shell.copy_file_local_to_remote(
-                        local_path, f"{inbox_dir}/{filename}"
+                    self._copy_to_remote(
+                        shell, local_path, f"{inbox_dir}/{filename}"
                     )
                 finally:
                     os.remove(local_path)
@@ -1427,6 +1543,46 @@ class CRLUtils:
             time.sleep(poll_interval)
         return False
 
+    @staticmethod
+    def flush_server_logs(rest):
+        """
+        Forces every ale log sink on the node `rest` is bound to to write
+        its buffered lines to disk, via diag/eval ale:sync_all_sinks().
+        ale_disk_sink batches debug.log writes for up to 1000ms
+        (batch_timeout), so a line logged moments ago may not be on disk
+        yet -- calling this first makes a single grep deterministic, with
+        no sleep/poll needed.
+        """
+        status, content = rest.diag_eval("ale:sync_all_sinks().")
+        if not status:
+            raise AssertionError(f"ale:sync_all_sinks() diag/eval failed: {content}")
+
+    @classmethod
+    def assert_log_line(cls, shell_conn, rest, log_path, literal):
+        """
+        Flushes the server's log sinks, then asserts that `literal` (a
+        fixed string, matched with grep -F) appears in `log_path` or its
+        most recent rotation -- so a rotation landing between the event
+        and the read can't hide the line. `literal` should be specific to
+        the one event being checked (e.g. include the cert subject), not a
+        generic prefix that other events also produce.
+
+        Returns the matching line(s).
+        """
+        cls.flush_server_logs(rest)
+        quoted = shlex.quote(literal)
+        out, _ = shell_conn.execute_command(
+            f"{{ grep -aF {quoted} {log_path}; "
+            f"zcat {log_path}.1.gz 2>/dev/null | grep -aF {quoted}; }} | tail -n 5"
+        )
+        text = "\n".join(out) if out else ""
+        if literal not in text:
+            raise AssertionError(
+                f"Expected a log line containing {literal!r} in {log_path} "
+                f"after flushing the server's log sinks, found none"
+            )
+        return text
+
     @classmethod
     def wait_for_crl_log_text(cls, shell_conn, debug_log_path, ip, port,
                               cert_path, key_path, expected_substrings,
@@ -1660,6 +1816,23 @@ def find_remote_pid(shell_conn, pattern):
     )
     pid = out[0].strip() if out else ""
     return pid if pid else None
+
+
+def wait_for_remote_pid(shell_conn, pattern, max_wait=30, interval=1):
+    """Polls find_remote_pid() until it returns a PID or max_wait elapses --
+    a sibling process (e.g. memcached) can still be mid-restart even after
+    the mgmt listener recovers, so a bare call right after is racy."""
+    deadline = time.monotonic() + max_wait
+    pid = None
+    while time.monotonic() < deadline:
+        pid = find_remote_pid(shell_conn, pattern)
+        if pid:
+            return pid
+        time.sleep(interval)
+    raise AssertionError(
+        f"No process matching '{pattern}' found on remote host within "
+        f"{max_wait}s"
+    )
 
 
 def tail_remote_log(shell_conn, log_path, lines=200):
