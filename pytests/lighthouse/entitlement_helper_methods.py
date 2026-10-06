@@ -37,6 +37,7 @@ import json
 from datetime import datetime, timedelta
 
 from lighthouse.response import UCPResponse
+from lighthouse.ucp_helper_methods import raw_request
 
 
 # ==================== Date Window Helpers ====================
@@ -60,6 +61,22 @@ def active_window(days_before=1, days_after=365):
     now = datetime.utcnow()
     return (_iso(now - timedelta(days=days_before)),
             _iso(now + timedelta(days=days_after)))
+
+
+def expired_window(days_before_end=30, length_days=365):
+    """
+    Return (start_at, end_at) ISO 8601 strings for a window that has already
+    closed, relative to now (same reasoning as active_window).
+
+    Args:
+        days_before_end: how long ago the window closed
+        length_days:     how long the window was open
+
+    Returns:
+        Tuple (start_at, end_at) of ISO 8601 UTC strings.
+    """
+    end = datetime.utcnow() - timedelta(days=days_before_end)
+    return _iso(end - timedelta(days=length_days)), _iso(end)
 
 
 def _iso(dt):
@@ -270,6 +287,107 @@ def tag_portal_cluster(client, cluster_uuid, classification=None,
     return True, None
 
 
+def clear_portal_cluster_classification(client, cluster_uuid):
+    """
+    Remove the user's classification tag so the cluster falls back to the
+    subscription-derived default.
+
+    The typed update_cluster() drops None-valued fields, so it can never send
+    an explicit null; this goes through raw_request instead. businessUnit and
+    name are carried over for the same full-replacement reason as
+    tag_portal_cluster.
+
+    Args:
+        client:       authenticated UnifiedControlPlaneClient (system_admin)
+        cluster_uuid: portal cluster UUID
+
+    Returns:
+        Tuple (ok, detail) -- detail is None on success, else a message with
+        the HTTP status and body.
+    """
+    status, content, header = client.get_cluster(cluster_uuid)
+    current = UCPResponse(status, content, header)
+    if not status:
+        return False, ("could not read cluster %s before clearing its tag "
+                       "(HTTP %s): %s"
+                       % (cluster_uuid, current.status_code, content))
+    if current.etag is None:
+        return False, ("cluster %s read back with no ETag; a conditional PUT "
+                       "is not possible. Headers were: %s"
+                       % (cluster_uuid, current.headers))
+    existing = current.json if isinstance(current.json, dict) else {}
+    body = {'classification': None}
+    for field in ('businessUnit', 'name'):
+        if existing.get(field) is not None:
+            body[field] = existing[field]
+    status, content, header = raw_request(
+        client, 'PUT', 'api/v1/clusters/%s' % cluster_uuid, body=body,
+        extra_headers={'If-Match': current.etag})
+    response = UCPResponse(status, content, header)
+    if not status:
+        return False, ("clearing the tag on cluster %s failed (HTTP %s): %s"
+                       % (cluster_uuid, response.status_code, content))
+    return True, None
+
+
+# ==================== Cluster List Readers ====================
+
+def list_portal_clusters(client, support_level=None, classification=None,
+                         page_size=250):
+    """
+    Return every cluster in GET /clusters (optionally filtered), following
+    pagination.
+
+    The lab fleet holds more clusters than one page, so a single unpaged read
+    can miss the clusters under test entirely.
+
+    Args:
+        client:         authenticated UnifiedControlPlaneClient
+        support_level:  value for ?supportLevel=, or None
+        classification: value for ?classification=, or None
+        page_size:      limit per page (250 is the enforced maximum)
+
+    Returns:
+        List of cluster dicts, or None if any page could not be read.
+    """
+    clusters = []
+    offset = 0
+    while True:
+        status, content, header = client.list_clusters(
+            offset=offset, limit=page_size, support_level=support_level,
+            classification=classification)
+        response = UCPResponse(status, content, header)
+        if not status:
+            return None
+        page = response.items
+        clusters.extend(page)
+        total = response.total
+        offset += len(page)
+        if not page or len(page) < page_size or \
+                (total is not None and offset >= total):
+            return clusters
+
+
+def clusters_by_uuid(clusters, cluster_uuids):
+    """
+    Index a cluster list by UUID, keeping only the given UUIDs.
+
+    Args:
+        clusters:      list of cluster dicts (from list_portal_clusters)
+        cluster_uuids: UUIDs to keep
+
+    Returns:
+        dict uuid -> cluster dict (UUIDs not present are simply absent).
+    """
+    wanted = set(cluster_uuids)
+    indexed = {}
+    for cluster in clusters or []:
+        uuid = cluster.get('clusterUuid') or cluster.get('uuid')
+        if uuid in wanted:
+            indexed[uuid] = cluster
+    return indexed
+
+
 # ==================== Usage Readers ====================
 
 def get_usage(client):
@@ -428,6 +546,24 @@ def find_usage_row(usage, classification=None, support_level=None,
     return None
 
 
+def find_unmatched_row_for_cluster(usage, cluster_uuid):
+    """
+    Return the "unmatched" usage row (no classification -- nodes that fit no
+    active SKU) listing the given cluster, or None.
+
+    Args:
+        usage:        parsed usage (or JSON report) body
+        cluster_uuid: the cluster UUID under test
+
+    Returns:
+        The matching row dict, or None.
+    """
+    for row in rows_containing_cluster(usage, cluster_uuid):
+        if not row.get('classification'):
+            return row
+    return None
+
+
 def rows_containing_cluster(usage, cluster_uuid):
     """
     Return every usage row that lists the given cluster as a contributor.
@@ -533,3 +669,77 @@ def describe_usage(usage):
         return json.dumps(usage, sort_keys=True)
     except (TypeError, ValueError):
         return repr(usage)
+
+
+# ==================== Report / Overview Readers ====================
+
+def get_usage_report_json(client):
+    """
+    Return the parsed GET /reports/usage?format=json body, or None.
+
+    Same row shape as GET /entitlements/usage (so every usage reader above
+    applies), plus a per-row `status` and `usagePercent`.
+
+    Args:
+        client: authenticated UnifiedControlPlaneClient
+
+    Returns:
+        Parsed report dict, or None.
+    """
+    status, content, header = client.generate_usage_report(
+        format_type='json')
+    response = UCPResponse(status, content, header)
+    if not status:
+        return None
+    return response.json
+
+
+def get_overview_breakdown(client):
+    """
+    Return the parsed GET /overview/breakdown body, or None.
+
+    Args:
+        client: authenticated UnifiedControlPlaneClient
+
+    Returns:
+        Parsed body, or None.
+    """
+    status, content, header = client.get_overview_breakdown()
+    response = UCPResponse(status, content, header)
+    if not status:
+        return None
+    return response.json
+
+
+def latest_overview_groups(breakdown):
+    """
+    Return the latest bucket's groups as {environment: node_count}.
+
+    Buckets are ordered by their time field when one is present (ISO 8601
+    strings sort chronologically), otherwise the last bucket is taken.
+
+    Args:
+        breakdown: parsed overview body
+
+    Returns:
+        dict environment -> int (empty when no bucket has groups).
+    """
+    if isinstance(breakdown, dict) and isinstance(
+            breakdown.get('buckets'), list):
+        buckets = breakdown['buckets']
+    else:
+        buckets = iter_usage_rows(breakdown)
+    buckets = [b for b in buckets
+               if isinstance(b, dict) and isinstance(b.get('groups'), list)]
+    if not buckets:
+        return {}
+    for field in ('timestamp', 'bucket', 'date', 'start', 'from'):
+        if all(field in b for b in buckets):
+            buckets = sorted(buckets, key=lambda b: b[field])
+            break
+    groups = {}
+    for group in buckets[-1]['groups']:
+        if isinstance(group, dict) and group.get('key') is not None:
+            value = _first_int(group, ('value', 'count', 'nodes'))
+            groups[group['key']] = value if value is not None else 0
+    return groups
