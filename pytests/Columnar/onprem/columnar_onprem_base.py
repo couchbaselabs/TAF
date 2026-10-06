@@ -389,6 +389,35 @@ class ColumnarOnPremBase(CBASBaseTest):
         columnar_spec["file_format"] = self.input.param("file_format", "json")
         return columnar_spec
 
+    def _service_request(self, statement, client=None, **kwargs):
+        """
+        POST a statement to /api/v1/request and return (envelope, response).
+
+        submit_service_request parses the body only on a 2xx, so an error
+        envelope reaches the caller as raw text and .get() on it raises.
+        This parses the body either way, which is the same discipline
+        execute_statement_on_cbas_util already applies on the
+        /analytics/service path.
+
+        The response object is returned alongside for callers that must
+        assert the wire HTTP status - 400 vs 401 vs 403 - which the envelope
+        itself does not carry.
+
+        :param statement: SQL++ statement to execute
+        :param client: AnalyticsRestAPI to use instead of self.analytics_api
+        :param kwargs: Passed through to submit_service_request
+        :return: tuple (parsed response envelope, requests response object)
+        """
+        api_client = client or self.analytics_api
+        _, content, response_obj = api_client.submit_service_request(
+            statement, **kwargs)
+        if isinstance(content, (str, bytes)):
+            try:
+                content = json.loads(content)
+            except ValueError:
+                content = {}
+        return content, response_obj
+
     def _analytics_request(self, statement, client=None, **kwargs):
         """
         POST a statement to /api/v1/request and return the full response dict.
@@ -398,11 +427,9 @@ class ColumnarOnPremBase(CBASBaseTest):
         :param kwargs: Passed through to submit_service_request
         :return: the full response envelope
         """
-        api_client = client or self.analytics_api
         kwargs.setdefault("format", None)
         kwargs.setdefault("pretty", None)
-        _, content, _ = api_client.submit_service_request(statement, **kwargs)
-        return content
+        return self._service_request(statement, client=client, **kwargs)[0]
 
     @staticmethod
     def _cached_plan(content):

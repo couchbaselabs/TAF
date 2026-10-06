@@ -16,7 +16,9 @@ class AnalyticsServiceAPI(CBRestConnection):
                                readonly=None, timeout=None, logical_plan=False,
                                expression_tree=False, rewritten_expression_tree=False,
                                job=False, args=None, skip_plan_cache=None,
-                               max_warnings=None, extra_params=None,
+                               max_warnings=None, multi_statement=None,
+                               analytics_timeout=None, time_out_unit="s",
+                               extra_params=None,
                                username=None, password=None, http_timeout=300):
         """
         POST /api/v1/request
@@ -37,6 +39,15 @@ class AnalyticsServiceAPI(CBRestConnection):
         :param args: Positional parameters for a parameterized statement
         :param skip_plan_cache: Bypass the query plan cache for this request
         :param max_warnings: Maximum number of warnings to return
+        :param analytics_timeout: request budget as a number, combined
+            with time_out_unit into the body's "timeout" - the same
+            vocabulary execute_statement_on_cbas takes. An explicit
+            timeout, already composed, wins over this pair.
+        :param time_out_unit: unit for analytics_timeout, default "s"
+        :param multi_statement: True/False set the "multi-statement" body
+            key explicitly; None omits it entirely, which is the
+            "absent parameter" transport - the three are distinct on
+            the wire, so a falsy check would not do here
         :param extra_params: Additional request parameters merged into the payload
         :param username: Run the request as this user instead of the default
         :param password: Password for username
@@ -65,6 +76,8 @@ class AnalyticsServiceAPI(CBRestConnection):
             params["readonly"] = str(readonly).lower()
         if timeout:
             params["timeout"] = timeout
+        elif analytics_timeout is not None:
+            params["timeout"] = f"{analytics_timeout}{time_out_unit}"
         if logical_plan:
             params["logical-plan"] = "true"
         if expression_tree:
@@ -79,6 +92,8 @@ class AnalyticsServiceAPI(CBRestConnection):
             params["skip-plan-cache"] = True
         if max_warnings is not None:
             params["max-warnings"] = max_warnings
+        if multi_statement is not None:
+            params["multi-statement"] = multi_statement
         if extra_params:
             params.update(extra_params)
 

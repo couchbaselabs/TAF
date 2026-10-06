@@ -27,6 +27,39 @@ class AnalyticsAdminAPI(CBRestConnection):
 
         return status, result, response
 
+    def cancel_request_by_context_id(self, client_context_id):
+        """
+        DELETE /analytics/admin/active_requests?client_context_id={id}
+        Cancel a running request by its client context id
+
+        :param client_context_id: client_context_id the request was submitted with
+        :return: tuple (status, content, response)
+        """
+        api = (f"{self.cbas_url}/analytics/admin/active_requests"
+               f"?client_context_id={client_context_id}")
+        headers = self.create_headers()
+
+        status, result, response = self.request(
+            api, self.DELETE, headers=headers, timeout=300)
+
+        return status, result, response
+
+    def restart_analytics_node(self):
+        """
+        POST /api/v1/node/restart
+        Restart the analytics service on this node (not the whole service -
+        see restart_analytics_service for that)
+
+        :return: tuple (status, content, response)
+        """
+        api = f"{self.cbas_url}/api/v1/node/restart"
+        headers = self.get_headers_for_content_type_json()
+
+        status, result, response = self.request(
+            api, self.POST, headers=headers, timeout=300)
+
+        return status, result, response
+
     def restart_analytics_service(self):
         """
         POST /api/v1/service/restart
