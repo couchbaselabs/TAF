@@ -130,6 +130,8 @@ model: inherit
 | `set_auto_compaction_settings` | POST | `/controller/setAutoCompaction` |
 | `manage_internal_settings_max_parallel_indexers` | GET/POST | `/internalSettings/maxParallelIndexers` |
 | `manage_global_memcached_setting` | GET/POST | `/pools/default/settings/memcached/global` |
+| `manage_node_memcached_setting` | GET/POST | `/pools/default/settings/memcached/node/{node}` |
+| `get_effective_memcached_setting` | GET | `/pools/default/settings/memcached/effective/{node}` |
 | `manage_alternate_address` | GET/POST/PUT/DELETE | `/node/controller/setupAlternateAddresses/external` |
 | `manage_alerts` | GET/POST | `/settings/alerts` |
 | `set_cgroup_overrides` | POST | `/settings/cgroups` |

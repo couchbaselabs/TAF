@@ -257,6 +257,36 @@ class SettingsAndConnectionsAPI(CBRestConnection):
         content = response.json() if status else response.text
         return status, content
 
+    def manage_node_memcached_setting(self, node_name="self", settings=None):
+        """
+        POST / GET /pools/default/settings/memcached/node/<node_name>
+        Per-node override of the global memcached settings
+        :param node_name: otpNode name (ns_1@<ip>) or "self"
+        :param settings: dict of setting_name: value. GET when empty
+        """
+        api = self.base_url \
+            + f"/pools/default/settings/memcached/node/{node_name}"
+        if settings:
+            # POST method
+            status, _, response = self.request(api, CBRestConnection.POST,
+                                               params=settings)
+        else:
+            # GET method
+            status, _, response = self.request(api, CBRestConnection.GET)
+        content = response.json() if status else response.text
+        return status, content
+
+    def get_effective_memcached_setting(self, node_name="self"):
+        """
+        GET /pools/default/settings/memcached/effective/<node_name>
+        Settings memcached runs with on the node: defaults < global < node
+        :param node_name: otpNode name (ns_1@<ip>) or "self"
+        """
+        api = self.base_url \
+            + f"/pools/default/settings/memcached/effective/{node_name}"
+        status, content, _ = self.request(api, CBRestConnection.GET)
+        return status, content
+
     def manage_alternate_address(self, alternate_addr, alternate_ports=None,
                                  delete_address=False):
         """

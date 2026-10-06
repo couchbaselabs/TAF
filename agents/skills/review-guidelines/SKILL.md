@@ -130,6 +130,7 @@ For changed `*.ini` files:
 
 **Duplication**
 - [ ] No copy-paste of existing utility methods — use `couchbase_utils/` helpers.
+- [ ] One wrapper per CLI subcommand / REST endpoint — new flags or params for an already-wrapped command (e.g. `couchbase-cli setting-cluster` → `CbCli.cluster_settings()`) are added as optional kwargs on that wrapper, not as a new parallel method.
 - [ ] No re-implemented logic already in the base test class.
 - [ ] No repeated code blocks — extract to a shared helper in the base class or `couchbase_utils/`.
 
