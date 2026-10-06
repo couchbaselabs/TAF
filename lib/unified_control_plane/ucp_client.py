@@ -196,12 +196,22 @@ class UnifiedControlPlaneClient(BaseRestConnection):
             api, 'GET', headers=self._json_headers())
         return status, content, header
     # ==================== Cluster APIs ====================
-    def list_clusters(self, name=None, offset=None, limit=None):
-        """GET /api/v1/clusters"""
+    def list_clusters(self, name=None, offset=None, limit=None,
+                      support_level=None, classification=None):
+        """GET /api/v1/clusters
+
+        support_level / classification filter on the RESOLVED values (the
+        subscription-derived default or the user's tag), not on stored
+        fields -- supportLevel is never stored on a cluster.
+        """
         api = self.baseUrl + 'api/v1/clusters'
         params = {}
         if name is not None:
             params['name'] = name
+        if support_level is not None:
+            params['supportLevel'] = support_level
+        if classification is not None:
+            params['classification'] = classification
         if offset is not None:
             params['offset'] = offset
         if limit is not None:
@@ -372,6 +382,17 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         if to_timestamp is not None:
             params['to'] = to_timestamp
         api += '?' + urllib.urlencode(params)
+        status, content, header = self._http_request(
+            api, 'GET', headers=self._json_headers())
+        return status, content, header
+    # ==================== Overview APIs ====================
+    def get_overview_breakdown(self):
+        """GET /api/v1/overview/breakdown
+
+        Time buckets (per day); each bucket carries groups[]{key, value} =
+        node count per environment (classification).
+        """
+        api = self.baseUrl + 'api/v1/overview/breakdown'
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header

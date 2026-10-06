@@ -19,6 +19,8 @@ ENTITLEMENTS = API_V1 + '/entitlements'
 ENTITLEMENTS_USAGE = API_V1 + '/entitlements/usage'
 # Reports Endpoints
 REPORTS_USAGE = API_V1 + '/reports/usage'
+# Overview Endpoints
+OVERVIEW_BREAKDOWN = API_V1 + '/overview/breakdown'
 # Audit Endpoints
 AUDIT = API_V1 + '/audit'
 # Config Endpoints
@@ -61,6 +63,17 @@ CLASSIFICATION_PRODUCTION = 'production'
 CLASSIFICATION_BACKUP = 'backup'
 CLASSIFICATION_DEVELOPMENT = 'development'
 CLASSIFICATION_TEST = 'test'
+# Support Levels (derived from the uploaded subscription file, never stored
+# on the cluster). NO_MATCHING_ENTITLEMENT is what a cluster resolves to when
+# no active subscription covers its classification.
+SUPPORT_LEVEL_PLATINUM = 'platinum'
+SUPPORT_LEVEL_GOLD = 'gold'
+SUPPORT_LEVEL_SILVER = 'silver'
+SUPPORT_LEVEL_NO_MATCHING_ENTITLEMENT = 'no_matching_entitlement'
+# Usage report row statuses (GET /reports/usage?format=json)
+REPORT_STATUS_WITHIN = 'within'
+REPORT_STATUS_EXCEED = 'exceed'
+REPORT_STATUS_UNMATCHED = 'unmatched'
 # User Roles
 ROLE_SYSTEM_ADMIN = 'system_admin'
 ROLE_SYSTEM_VIEWER = 'system_viewer'
