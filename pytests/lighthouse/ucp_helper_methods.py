@@ -622,6 +622,57 @@ def build_minimal_ingest_payload(cluster_uuid, product=None,
         product=product,
         nodes=[node])
 
+def build_synthetic_cluster_payload(cluster_uuid, node_count, logical_cores,
+                                    ram_bytes, hostname_prefix='synthetic',
+                                    collected_at=None):
+    """
+    Build a telemetry ingest payload for a synthetic cluster of identical
+    nodes.
+
+    Every node gets exactly `logical_cores` / `ram_bytes`, so a SKU sized to
+    the same values always fits it -- instance-size matching can never be the
+    reason a subscription-resolution assertion fails. Product and node both
+    carry 'edition' because the portal rejects a payload without it (see
+    build_minimal_ingest_payload).
+
+    collected_at defaults to now: the portal treats the latest snapshot as
+    the cluster's current state, so a stale value would not refresh it.
+
+    Args:
+        cluster_uuid:    UUID the portal will store the cluster under
+        node_count:      number of nodes to report
+        logical_cores:   cpuLogicalCores for every node
+        ram_bytes:       ramBytesTotal for every node
+        hostname_prefix: prefix for generated node hostnames
+        collected_at:    ISO 8601 UTC timestamp, or None for now
+
+    Returns:
+        dict ready for client.ingest_telemetry().
+    """
+    product = {
+        'name': 'Couchbase Server',
+        'edition': 'enterprise',
+        'version': '8.0.3',
+    }
+    nodes = []
+    for index in range(node_count):
+        node = build_node_telemetry(
+            hostname='%s-%d.test.local' % (hostname_prefix, index),
+            cpu_physical_cores=max(1, logical_cores // 2),
+            cpu_logical_cores=logical_cores,
+            ram_bytes_total=ram_bytes, ram_bytes_used=ram_bytes // 4,
+            storage_bytes_total=107374182400, storage_bytes_used=10737418240,
+            services=['data'], os='linux', uptime_seconds=3600)
+        node['edition'] = 'enterprise'
+        nodes.append(node)
+    if collected_at is None:
+        collected_at = get_current_iso8601_timestamp()
+    return build_telemetry_payload(
+        collected_at=collected_at,
+        cluster_uuid=cluster_uuid,
+        product=product,
+        nodes=nodes)
+
 def build_subscription_payload(start_at, end_at, nodes,
                               logical_cores, ram_bytes,
                               classification='production',
