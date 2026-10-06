@@ -1001,6 +1001,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.log.info("Cleanup the cluster and set the data location "
                       "to the one specified by the test.")
         self.original_data_devices = {}
+        # tearDown() is skipped if setUp() fails, so restore via cleanup
+        self.disk_setup_complete = False
+        self.addCleanup(self._restore_after_failed_setup)
         # list.append is atomic under the GIL, so the worker threads can
         # record into this without further locking.
         self.node_setup_errors = list()
@@ -1098,6 +1101,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.failover_actions['disk_full'] = self.fail_disk_via_disk_full
 
         self.loadgen_tasks = []
+        self.disk_setup_complete = True
         self.log.info("=========Finished Diskautofailover base setup=========")
 
     def wait_for_ns_server_reachable(self, server, wait_time=300):
@@ -1188,48 +1192,79 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         restore_errors = []
         if hasattr(self, "original_data_path"):
             self.bring_back_failed_nodes_up()
-            # Before the restore removes the data directory, not after.
-            # A node's configuration lives in
-            # /opt/couchbase/var/lib/couchbase/config, not under
-            # disk_location, so wiping the data directory of a node that
-            # still owns a bucket leaves it believing it has vbucket files
-            # that no longer exist: it comes back in 'warmup' and stays
-            # there. super().tearDown() deletes the buckets far too late
-            # to prevent that. Measured on 172.23.104.173.
-            try:
-                self.bucket_util.delete_all_buckets(self.cluster)
-            except Exception as e:
-                restore_errors.append(f"delete_all_buckets: {e}")
-                self.log.error(f"Failed to delete buckets before restoring "
-                               f"{self.disk_location}: {e}")
-            for server in self.cluster.servers:
-                shell = RemoteMachineShellConnection(server)
-                shell.stop_couchbase()
-                try:
-                    shell.restore_partition(
-                        self.disk_location,
-                        self.original_data_devices.get(server.ip))
-                except Exception as e:
-                    restore_errors.append("{0}: {1}".format(server.ip, e))
-                    self.log.error(
-                        "Failed to restore {0} on {1}: {2}"
-                        .format(self.disk_location, server.ip, e))
-                finally:
-                    # Before couchbase restarts, not after: it cannot
-                    # start at all on a data path the restore removed.
-                    self.prepare_data_location(
-                        shell, self.original_data_devices.get(server.ip),
-                        (self.disk_location, self.data_location,
-                         self.original_data_path))
-                    shell.start_couchbase()
-                    shell.disconnect()
-                self._initialize_node_with_new_data_location(
-                    server, self.original_data_path)
+            restore_errors = self._restore_data_locations()
         super(DiskAutoFailoverBasetest, self).tearDown()
         if restore_errors:
             self.fail(
                 "Failed to restore original data partition on: {0}"
                 .format("; ".join(restore_errors)))
+
+    def _restore_data_locations(self, servers=None):
+        """
+        Restore the original data partition on the given servers
+        :param servers: Servers to restore. Default: all cluster servers
+        :return: List of restore errors
+        """
+        if servers is None:
+            servers = self.cluster.servers
+        restore_errors = []
+        # Before the restore removes the data directory, not after.
+        # A node's configuration lives in
+        # /opt/couchbase/var/lib/couchbase/config, not under
+        # disk_location, so wiping the data directory of a node that
+        # still owns a bucket leaves it believing it has vbucket files
+        # that no longer exist: it comes back in 'warmup' and stays
+        # there. super().tearDown() deletes the buckets far too late
+        # to prevent that. Measured on 172.23.104.173.
+        try:
+            self.bucket_util.delete_all_buckets(self.cluster)
+        except Exception as e:
+            restore_errors.append(f"delete_all_buckets: {e}")
+            self.log.error(f"Failed to delete buckets before restoring "
+                           f"{self.disk_location}: {e}")
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            shell.stop_couchbase()
+            try:
+                shell.restore_partition(
+                    self.disk_location,
+                    self.original_data_devices.get(server.ip))
+            except Exception as e:
+                restore_errors.append("{0}: {1}".format(server.ip, e))
+                self.log.error(
+                    "Failed to restore {0} on {1}: {2}"
+                    .format(self.disk_location, server.ip, e))
+            finally:
+                # Before couchbase restarts, not after: it cannot
+                # start at all on a data path the restore removed.
+                self.prepare_data_location(
+                    shell, self.original_data_devices.get(server.ip),
+                    (self.disk_location, self.data_location,
+                     self.original_data_path))
+                shell.start_couchbase()
+                shell.disconnect()
+            self._initialize_node_with_new_data_location(
+                server, self.original_data_path)
+        return restore_errors
+
+    def _restore_after_failed_setup(self):
+        """
+        Restore the data partition if setUp() failed after mounting it
+        :return: None
+        """
+        if self.disk_setup_complete:
+            return
+        # Only the nodes where the partition setup was attempted
+        servers = [server for server in self.cluster.servers
+                   if server.ip in self.original_data_devices]
+        if not servers:
+            return
+        self.log.warning(f"setUp failed, restoring {self.disk_location} on "
+                         f"{[server.ip for server in servers]}")
+        restore_errors = self._restore_data_locations(servers)
+        if restore_errors:
+            self.fail(f"setUp failed and the original data partition could "
+                      f"not be restored on: {'; '.join(restore_errors)}")
 
     def __per_node_new_mount_partition(self, server):
         # Nothing may escape this method. An exception raised in a thread
