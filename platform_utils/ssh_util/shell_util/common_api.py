@@ -1113,16 +1113,18 @@ class CommonShellAPIs(object):
         output, error = self.execute_command(command)
         return output, error
 
-    def fill_disk_space(self, location):
+    def fill_disk_space(self, location, size=None):
         """
         Fill up the disk fully at the location specified.
         This method creates a junk file of the specified size in the location specified
         :param location: Location to fill the disk
-        :param size: Size of disk space to fill up, in MB
+        :param size: Size of disk space to fill up, in MB.
+                     If None, fills until the disk is full
         :return: Output and error message from filling up the disk.
         """
-        command = "dd if=/dev/zero of={0}/disk-quota.ext3 count={1}; df -Thl"\
-            .format(location, 1024000000)
+        count = f" count={int(size)}" if size else ""
+        command = "dd if=/dev/zero of={0}/disk-quota.ext3 bs=1M{1}; df -Thl"\
+            .format(location, count)
         output, error = self.execute_command(command)
         return output, error
 

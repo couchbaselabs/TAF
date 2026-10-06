@@ -1025,9 +1025,13 @@ class CollectionBase(ClusterSetup, FusionBase):
         }
 
     @staticmethod
-    def start_history_retention_data_load(test_obj, async_load=True):
+    def start_history_retention_data_load(test_obj, async_load=True,
+                                          force=False):
+        """
+        :param force: Start the load even without dedup retention set
+        """
         cont_doc_load = None
-        if test_obj.bucket_dedup_retention_seconds is not None \
+        if force or test_obj.bucket_dedup_retention_seconds is not None \
                 or test_obj.bucket_dedup_retention_bytes is not None:
             update_percent = 2
             update_itr = test_obj.input.param("dedupe_update_itrs", 3)

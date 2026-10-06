@@ -115,7 +115,11 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def test_disk_failure_for_read_and_writes(self):
         task = None
         self.enable_disk_autofailover_and_validate()
-        cont_load_task = CollectionBase.start_history_retention_data_load(self)
+        # Disk autofailover needs writes failing on the node for the whole
+        # disk_timeout, so keep a continuous load running across the failure.
+        # Non-spec tests get theirs from _loadgen()
+        cont_load_task = CollectionBase.start_history_retention_data_load(
+            self, force=self.spec_name is not None)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
         else:
@@ -193,7 +197,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         task = None
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
-        cont_load_task = CollectionBase.start_history_retention_data_load(self)
+        cont_load_task = CollectionBase.start_history_retention_data_load(
+            self, force=self.spec_name is not None)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
@@ -232,8 +237,9 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         task = None
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
+        cont_load_task = CollectionBase.start_history_retention_data_load(
+            self, force=self.spec_name is not None)
         self.failover_actions[self.failover_action]()
-        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
@@ -289,8 +295,9 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             return
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
+        cont_load_task = CollectionBase.start_history_retention_data_load(
+            self, force=self.spec_name is not None)
         self.failover_actions[self.failover_action]()
-        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
@@ -344,8 +351,9 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             return
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
+        cont_load_task = CollectionBase.start_history_retention_data_load(
+            self, force=self.spec_name is not None)
         self.failover_actions[self.failover_action]()
-        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
