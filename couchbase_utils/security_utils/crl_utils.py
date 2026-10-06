@@ -1438,7 +1438,7 @@ class CRLUtils:
 
     @staticmethod
     def perform_mtls_handshake(host, port, client_cert_path, client_key_path,
-                               path="/whoami", timeout=30):
+                               path="/whoami", timeout=30, auth=None):
         """
         Performs a mutual TLS (mTLS) handshake and HTTP GET request using the 
         provided client certificate.
@@ -1450,6 +1450,11 @@ class CRLUtils:
             client_key_path (str): Filesystem path to the client's PEM private key.
             path (str): HTTP endpoint to hit upon successful handshake (default: "/whoami").
             timeout (int): Request timeout in seconds.
+            auth (tuple|None): Optional (username, password) sent as Basic auth
+                alongside the certificate. Leave as None to present the
+                certificate ALONE -- a request carrying an Authorization header
+                is authenticated by password, so passing auth here would mask
+                whether the certificate itself established any identity.
 
         Returns:
             requests.Response: On a successful handshake and HTTP response.
@@ -1472,6 +1477,7 @@ class CRLUtils:
             cert=(client_cert_path, client_key_path),
             verify=False,
             timeout=timeout,
+            auth=auth,
             headers={"Connection": "close"}
         )
 
@@ -1678,7 +1684,7 @@ class CRLUtils:
 
     @classmethod
     def get_identity_via_mtls(cls, host, port, client_cert_path, client_key_path,
-                              timeout=30):
+                              timeout=30, auth=None):
         """
         GET /whoami over mTLS and return the parsed identity JSON.
 
@@ -1694,6 +1700,7 @@ class CRLUtils:
         """
         resp = cls.perform_mtls_handshake(
             host, port, client_cert_path, client_key_path, timeout=timeout,
+            auth=auth,
         )
         resp.raise_for_status()
         return resp.json()
