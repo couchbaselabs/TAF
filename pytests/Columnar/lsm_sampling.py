@@ -12,6 +12,12 @@ from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 
 
 class LSMSampling(ColumnarOnPremBase):
+    # MB-74219: allowed under-fill of the SAMPLE index vs SampleCardinalityTarget
+    # (components with deletes may hold fewer live docs than their quota).
+    # Observed (3.0.0-1084): under-fill grows with delete ratio, worst case
+    # -5.2% after a 50% delete; -2.2% / -4.8% after upserting 5% / 10% back.
+    # Tune from repeated runs if heavier cases are added.
+    SAMPLE_UNDERFILL_TOLERANCE = 0.10
 
     # Shared across every test in this module for the lifetime of the
     # run - one column-storage and one row-storage standalone collection
@@ -324,24 +330,33 @@ class LSMSampling(ColumnarOnPremBase):
         #                                index_row.get("SourceCardinality")))
 
         target = index_row.get("SampleCardinalityTarget")
-        per_partition = max(1, math.ceil(target / self.num_partitions))
-        expected_dump_count = per_partition * self.num_partitions
+        # MB-74219: the sample size targets SampleCardinalityTarget only
+        # approximately.
+        #  - Upper (hard bound): each partition's quota is
+        #    ceil(target / L), where L = number of storage partitions holding
+        #    live data (L <= num_partitions), so the total can overshoot by at
+        #    most num_partitions - 1.
+        #  - Lower (tolerance): within a partition the quota is split across
+        #    storage components by estimated live-doc counts; after deletes a
+        #    component may hold fewer live docs than its share and the
+        #    shortfall isn't reassigned. Allow SAMPLE_UNDERFILL_TOLERANCE.
+        max_expected = target + self.num_partitions - 1
+        min_expected = math.floor(
+            target * (1 - self.SAMPLE_UNDERFILL_TOLERANCE))
 
         actual_dump_count = self.cbas_util.get_dump_index_count(
             self.columnar_cluster, self.collection_name, index_row["IndexName"])
         print(
-            f"DUMP_INDEX row count for {self.collection_name}: {actual_dump_count}; expected >= {expected_dump_count} (SampleCardinalityTarget={target}, num_partitions={self.num_partitions})")
-        # MB-74219: the server intentionally over-samples (per-partition
-        # target is padded to account for tombstone-heavy partitions), so the
-        # DUMP_INDEX count can exceed ceil(target / partitions) * partitions.
-        # Only the lower bound is guaranteed.
-        if actual_dump_count < expected_dump_count:
+            f"DUMP_INDEX row count for {self.collection_name}: {actual_dump_count}; "
+            f"expected in [{min_expected}, {max_expected}] "
+            f"(SampleCardinalityTarget={target}, num_partitions={self.num_partitions})")
+        if not (min_expected <= actual_dump_count <= max_expected):
             self.fail(
-                "DUMP_INDEX row count too low for {0}: "
+                "DUMP_INDEX row count out of range for {0}: "
                 "SampleCardinalityTarget={1}, num_partitions={2} => "
-                "expected at least {3}, got {4}".format(
+                "expected within [{3}, {4}], got {5}".format(
                     self.collection_name, target, self.num_partitions,
-                    expected_dump_count, actual_dump_count))
+                    min_expected, max_expected, actual_dump_count))
 
         if deleted_ids:
             overlap_count = self.cbas_util.get_dump_index_count(
