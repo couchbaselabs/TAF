@@ -563,6 +563,10 @@ class AsyncRestApi(ColumnarBaseTest):
         self.log.info(
             "Waiting for analytics service to be ready after restart")
         time.sleep(60)
+        self.assertTrue(
+            self.cbas_util.is_analytics_running(
+                self.analytics_cluster, timeout=300),
+            "Analytics service not ACTIVE after restart")
 
         # Submit async request
         statement = 'SELECT sleep("v", 60*60*1000);'

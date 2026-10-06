@@ -105,7 +105,13 @@ class GCSLinksDatasets(ColumnarBaseTest):
         datasets = self.cbas_util.get_all_dataset_objs("external")
         results = []
         # Read all the docs in the aws s3 bucket
-        if self.input.param("dynamic_prefix", False) is False:
+        # A fixed path (e.g. level_1_folder_1) has no {level_no:int}/
+        # {folder_no:int} placeholders, so level_no/folder_no fields are not
+        # embedded in the docs. Verify via the plain doc count in that case.
+        single_folder = dataset_properties[
+            "path_on_external_container"] == "level_1_folder_1"
+        if (self.input.param("dynamic_prefix", False) is False
+                or single_folder):
             for dataset in datasets:
                 jobs.put((
                     self.cbas_util.get_num_items_in_cbas_dataset,
