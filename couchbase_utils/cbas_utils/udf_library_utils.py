@@ -60,10 +60,20 @@ class EAUDFLibraryClient:
             self.log.error(f"Could not resolve the current node UUID on {self.node.ip}")
             return None
         node_id = output[0].strip()
-        # Install root differs by build: /opt/couchbase from 3.0.0
-        # (operational insights), /opt/enterprise-analytics before that.
-        candidates = [f"{root}/var/{node_id}_ea_lib.sock"
-                      for root in ("/opt/couchbase", "/opt/enterprise-analytics")]
+        # Both the install root and the socket suffix track the product
+        # rename: /opt/couchbase + _oi_lib.sock from 3.0.0 (Operational
+        # Insights) onwards, /opt/enterprise-analytics + _ea_lib.sock
+        # before that. Verified live on 172.23.219.29 (3.0.0-1076): the
+        # actual file is /opt/couchbase/var/<id>_oi_lib.sock -- the old
+        # _ea_lib.sock guess never matches on an OI build, which silently
+        # surfaced as "Failed to upload library ...: status=None body=None"
+        # rather than a clear "socket not found" error.
+        candidates = [f"{root}/var/{node_id}{suffix}"
+                      for root, suffix in (
+                          ("/opt/couchbase", "_oi_lib.sock"),
+                          ("/opt/couchbase", "_ea_lib.sock"),
+                          ("/opt/enterprise-analytics", "_ea_lib.sock"),
+                      )]
         for sock in candidates:
             exists, _ = self.shell.execute_command(f"test -S {sock} && echo present")
             if exists and "present" in exists[0]:
@@ -309,13 +319,12 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
 
     shell = RemoteMachineShellConnection(server)
     try:
-        # The sidecar image name tracks the product rename, not just the
-        # install root: a build under /opt/enterprise-analytics (pre-3.0.0)
-        # needs the old enterprise-analytics-udf:2.3.0 image, while a build
-        # under /opt/couchbase (3.0.0 / Operational Insights onwards) needs
-        # operational-insights-udf:3.0.0 instead. Mismatching them doesn't
-        # fail cleanly -- the old image against a new-build JVM makes every
-        # UDF call hang indefinitely on response delivery rather than
+        # Python UDF testing targets Operational Insights 3.0.0+ only (the
+        # product rename from Enterprise Analytics), so this always installs
+        # under /opt/couchbase and always needs the OI sidecar image.
+        # Mismatching the sidecar image against the server build doesn't
+        # fail cleanly -- the old EA image against a new-build JVM makes
+        # every UDF call hang indefinitely on response delivery rather than
         # erroring (MB-74322), which is far harder to diagnose than a
         # missing-socket or wrong-path error would be.
         ea_root_out, _ = shell.execute_command(
@@ -370,7 +379,100 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
                     server.ip))
             return True
 
+        # 0. Docker itself. A freshly-provisioned pool node (as opposed to
+        # the long-lived, hand-maintained nodes this function was originally
+        # written against) has no Docker engine at all -- the apt-get
+        # package (not a registry pull, which is blocked from this network)
+        # is reachable even on an offline-feeling QE pool node. Verified
+        # live on a fresh Debian buster (172.23.220.x) node: plain
+        # `apt-get install -y docker.io` (18.09.1) works fine as the runsc
+        # runtime host once registered below.
+        #
+        # Debian bullseye pool nodes need more care, though: apt prefers
+        # docker.io/containerd's bullseye-security version over the plain
+        # bullseye one since it's numerically newer, but bullseye-security
+        # prunes old point-release .debs once superseded -- that exact
+        # version then 404s forever, it isn't a transient mirror blip.
+        # Verified live on 172.23.219.227: the plain-bullseye version of
+        # both packages installs fine; pin to whichever candidate isn't
+        # from security.debian.org (falling back to the plain candidate
+        # if that's all there is, as on buster) and pass --fix-missing so
+        # an unrelated apt-get dependency (git, needrestart, ...) hitting
+        # the same dead-security-mirror issue doesn't abort the install.
+        docker_present, _ = shell.execute_command(
+            "command -v docker >/dev/null 2>&1 && echo present")
+        if not docker_present or "present" not in docker_present[0]:
+            shell.execute_command("apt-get update -qq")
+
+            pick_version_script = (
+                "import re, subprocess, sys\n"
+                "pkg = sys.argv[1]\n"
+                "out = subprocess.run(['apt-cache', 'policy', pkg], "
+                "capture_output=True, text=True).stdout.splitlines()\n"
+                "chosen = None\n"
+                "candidate = None\n"
+                "pending_ver = None\n"
+                "for line in out:\n"
+                "    line = line.strip()\n"
+                "    m = re.match(r'Candidate:\\s*(\\S+)', line)\n"
+                "    if m:\n"
+                "        candidate = m.group(1)\n"
+                "        continue\n"
+                "    m = re.match(r'(\\S+)\\s+\\d+$', line)\n"
+                "    if m:\n"
+                "        pending_ver = m.group(1)\n"
+                "        continue\n"
+                "    if pending_ver and 'security.debian.org' not in line "
+                "and chosen is None:\n"
+                "        chosen = pending_ver\n"
+                "print(chosen or candidate or '')\n"
+            )
+            pick_version_b64 = base64.b64encode(
+                pick_version_script.encode("utf-8")).decode("ascii")
+            pick_cmd = "echo '{0}' | base64 -d > /tmp/pick_apt_ver.py".format(
+                pick_version_b64)
+            shell.execute_command(pick_cmd)
+
+            pkg_versions = {}
+            for pkg in ("docker.io", "containerd"):
+                ver_out, _ = shell.execute_command(
+                    "python3 /tmp/pick_apt_ver.py {0}".format(pkg))
+                pkg_versions[pkg] = ver_out[0].strip() if ver_out else ""
+            shell.execute_command("rm -f /tmp/pick_apt_ver.py")
+
+            install_targets = " ".join(
+                "{0}={1}".format(pkg, ver) if ver else pkg
+                for pkg, ver in pkg_versions.items())
+            shell.execute_command(
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y "
+                "--fix-missing {0}".format(install_targets))
+            shell.execute_command(
+                "systemctl enable --now docker")
+            shell.execute_command(
+                "for i in $(seq 1 30); do docker info >/dev/null 2>&1 "
+                "&& break; sleep 1; done")
+            docker_installed, _ = shell.execute_command(
+                "command -v docker >/dev/null 2>&1 && echo present")
+            if not docker_installed or "present" not in docker_installed[0]:
+                log.error(
+                    "Could not install Docker on {0}".format(server.ip))
+                return False
+
         # 1. The real gVisor binary (checksum-verified download).
+        #
+        # gVisor dropped standalone runsc/runsc.sha512 objects from their
+        # release layout as of 2026-09-30 -- .../latest/{arch}/runsc now
+        # 404s. The only artifact published there now is a bundled
+        # gvisor.tar.bz2 (+ .sha512). It is no longer a single self-
+        # contained binary either: this release moved to a sidecar model
+        # where runsc shells out to helper binaries (notably gvisor_sentry)
+        # it expects to find in a gvisor-bin/ directory *next to* runsc --
+        # extracting runsc alone starts the container but then fails with
+        # `sidecar "gvisor_sentry" not usable (stat .../gvisor-bin/
+        # gvisor_sentry: no such file or directory)`. Verified live on
+        # 172.23.220.15 (MB-74322 follow-up): checksum matches, and
+        # installing runsc + gvisor-bin/ together (preserving that relative
+        # layout under /usr/local/bin/) runs real containers successfully.
         runsc_present, _ = shell.execute_command(
             "test -x {0} && echo present".format(runsc_path))
         if not runsc_present or "present" not in runsc_present[0]:
@@ -386,31 +488,47 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
                 "https://storage.googleapis.com/gvisor/releases/release/"
                 "latest/{0}".format(arch))
             shell.execute_command(
-                "curl -fsSL -o /tmp/runsc.download {0}/runsc".format(
+                "curl -fsSL -o /tmp/gvisor.tar.bz2 {0}/gvisor.tar.bz2".format(
                     base_url))
             shell.execute_command(
-                "curl -fsSL -o /tmp/runsc.download.sha512 "
-                "{0}/runsc.sha512".format(base_url))
+                "curl -fsSL -o /tmp/gvisor.tar.bz2.sha512 "
+                "{0}/gvisor.tar.bz2.sha512".format(base_url))
 
             verify_cmd = (
-                "expected=$(awk '{print $1}' /tmp/runsc.download.sha512); "
-                "actual=$(sha512sum /tmp/runsc.download | awk '{print $1}'); "
+                "expected=$(awk '{print $1}' /tmp/gvisor.tar.bz2.sha512); "
+                "actual=$(sha512sum /tmp/gvisor.tar.bz2 | awk '{print $1}'); "
                 "[ \"$expected\" = \"$actual\" ] && [ -n \"$expected\" ] "
                 "&& echo checksum_ok"
             )
             verify_out, _ = shell.execute_command(verify_cmd)
             if not verify_out or "checksum_ok" not in verify_out[0]:
                 log.error(
-                    "gVisor runsc download checksum mismatch (or "
+                    "gVisor release tarball checksum mismatch (or "
                     "download failed) on {0}".format(server.ip))
                 shell.execute_command(
-                    "rm -f /tmp/runsc.download /tmp/runsc.download.sha512")
+                    "rm -f /tmp/gvisor.tar.bz2 /tmp/gvisor.tar.bz2.sha512")
                 return False
 
+            runsc_dir = runsc_path.rsplit("/", 1)[0]
             shell.execute_command(
-                "chmod 0755 /tmp/runsc.download && "
-                "mv /tmp/runsc.download {0} && "
-                "rm -f /tmp/runsc.download.sha512".format(runsc_path))
+                "rm -rf /tmp/gvisor_extract && "
+                "mkdir -p /tmp/gvisor_extract && "
+                "tar -xjf /tmp/gvisor.tar.bz2 -C /tmp/gvisor_extract && "
+                "mkdir -p {dir}/gvisor-bin && "
+                "cp /tmp/gvisor_extract/runsc {runsc} && "
+                "cp /tmp/gvisor_extract/gvisor-bin/* {dir}/gvisor-bin/ && "
+                "chmod -R 0755 {runsc} {dir}/gvisor-bin && "
+                "rm -rf /tmp/gvisor.tar.bz2 /tmp/gvisor.tar.bz2.sha512 "
+                "/tmp/gvisor_extract".format(dir=runsc_dir,
+                                              runsc=runsc_path))
+
+            runsc_installed, _ = shell.execute_command(
+                "test -x {0} && echo present".format(runsc_path))
+            if not runsc_installed or "present" not in runsc_installed[0]:
+                log.error(
+                    "Extracted gVisor tarball but {0} is not present/"
+                    "executable on {1}".format(runsc_path, server.ip))
+                return False
 
         # 2. Register runsc as a named Docker runtime (merging into any
         # existing daemon.json rather than clobbering it), then restart
@@ -472,6 +590,20 @@ def ensure_udf_executor_runtime(server, username="Administrator", password="pass
         shell.execute_command(
             "docker rm -f {0} 2>/dev/null".format(container_name))
         shell.execute_command("rm -f {0} {0}.lock".format(socket_path))
+
+        # Docker auto-creates a missing bind-mount source as root:root,
+        # mode 0755 -- on a node where nothing has ever bind-mounted this
+        # path before (a fresh pool node, as opposed to a long-lived
+        # hand-maintained one), that leaves the executor's non-root
+        # `--user couchbase_uid:couchbase_gid` process unable to create its
+        # own socket inside it ("Permission denied" from s6-ipcserver-
+        # socketbinder). chown it to the executor's uid:gid up front rather
+        # than wait for that failure -- verified live on 172.23.220.15.
+        socket_dir = socket_path.rsplit("/", 1)[0]
+        shell.execute_command(
+            "mkdir -p {0} && chown {1}:{2} {0}".format(
+                socket_dir, couchbase_uid, couchbase_gid))
+
         shell.execute_command("docker pull {0}".format(image))
         run_cmd = (
             "docker run -d --name {name} --restart unless-stopped "
