@@ -137,8 +137,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'disabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         fusion_state = CapellaAPI.get_fusion_status(self.pod, self.tenant, self.cluster.id)
         self.log.info(f"Initial fusion state: {fusion_state}")
@@ -183,8 +186,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'disabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info(f"Starting fusion enable on cluster {self.cluster.id}")
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
@@ -249,8 +255,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'disabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
         self.log.info(f"Starting fusion enable on cluster {self.cluster.id}")
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
         self.assertEqual(resp.status_code, 200)
@@ -321,8 +330,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'disabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info(f"Starting fusion enable on cluster {self.cluster.id}")
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
@@ -397,8 +409,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info("Allowing data to sync before stop")
         self._apply_fusion_upload_speed_settings()
@@ -477,8 +492,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'disabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info(f"Starting fusion enable on cluster {self.cluster.id}")
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
@@ -560,8 +578,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 500000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 500000)
+                        )
 
         self.log.info(f"Triggering rebalance on cluster {self.cluster.id}")
         config = self.rebalance_config("data", +1)
@@ -687,8 +708,11 @@ class FusionEnableDisableTests(_FusionTestBase):
                         self.pod, self.tenant, "fusion-rebalances", True)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         s3_uri = self.fusion_monitor.get_fusion_s3_uri(self.cluster)
         self.assertIsNotNone(s3_uri, "S3 URI should exist when fusion is enabled")
@@ -750,7 +774,10 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         cluster_uri = self._wait_for_s3_uri(self.cluster)
         bucket_name_s3 = cluster_uri.replace("s3://", "").split("?")[0]
-        self._load_data(self.cluster, self.cluster.buckets)
+        self._load_data(self.cluster, self.cluster.buckets,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 100000)
+                        )
 
         existing_bucket_count = len(self.cluster.buckets)
         self.log.info(f"Creating new bucket via create_buckets on cluster {self.cluster.id}")
@@ -786,7 +813,10 @@ class FusionEnableDisableTests(_FusionTestBase):
                              "Cluster S3 URI missing after new bucket creation")
 
         self.log.info(f"Loading data into {new_bucket.name} to verify S3 uploads")
-        self._load_data(self.cluster, [new_bucket])
+        self._load_data(self.cluster, [new_bucket],
+                        create_start=0,
+                        create_end=self.input.param("num_items", 100000)
+                        )
         self.sleep(60, "Allow data from new bucket to sync to S3")
         rest = RestConnection(self.cluster.master)
         info = rest.get_bucket_details(bucket_name=new_bucket.name)
@@ -822,8 +852,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.fusion_monitor.set_admin_credentials(self.cluster)
         self.log.info("Validating fusion status API fields while uploads are in progress")
@@ -977,8 +1010,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
 
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
         self.sleep(120, "Allow data to sync past fusion threshold")
 
         self.log.info("Starting fusion rebalance")
@@ -1067,7 +1103,10 @@ class FusionEnableDisableTests(_FusionTestBase):
         # --- Round 1: Stop — S3 objects must be preserved ---
         self.log.info(f"Round 1 (Stop): enable, stop on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self._load_data(self.cluster)
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.sleep(30, "Allow some data to sync to S3")
 
@@ -1143,8 +1182,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info("Waiting for full sync to S3")
         self._wait_for_pending_bytes_zero(self.cluster, timeout=self.sync_wait_timeout)
@@ -1219,8 +1261,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info("Waiting for full sync to S3")
         self._wait_for_pending_bytes_zero(self.cluster, timeout=self.sync_wait_timeout)
@@ -1272,8 +1317,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         self.assertIsNotNone(bucket_name, "Could not determine S3 bucket name")
@@ -1306,8 +1354,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         self.assertIsNotNone(bucket_name, "Could not determine S3 bucket name")
@@ -1370,8 +1421,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         bucket_name = self._wait_for_s3_uri(self.cluster).replace(
             "s3://", "").split("?")[0]
 
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
         self.sleep(120, "Allow data to sync to S3 past the fusion threshold")
 
         self.log.info("Starting rebalance to trigger fusion acceleration")
@@ -1450,7 +1504,10 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
 
         self.log.info("Loading data above fusion threshold and waiting for sync")
-        self._load_data(self.cluster)
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
         self.sleep(120, "Allow data to sync to S3 past fusion threshold")
         self._wait_for_pending_bytes_zero(self.cluster, timeout=self.sync_wait_timeout)
 
@@ -1584,8 +1641,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
 
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
         self.sleep(120, "Allow data to sync past fusion threshold")
 
         self.log.info(
@@ -1678,8 +1738,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         first_uri = self._wait_for_s3_uri(self.cluster)
         first_bucket = first_uri.replace("s3://", "").split("?")[0]
@@ -1726,8 +1789,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.sleep(30, "Allow data to sync to S3")
 
@@ -1783,8 +1849,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'disabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info(f"Starting enable on cluster {self.cluster.id}")
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
@@ -1854,8 +1923,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self._wait_for_pending_bytes_zero(self.cluster, timeout=self.sync_wait_timeout)
 
@@ -1908,8 +1980,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
         self._wait_for_pending_bytes_zero(self.cluster, timeout=self.sync_wait_timeout)
 
         # --- Phase 1: override=True → DCP rebalance ---
@@ -1984,8 +2059,11 @@ class FusionEnableDisableTests(_FusionTestBase):
         """
         self.log.info(f"Ensuring fusion state is 'disabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         self.log.info("Setting override=True on a fusion-disabled cluster")
         CapellaAPI.override_fusion_rebalances(self.pod, self.tenant, self.cluster.id, override=True)
@@ -2034,8 +2112,11 @@ class FusionEnableDisableTests(_FusionTestBase):
           /disable from disabled  → 4xx
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
-        self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")
-        self._load_data(self.cluster)
+        self.log.info(f"Loading {self.input.param('num_items', 15000000)} items into cluster {self.cluster.id}")
+        self._load_data(self.cluster,
+                        create_start=0,
+                        create_end=self.input.param("num_items", 15000000)
+                        )
 
         # ----------------------------------------------------------
         # /enable from enabled → must be rejected
