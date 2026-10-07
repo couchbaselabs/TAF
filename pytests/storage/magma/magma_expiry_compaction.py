@@ -386,6 +386,86 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.set_metadata_purge_interval(
                 value=3.0, buckets=self.buckets)
 
+    def test_ttl_only_fragmentation(self):
+        '''
+        MB-72862: TTL-only workload, every doc inserted with a TTL and
+        never updated. Expiry pager and magma expiry purger left at their
+        server defaults.
+
+        Steps:
+
+           --- Insert new keys with TTL=maxttl at ops_rate for load_duration
+           --- Steady state starts after maxttl + one purger interval:
+               docs expire about as fast as they are inserted
+           --- Every 5 mins in steady state: magma fragmentation within
+               the bucket's fragmentation threshold
+           --- curr_items stays flat across steady state. Expired docs
+               count as live until compaction expires them, so a purger
+               that falls behind shows up as item growth, not as
+               fragmentation
+        '''
+        ttl = self.input.param("maxttl", 3600)
+        load_duration = self.input.param("load_duration", 14400)
+        # Server default magma_expiry_purger_interval, not changed here
+        purger_interval = 3600
+        steady_state_start = ttl + purger_interval
+        if load_duration <= steady_state_start:
+            self.fail(f"load_duration {load_duration}s does not reach "
+                      f"steady state at {steady_state_start}s")
+
+        self.create_start = 0
+        self.create_end = self.ops_rate * load_duration
+        # setUp defaults expiry_perc to 100; java_doc_loader only sets the
+        # ops it is given, and DocLoader needs percents summing to 100 and
+        # expiry at 0 to apply exp_ttl to creates
+        self.expiry_perc = 0
+        tasks, _ = self.java_doc_loader(doc_ops="create", exp_ttl=ttl,
+                                        wait=False, monitor_ops=False)
+        start_time = time.time()
+        steady_state_items = None
+        while time.time() - start_time < load_duration:
+            self.sleep(300, "TTL-only load in progress")
+            elapsed = int(time.time() - start_time)
+            if elapsed < steady_state_start:
+                continue
+            items, expired = self._get_curr_items_and_expiry_stats()
+            disk_usage = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)
+            self.log.info(f"{elapsed}s: curr_items={items}, "
+                          f"kvstore disk={disk_usage[0]}MB, {expired}")
+            if steady_state_items is None:
+                steady_state_items = items
+            if not self.check_fragmentation_using_magma_stats(
+                    self.buckets[0], self.cluster.nodes_in_cluster):
+                self.log_failure(f"{elapsed}s: magma fragmentation above "
+                                 f"{self.fragmentation}%")
+        for task in tasks:
+            self.doc_loading_tm.get_task_result(task)
+
+        if steady_state_items is None:
+            self.fail("Load ended before steady state, no samples taken")
+        # Broken purging grows items by ops_rate*ttl per ttl (~+100% over
+        # a 2h window at defaults); steady state stays roughly flat
+        if items > 1.25 * steady_state_items:
+            self.log_failure(f"curr_items grew from {steady_state_items} "
+                             f"to {items} in steady state")
+        self.validate_test_failure()
+
+    def _get_curr_items_and_expiry_stats(self):
+        expiry_stats = ["ep_expired_compactor", "ep_expired_pager",
+                        "ep_expired_access"]
+        items = 0
+        expired = dict.fromkeys(expiry_stats, 0)
+        for server in self.cluster_util.get_kv_nodes(self.cluster):
+            cbstat = Cbstats(server)
+            for bucket in self.buckets:
+                stats = cbstat.all_stats(bucket.name)
+                items += int(stats["curr_items"])
+                for stat in expiry_stats:
+                    expired[stat] += int(stats[stat])
+            cbstat.disconnect()
+        return items, expired
+
     def test_expiry_no_wait_update(self):
         '''
         Test Focus: Upsert and expire n items
