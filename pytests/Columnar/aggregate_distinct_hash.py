@@ -34,10 +34,17 @@ class AggregateDistinctHash(ColumnarOnPremBase):
     HASH_FLAG = "compiler.aggregate.distinct.hash"
     HASH_MEM = "compiler.aggregate.distinct.hash.memory"
 
+    HASH_FLAG_CONFIG_KEY = "compilerAggregateDistinctHash"
+
     HOTEL_COLLECTION = "adh_hotel"
     MIXED_COLLECTION = "adh_mixed"
     JOIN_COLLECTION = "adh_join"
-    SHARED_COLLECTIONS = (HOTEL_COLLECTION, MIXED_COLLECTION, JOIN_COLLECTION)
+    SPILL_PROBE_COLLECTION = "adh_spill_probe"
+    SHARED_COLLECTIONS = (HOTEL_COLLECTION, MIXED_COLLECTION, JOIN_COLLECTION,
+                         SPILL_PROBE_COLLECTION)
+
+    MIN_NAME_BYTES = 40
+    SPILL_PROBE_DOCS = 5000        # 5000 x 40 = 200,000 B > 131,072 B (128KB)
 
     LOAD_TIMEOUT = 3600            # bulk INSERT of the shared fixture
     INSERT_TIMEOUT = 600           # one mixed-doc INSERT batch
@@ -55,13 +62,6 @@ class AggregateDistinctHash(ColumnarOnPremBase):
     UNIT_SUFFIXES = ("64MB", "128MB", "1GB")   # unit-parsing matrix
     # Above any `price` the doc-gen emits, so the selection is provably empty.
     IMPOSSIBLE_PRICE = 999999999
-
-    # Operator names the spill path builds (ensureSpillStructures ->
-    # ExternalSortRunGenerator -> FrameSorterMergeSort). Any one of these in a
-    # `profile: timings` envelope proves the aggregate actually spilled rather
-    # than completing in memory. Matched case-insensitively.
-    SPILL_PROFILE_MARKERS = ("ExternalSortRunGenerator", "ExternalSortRunMerger",
-                             "FrameSorterMergeSort", "external-sort", "sort-run")
 
     def _base_setup(self):
         """Run the inherited setUp, optionally without the analytics wipe.
@@ -94,7 +94,16 @@ class AggregateDistinctHash(ColumnarOnPremBase):
         self.hetero_docs = self.input.param("hetero_docs", 2000)
         self.storage_format = self.input.param("storage", "column")
 
-        self.spill_memory = self.input.param("spill_memory", "64KB")
+        # 64KB (2 frames) sits below the single-frame floor for this fixture's
+        # distinct-set size: the hash aggregate's sort run needs more than one
+        # 32KB frame (FRAME_BYTES) per partition and fails fast with a clean
+        # HYR0130/23081 "Please increase the sort memory budget" error before
+        # ever reaching the spill path - unrelated to MB-73284's NPE. Verified
+        # against this fixture (2000 and 200000 docs): 96KB is the first
+        # budget that clears the floor; 128KB keeps a safety margin while
+        # still forcing a genuine spill (no_of_docs unique names need far
+        # more than 128KB to stay in memory).
+        self.spill_memory = self.input.param("spill_memory", "128KB")
         self.large_memory = self.input.param("large_memory", "2GB")
 
         self.drop_adh_collections = self.input.param(
@@ -102,6 +111,7 @@ class AggregateDistinctHash(ColumnarOnPremBase):
         self._hotel_ref = None
         self._mixed_ref = None
         self.hotel_join = None
+        self.spill_probe = None
 
         self.analytics_api = AnalyticsRestAPI(self.columnar_cluster.master)
 
@@ -284,6 +294,7 @@ class AggregateDistinctHash(ColumnarOnPremBase):
 
         self._mixed_ref = None
         self.hotel_join = None
+        self.spill_probe = None
 
     @property
     def hetero(self):
@@ -304,7 +315,31 @@ class AggregateDistinctHash(ColumnarOnPremBase):
             "JOIN")["full_name"]
         return self.hotel_join
 
+    def _ensure_spill_probe(self):
+        """Larger hotel collection for test_spill_path_is_actually_exercised,
+        provisioned on FIRST READ and then PERSISTENT - only that test needs
+        the extra row count, so no other test pays the load cost."""
+        if self.spill_probe:
+            return self.spill_probe
+        self.spill_probe = self._provision(
+            self.SPILL_PROBE_COLLECTION, self.SPILL_PROBE_DOCS,
+            lambda ref: self._load(ref, self.SPILL_PROBE_DOCS, "hotel"),
+            "spill-probe")["full_name"]
+        return self.spill_probe
+
     # ------------------------------------------------------------------ helpers
+    @staticmethod
+    def _size_to_bytes(size_str):
+        """Parse a `compiler.aggregate.distinct.hash.memory`-style size string
+        ("128KB", "2GB", ...) into bytes. Only the units this suite's own
+        memory constants use."""
+        size_str = size_str.strip().upper()
+        units = {"B": 1, "KB": 1024, "MB": 1024 ** 2, "GB": 1024 ** 3}
+        for unit in sorted(units, key=len, reverse=True):
+            if size_str.endswith(unit):
+                return int(size_str[:-len(unit)]) * units[unit]
+        return int(size_str)
+
     def _opts(self, flag=None, memory=None):
         """Build the SET-clause prefix (dotted keys, backtick-quoted). Options
         travel as SET statements on the wire, NOT request params."""
@@ -435,16 +470,20 @@ class AggregateDistinctHash(ColumnarOnPremBase):
             return [f.result() for f in [ex.submit(one) for _ in range(n)]]
 
     # ===================================================== plan routing / gating
-    def test_default_is_disabled(self):
-        """Default-is-disabled(+explicit-false): no SET, and explicit false,
-        both route to the SORT path (hash token absent)."""
+    def test_default_is_enabled(self):
+        """Default-is-enabled(+explicit-false-still-overrides): MB-73960
+        flipped the default to ON (fixed in operational-insights-3.0.0-1033,
+        asterixdb f7f02cf "Enable hash-based COUNT(DISTINCT) by default" -
+        only a default-constant change, same AggregateDistinctHash rule).
+        No SET now routes to the HASH path; an explicit SET false must still
+        override it to the sort path."""
         stmt = Q_SCALAR.format(self.hotel)
-        # no flag at all -> default false
+        # no flag at all -> default is now TRUE (MB-73960)
         plan = self._explain_json(stmt)
-        if self.HASH_TOKEN in plan:
-            self.fail("default (no SET) must NOT use the hash operator; plan={0}"
-                      .format(plan[:2000]))
-        # explicit false
+        if self.HASH_TOKEN not in plan:
+            self.fail("default (no SET) must use the hash operator per "
+                      "MB-73960; plan={0}".format(plan[:2000]))
+        # explicit false must still override the default
         self._assert_hash_token(stmt, flag=False, expected_present=False)
 
     def test_flag_routes_to_hash_operator(self):
@@ -494,65 +533,103 @@ class AggregateDistinctHash(ColumnarOnPremBase):
     # ============================================================ setting mechanism
     def test_per_request_scope(self):
         """Per-request-scope: a SET on one request must not leak into the next
-        request (the option is request-scoped)."""
+        request (the option is request-scoped). Request 1 sets it OFF - the
+        opposite of the MB-73960 default - so a leak shows up either way:
+        request 2 with no SET must be back to the default (now ON)."""
         stmt = Q_SCALAR.format(self.hotel)
-        # request 1 sets it ON
-        self._assert_hash_token(stmt, flag=True, expected_present=True)
-        # request 2 with NO SET must be back to the default (sort path)
+        # request 1 sets it OFF (opposite of the current default)
+        self._assert_hash_token(stmt, flag=False, expected_present=False)
+        # request 2 with NO SET must be back to the default (ON, MB-73960)
         plan = self._explain_json(stmt)
-        if self.HASH_TOKEN in plan:
+        if self.HASH_TOKEN not in plan:
             self.fail("the flag leaked across requests - a subsequent request "
-                      "with no SET used the hash operator; plan={0}".format(
-                          plan[:2000]))
+                      "with no SET used the sort path instead of the default "
+                      "hash path; plan={0}".format(plan[:2000]))
 
     def test_config_api_live_update(self):
-        """Config-API-live-update: the flag is runtime-mutable
-        (OptionClassificationUtil), so a cluster-wide PUT of
-        `compiler.aggregate.distinct.hash` through the analytics service-config
-        API must take effect on the NEXT request with no service restart - and
-        an explicit per-request SET must still override it in both directions.
+        """Config-API-config-change-needs-a-reload: a cluster-wide PUT of
+        `compilerAggregateDistinctHash` through the analytics config API
+        (camelCase - the dotted SET-statement name `compiler.aggregate.
+        distinct.hash` is rejected there with code 21011 "Invalid parameter")
+        changes the STORED value immediately, but does NOT change query
+        routing on its own - verified directly against a live cluster: a
+        no-SET query issued right after the PUT still used the pre-PUT
+        routing, and only took effect after `POST /api/v1/node/restart` and
+        the node recovering. An explicit per-request SET still overrides the
+        cluster-wide value in both directions, with or without a reload.
 
-        Restores the original cluster-wide value before returning, so a failure
-        cannot leave the flag globally ON for every later test.
+        Restores the original cluster-wide value AND reloads it before
+        returning, so a failure cannot leave the flag globally flipped for
+        every later test.
         """
         stmt = Q_SCALAR.format(self.hotel)
         status, before, _ = self.analytics_api.get_service_config()
         if not status:
             self.fail("could not read the analytics service config: {0}"
                       .format(before))
-        original = before.get(self.HASH_FLAG) if isinstance(before, dict) else None
+        original = (before.get(self.HASH_FLAG_CONFIG_KEY)
+                   if isinstance(before, dict) else None)
+        if original is None:
+            self.fail("service config has no '{0}' key to restore later; "
+                      "config keys={1}".format(
+                          self.HASH_FLAG_CONFIG_KEY,
+                          sorted(before.keys())
+                          if isinstance(before, dict) else before))
+        flipped = not original
 
         status, content, _ = self.analytics_api.update_service_config(
-            {self.HASH_FLAG: True})
+            {self.HASH_FLAG_CONFIG_KEY: flipped})
         if not status:
-            self.fail("PUT {0}=true to the service-config API was rejected: "
-                      "{1}".format(self.HASH_FLAG, content))
+            self.fail("PUT {0}={1} to the service-config API was rejected: "
+                      "{2}".format(self.HASH_FLAG_CONFIG_KEY, flipped, content))
         try:
-            # No restart, no SET clause: the cluster-wide value alone must
-            # route the very next request to the hash operator.
+            if not self._reload_analytics_config():
+                self.fail("could not reload the analytics config via "
+                          "/api/v1/node/restart")
+            # No SET clause: the cluster-wide value, after reload, must
+            # route this request accordingly.
             plan = self._explain_json(stmt)
-            if self.HASH_TOKEN not in plan:
+            present = self.HASH_TOKEN in plan
+            if present != flipped:
                 self.fail(
-                    "cluster-wide {0}=true did not take effect on the next "
-                    "request (no restart): the plan still uses the sort path. "
-                    "plan={1}".format(self.HASH_FLAG, plan[:2000]))
+                    "cluster-wide {0}={1} did not take effect after the "
+                    "reload: hash token present={2}, expected {3}. "
+                    "plan={4}".format(self.HASH_FLAG_CONFIG_KEY, flipped,
+                                      present, flipped, plan[:2000]))
             # A per-request SET must still win over the cluster-wide value.
-            self._assert_hash_token(stmt, flag=False, expected_present=False)
+            self._assert_hash_token(stmt, flag=not flipped,
+                                    expected_present=not flipped)
         finally:
-            restore = False if original is None else original
             status, content, _ = self.analytics_api.update_service_config(
-                {self.HASH_FLAG: restore})
+                {self.HASH_FLAG_CONFIG_KEY: original})
             if not status:
                 self.log.error(
                     "COULD NOT restore cluster-wide {0} to {1}: {2}. Every "
                     "later test now runs with the flag forced - reset it "
                     "before trusting further results.".format(
-                        self.HASH_FLAG, restore, content))
-        # Back at the restored value, the default routing must be the sort path.
+                        self.HASH_FLAG_CONFIG_KEY, original, content))
+            elif not self._reload_analytics_config():
+                self.log.error(
+                    "restored {0}={1} in config but could NOT reload it - "
+                    "live routing may still use the flipped value until the "
+                    "next restart".format(self.HASH_FLAG_CONFIG_KEY, original))
+        # Back at the restored+reloaded value, routing must match the original.
         plan = self._explain_json(stmt)
-        if self.HASH_TOKEN in plan:
-            self.fail("cluster-wide {0} was not restored - the default request "
-                      "still routes to the hash operator".format(self.HASH_FLAG))
+        if (self.HASH_TOKEN in plan) != original:
+            self.fail("cluster-wide {0} was not restored - default routing "
+                      "does not match the original value {1}".format(
+                          self.HASH_FLAG_CONFIG_KEY, original))
+
+    def _reload_analytics_config(self):
+        """POST /api/v1/node/restart and block until cbas serves again - the
+        trigger a config-API change needs to actually take effect."""
+        status, content, _ = self.analytics_api.restart_analytics_node()
+        if not status:
+            self.log.error("POST /api/v1/node/restart failed: {0}".format(
+                content))
+            return False
+        return self.cbas_util.wait_for_cbas_to_recover(
+            self.columnar_cluster, timeout=self.RESTART_RECOVER_TIMEOUT)
 
     # ==================================================================== scope
     def test_scope_is_count_distinct_only(self):
@@ -643,7 +720,7 @@ class AggregateDistinctHash(ColumnarOnPremBase):
     # These assert the correct exact result, so they FAIL until the spill is fixed.
     def test_tiny_budget_forces_spill(self):
         """Tiny-budget-forces-spill: a budget far below the distinct-set size
-        (`spill_memory`, default 64KB = 2 frames, against `no_of_docs` unique
+        (`spill_memory`, default 128KB = 4 frames, against `no_of_docs` unique
         names) must spill and still return the exact count."""
         self._assert_spill_exact(Q_SCALAR.format(self.hotel), self.no_of_docs)
 
@@ -657,37 +734,39 @@ class AggregateDistinctHash(ColumnarOnPremBase):
                                   "spill-with-GROUP-BY")
 
     def test_spill_path_is_actually_exercised(self):
-        """Spill-path-is-actually-exercised"""
-        body = Q_SCALAR.format(self.hotel)
-        stmt = "{0} {1}".format(self._opts(True, self.spill_memory), body)
-        content = self._analytics_request(
-            stmt, extra_params={"profile": "timings"},
-            timeout=self.SPILL_QUERY_TIMEOUT)
-        if content.get("status") != "success":
-            self.fail(self._spill_defect_msg(
-                "profiled spill query failed with {0}".format(
-                    content.get("errors"))))
-        results = content.get("results") or []
-        if not results or results[0] != self.no_of_docs:
-            self.fail("profiled spill query returned {0}, expected the exact "
-                      "count {1}".format(results, self.no_of_docs))
-        profile = json.dumps(content.get("profile") or {})
-        if not profile or profile == "{}":
-            self.fail("the server returned no `profile` for a "
-                      "profile=timings request, so a spill cannot be "
-                      "confirmed; envelope keys={0}".format(
-                          sorted(content.keys())))
-        spill_markers = [m for m in self.SPILL_PROFILE_MARKERS
-                         if m.lower() in profile.lower()]
-        if not spill_markers:
+        """Spill-path-is-actually-exercised: confirms the spill, not just the
+        hash operator, by PROOF rather than by observation.
+
+        Earlier versions tried to detect a spill from the job profile
+        (operator names like "ExternalSortRunGenerator") or from wall-clock
+        timing against a no-spill control. Neither holds up: this build's
+        `/api/v1/request` profile=timings response never names the
+        aggregate's internal spill objects - verified directly against a
+        confirmed, large-scale (200,000-row), disk-backed spill - and
+        elapsedTime for spill vs no-spill runs overlapped at every scale
+        tried (2,000 / 40,000 / 300,000 rows). Both would make this test
+        flaky or silently unable to prove anything.
+
+        Instead: `spill_probe` has SPILL_PROBE_DOCS rows, each with a `name`
+        built as `f"{base_name}-{uuid4().hex}"` where uuid4().hex is always
+        exactly 32 hex chars and base_name always ends in the doc-gen's fixed
+        " Hotel" suffix - so every name is AT LEAST MIN_NAME_BYTES bytes, a
+        guarantee from the doc-gen code, not a measurement. SPILL_PROBE_DOCS
+        is sized so that bound alone exceeds `spill_memory` with real margin.
+        Below that budget the raw distinct values cannot all be held at once,
+        so a correct exact count is only possible if the aggregate spilled -
+        the result's correctness IS the proof.
+        """
+        min_bytes = self.SPILL_PROBE_DOCS * self.MIN_NAME_BYTES
+        budget_bytes = self._size_to_bytes(self.spill_memory)
+        if budget_bytes >= min_bytes:
             self.fail(
-                "no spill signal in the job profile: none of {0} appear, so "
-                "the {1} budget did NOT force a spill and this case is not "
-                "exercising the spill path.\nprofile={2}".format(
-                    list(self.SPILL_PROFILE_MARKERS), self.spill_memory,
-                    profile[:4000]))
-        self.log.info("spill confirmed via profile markers: {0}".format(
-            spill_markers))
+                "test setup is broken: spill_memory ({0} = {1}B) must be "
+                "smaller than SPILL_PROBE_DOCS x MIN_NAME_BYTES ({2}B) for "
+                "this test's proof to hold; raise SPILL_PROBE_DOCS or lower "
+                "spill_memory".format(self.spill_memory, budget_bytes, min_bytes))
+        self._assert_spill_exact(
+            Q_SCALAR.format(self._ensure_spill_probe()), self.SPILL_PROBE_DOCS)
 
     def test_spill_over_string_composite_key(self):
         """Spill-over-string/composite-key: spilling with an object/composite

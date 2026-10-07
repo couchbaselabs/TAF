@@ -41,12 +41,30 @@ class audit:
                 and host.ssh_username != "root":
             self.nonroot = True
         shell.disconnect()
-        self.pathDescriptor = self.getAuditConfigElement("descriptors_path") + "/"
+        self._pathDescriptor = None
         self.pathLogFile = self.getAuditLogPath()
         self.defaultFields = ['id', 'name', 'description']
         if (eventID is not None):
             self.eventID = eventID
             self.eventDef = self.returnEventsDef()
+
+    @property
+    def pathDescriptor(self):
+        """Directory holding audit_events.json, resolved on first use.
+
+        Read from audit.json's "descriptors_path". audit.json lives in the
+        config directory, so with CONFIG encryption-at-rest enabled it
+        downloads as an encrypted blob and json.load raises. Computed
+        eagerly in __init__ that failed EVERY caller - including the ones
+        that only read the audit log over REST and never look at the
+        descriptors at all. Resolving on demand means only the callers that
+        genuinely need them (returnEventsDef and its users) pay that cost,
+        or that failure.
+        """
+        if self._pathDescriptor is None:
+            self._pathDescriptor = self.getAuditConfigElement(
+                "descriptors_path") + "/"
+        return self._pathDescriptor
 
     def getAuditConfigPathInitial(self):
         shell = RemoteMachineShellConnection(self.host)
