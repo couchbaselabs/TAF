@@ -1102,11 +1102,9 @@ class QueryPlanCache(ColumnarOnPremBase):
                 task, self.columnar_cluster, True, True),
             "rebalance-out of a cbas node failed")
         self._assert_matrix_all_miss("rebalance-out")
-        # Add the node back with the cbas service only. If the cluster rejects
-        # a cbas-only rebalance-in, this is the line to revisit.
         task, self.columnar_cluster.available_servers = self.rebalance_util.rebalance(
             cluster=self.columnar_cluster, cbas_nodes_in=1,
-            in_node_services="cbas",
+            in_node_services="kv,cbas",
             available_servers=self.columnar_cluster.available_servers)
         self.assertTrue(
             self.rebalance_util.wait_for_rebalance_task_to_complete(

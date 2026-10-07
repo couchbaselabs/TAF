@@ -4,8 +4,10 @@ embeddings on Couchbase Enterprise Analytics (onprem-columnar).
 """
 
 import json
+import logging
 import os
 import random
+import requests
 import struct
 import threading
 import time
@@ -30,16 +32,61 @@ class ClusterBy(ColumnarOnPremBase):
     _sift_link = None
 
     # --------------------------------------------------------------- knobs
-    def _base_setup(self):
-        if not TestInputSingleton.input.param("skip_cbas_cleanup", True):
-            super(ClusterBy, self).setUp()
-            return
-        original = ColumnarCbasUtil.cleanup_cbas
-        ColumnarCbasUtil.cleanup_cbas = lambda *args, **kwargs: True
+    @staticmethod
+    def _remote_cluster_is_initialized():
+        """Probe the remote (non-default-profile) cluster's own pool, not
+        just that the node answers at all.
+        """
+        num_of_clusters = int(TestInputSingleton.input.param("num_of_clusters", 1))
+        if num_of_clusters <= 1:
+            return True
+        candidates = [s for s in TestInputSingleton.input.servers
+                     if s.type == "analytics"]
+        if not candidates:
+            return True
+        server = candidates[0]
+        user = server.rest_username or "Administrator"
+        password = server.rest_password or "password"
         try:
-            super(ClusterBy, self).setUp()
+            response = requests.get(
+                "http://{0}:{1}/pools/default".format(server.ip, server.port or 8091),
+                auth=(user, password), timeout=10)
+            return "unknown pool" not in response.text
+        except requests.exceptions.RequestException:
+            return True
+
+    def _base_setup(self):
+        original_skip_setup = TestInputSingleton.input.test_params.get(
+            "skip_setup_cleanup")
+        forced_setup = (
+            TestInputSingleton.input.param("skip_setup_cleanup", False)
+            and not self._remote_cluster_is_initialized())
+        if forced_setup:
+            logging.warning(
+                "skip_setup_cleanup=True but the remote cluster has never "
+                "been initialized on this environment - forcing a real "
+                "setup for this test so later tests (which correctly "
+                "assume it already exists) don't all fail against an "
+                "uninitialized node.")
+            TestInputSingleton.input.test_params["skip_setup_cleanup"] = "False"
+        try:
+            if not TestInputSingleton.input.param("skip_cbas_cleanup", True):
+                super(ClusterBy, self).setUp()
+                return
+            original = ColumnarCbasUtil.cleanup_cbas
+            ColumnarCbasUtil.cleanup_cbas = lambda *args, **kwargs: True
+            try:
+                super(ClusterBy, self).setUp()
+            finally:
+                ColumnarCbasUtil.cleanup_cbas = original
         finally:
-            ColumnarCbasUtil.cleanup_cbas = original
+            if forced_setup:
+                if original_skip_setup is None:
+                    TestInputSingleton.input.test_params.pop(
+                        "skip_setup_cleanup", None)
+                else:
+                    TestInputSingleton.input.test_params["skip_setup_cleanup"] = \
+                        original_skip_setup
 
     def setUp(self):
         self._aux_collections = []
