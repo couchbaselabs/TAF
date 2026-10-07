@@ -105,6 +105,7 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         self.fusion_infra_timeout = self.input.param("fusion_infra_timeout", 1800)
         self.gv_launch_timeout = self.input.param("gv_launch_timeout", 1200)
         self.hydration_timeout = self.input.param("hydration_timeout", 1800)
+        self.restore_item_count_timeout = self.input.param("restore_item_count_timeout", 1800)
         self.load_defn = [Hotel]
 
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)

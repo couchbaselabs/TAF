@@ -1113,7 +1113,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         self.PrintStep("Verifying item count after in-place restore")
         rest = RestConnection(self.cluster.master)
         for bucket in self.cluster.buckets:
-            deadline = time.time() + self.index_timeout
+            deadline = time.time() + self.restore_item_count_timeout
             while time.time() < deadline:
                 info = rest.get_bucket_details(bucket_name=bucket.name)
                 actual = (
