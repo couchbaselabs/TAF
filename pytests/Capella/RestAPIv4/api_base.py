@@ -5,7 +5,9 @@ Created on June 28, 2023
 """
 
 from cgi import test
+import os
 import re
+import json
 import copy
 import time
 import string
@@ -642,6 +644,9 @@ class APIBase(CouchbaseBaseTest):
                         self.cluster_id, self.capella["clusters"]["app_id"]):
                     self.log.error("!!!...App Svc could not be deleted...!!!")
                 self.log.info("App Svc Deleted Successfully")
+
+            # Collect server and dp-agent logs before the cluster is deleted (collect_logs=True).
+            self.collect_cluster_logs(self.cluster_id)
 
             # Delete the cluster that was created.
             self.log.info("Destroying Cluster: {}".format(self.cluster_id))
@@ -1855,6 +1860,113 @@ class APIBase(CouchbaseBaseTest):
                 return True
         self.log.error("Resource didn't deploy within half an hour.")
         return False
+
+    def collect_cluster_logs(self, cluster_id, timeout=600, poll_interval=10):
+        """Collects dp-agent and Couchbase Server logs for a cluster when collect_logs=True; best effort, never fails the test."""
+        if not self.input.param("collect_logs", False) or not cluster_id:
+            return
+        # Not [capella] override_token: pipelines pass the test override key there.
+        token = self.input.param("internal_support_token", None) or \
+            self.input.capella.get("internal_support_token") or \
+            os.environ.get("TOKEN_FOR_INTERNAL_SUPPORT") or \
+            os.environ.get(self._internal_support_token_env())
+        if not token:
+            self.log.warning("collect_logs is set but no internal support "
+                             "token was found, skipping log collection")
+            return
+
+        base = ("https://" + self.url).replace("https://cloud", "https://", 1) + \
+            "/internal/support/logcollections/clusters/{}".format(cluster_id)
+        headers = {"Authorization": "Bearer {}".format(token),
+                   "Content-Type": "application/json"}
+        step = "before destroy"
+
+        # dp-agent logs: one zip per cluster on Supportal.
+        resp = self.capellaAPI._urllib_request(
+            base + "/agents", "POST", params=json.dumps({}), headers=headers,
+            timeout=timeout)
+        if resp is not None and resp.status_code in (200, 201):
+            body = resp.json()
+            location = "s3://{}/{}".format(body.get("bucket"), body.get("key"))
+            for n in body.get("collected", []):
+                self._record_collected_log(cluster_id, step, "dp-agent", n.get("nodeId"), "OK", location)
+            for n in body.get("failed", []):
+                self._record_collected_log(cluster_id, step, "dp-agent", n.get("nodeId"), "FAILED", "", n.get("error"))
+            self.log.info("dp-agent logs for cluster {}: s3://{}/{} "
+                          "(collected: {}, failed: {})".format(
+                              cluster_id, body.get("bucket"), body.get("key"),
+                              [n.get("nodeId") for n in body.get("collected", [])],
+                              body.get("failed", [])))
+        else:
+            self._record_collected_log(cluster_id, step, "dp-agent", "", "FAILED", "", None if resp is None else resp.content)
+            self.log.warning("Failed to collect dp-agent logs for cluster {}: "
+                             "{}".format(cluster_id, None if resp is None else
+                                         resp.content))
+
+        # Couchbase Server logs: trigger cbcollect, then poll until every node has uploaded.
+        resp = self.capellaAPI._urllib_request(
+            base, "POST", params=json.dumps({}), headers=headers)
+        if resp is None or resp.status_code != 201:
+            self._record_collected_log(cluster_id, step, "server", "", "FAILED", "", None if resp is None else resp.content)
+            self.log.warning("Failed to trigger server log collection for "
+                             "cluster {}: {}".format(
+                                 cluster_id, None if resp is None else
+                                 resp.content))
+            return
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            resp = self.capellaAPI._urllib_request(
+                base + "/tasks", "GET", headers=headers)
+            tasks = resp.json() if resp is not None and \
+                resp.status_code == 200 else []
+            task = tasks[0] if tasks else {}
+            if task.get("status") in ("completed", "failed", "cancelled"):
+                # The API returns "PerNode"; accept either casing.
+                per_node = task.get("PerNode") or task.get("perNode") or {}
+                for node, info in per_node.items():
+                    ok = task.get("status") == "completed" and info.get("status") == "uploaded"
+                    self._record_collected_log(cluster_id, step, "server", node, "OK" if ok else "FAILED", info.get("url") or "")
+                    self.log.info("Server logs for cluster {} node {}: {} "
+                                  "({})".format(cluster_id, node,
+                                               info.get("url"),
+                                               info.get("status")))
+                if not per_node:
+                    self._record_collected_log(cluster_id, step, "server", "", "FAILED", "", "collection {}".format(task.get("status")))
+                    self.log.warning("Server log collection for cluster {} "
+                                     "ended '{}' with no node uploads".format(
+                                         cluster_id, task.get("status")))
+                return
+            time.sleep(poll_interval)
+        self._record_collected_log(cluster_id, step, "server", "", "FAILED", "", "timed out")
+        self.log.warning("Timed out waiting for server log collection on "
+                         "cluster {}".format(cluster_id))
+
+    def _internal_support_token_env(self):
+        """Name of the per-environment token variable the TAF Jenkins executors export, chosen from the pod URL."""
+        pod = (self.url or "").lower()
+        if "sandbox" in pod or ".sbx-" in pod or ".qe-" in pod:
+            return "sbx_token_for_internal_support"
+        if ".dev." in pod:
+            return "dev_token_for_internal_support"
+        if "stage" in pod:
+            return "stage_token_for_internal_support"
+        return "token_for_internal_support"
+
+    def _record_collected_log(self, cluster_id, step, log_type, node, status, location, error=""):
+        """Appends one row to logs/testrunner-<run>/collected_logs.log, the same columns as cp-cli's collected_logs.csv."""
+        logs_folder = self.input.param("logs_folder", None)
+        path = os.path.join(os.path.dirname(logs_folder) if logs_folder else "logs", "collected_logs.log")
+        test_name = "{}.{}".format(self.__class__.__name__, getattr(self, "_testMethodName", ""))
+        row = [time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), test_name, "", cluster_id, step,
+               log_type, node or "", status, location or "", error or ""]
+        try:
+            new = not os.path.exists(path)
+            with open(path, "a") as f:
+                if new:
+                    f.write("Time,Scenario,Cluster Name,Cluster ID,Step,Log Type,Node,Status,Location,Error\n")
+                f.write(",".join('"{}"'.format(str(v).replace('"', '""')) for v in row) + "\n")
+        except Exception as e:
+            self.log.warning("Could not write {}: {}".format(path, e))
 
     def wait_for_deletion(self, clus_id=None, app_svc_id=None, instances=None):
         start_time = time.time()
