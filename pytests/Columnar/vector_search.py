@@ -1443,18 +1443,28 @@ class VectorSearch(ColumnarOnPremBase):
             self.columnar_cluster, self.remote_dataset.full_name,
             self.vector_field, qvec, 1,
             distance_function=self.distance_function,
-            where_clause="i.color='Green'", field="color", warnings=10)
+            where_clause="i.color='Green'", field="color", warnings=10000)
         self.log.info(
             "test_null_query_vector: qvec={0} status={1} errors={2} "
             "warnings={3} results={4}".format(
                 qvec, status, errors, warnings, results))
 
-        # The query succeeds; the dimension mismatch is reported as a
-        # warning (returned only when max-warnings is requested).
+        # The query succeeds; the failed distance evaluation is reported as
+        # a warning (returned only when max-warnings is requested).
+        # NOTE: the "Vector dimension mismatch" warning (24326) is raised
+        # only when the query is served through the vector index path. With
+        # the WHERE filter on color here the query is not, so only the
+        # per-row distance failure (23067) is expected. If the mismatch
+        # warning does show up it is logged, but not required.
         expected_warning = (
+            "vector distance expects equal-length non-empty numeric arrays")
+        mismatch_warning = (
             "Vector dimension mismatch: expected {0} dimensions, but got "
             "{1}".format(self.dimension, len(qvec)))
         warning_msgs = [w.get("msg", "") for w in (warnings or [])]
+        if any(mismatch_warning in msg for msg in warning_msgs):
+            self.log.info("Dimension mismatch warning also returned: "
+                          "{0}".format(mismatch_warning))
         if not any(expected_warning in msg for msg in warning_msgs):
             self.fail(
                 "ANN search with an all-zero {0}-dim qvec against the "
@@ -1462,7 +1472,7 @@ class VectorSearch(ColumnarOnPremBase):
                 "warnings: {5}".format(
                     len(qvec), self.dimension, self.vector_field,
                     self.remote_dataset.full_name, expected_warning,
-                    warning_msgs))
+                    warning_msgs[:5]))
 
     def test_different_dimension_embeddings_qvec(self):
         """
@@ -1492,7 +1502,7 @@ class VectorSearch(ColumnarOnPremBase):
         status, _, errors, results, _, warnings = self.cbas_util.ann_distance(
             self.columnar_cluster, dataset.full_name,
             self.vector_field, qvec, self.k,
-            distance_function=self.distance_function)
+            distance_function=self.distance_function, warnings=10000)
         self.log.info(
             "test_different_dimension_embeddings_qvec: "
             "qvec_dimension={0} (field dimension={1}) status={2} "
@@ -1501,15 +1511,38 @@ class VectorSearch(ColumnarOnPremBase):
                 results))
 
         if self.expected_error:
-            if not self.cbas_util.validate_error_and_warning_in_response(
-                    status, errors, self.expected_error):
+            # The query succeeds; the dimension mismatch is reported as
+            # warnings (returned only when max-warnings is requested). The
+            # server emits both the dimension mismatch (24326) and the
+            # per-row distance failure (23067).
+            if status != "success":
+                if not self.cbas_util.validate_error_and_warning_in_response(
+                        status, errors, self.expected_error):
+                    self.fail(
+                        "ANN search with a {0}-dim qvec against the "
+                        "{1}-dim field {2} on {3} did not fail with the "
+                        "expected error: {4}, got {5}".format(
+                            qvec_dimension, self.dimension,
+                            self.vector_field, dataset.full_name,
+                            self.expected_error, errors))
+                return
+            expected_warnings = [
+                self.expected_error,
+                "vector distance expects equal-length non-empty numeric "
+                "arrays",
+            ]
+            warning_msgs = [w.get("msg", "") for w in (warnings or [])]
+            missing = [
+                exp for exp in expected_warnings
+                if not any(exp in msg for msg in warning_msgs)]
+            if missing:
                 self.fail(
-                    "ANN search with a {0}-dim qvec against the "
-                    "{1}-dim field {2} on {3} did not fail with the "
-                    "expected error: {4}, got {5}".format(
+                    "ANN search with a {0}-dim qvec against the {1}-dim "
+                    "field {2} on {3} did not return warnings: {4}, got "
+                    "{5} warnings, first few: {6}".format(
                         qvec_dimension, self.dimension, self.vector_field,
-                        dataset.full_name,
-                        self.expected_error, results))
+                        dataset.full_name, missing, len(warning_msgs),
+                        warning_msgs[:5]))
 
     def test_swap_embeddings_qvec_ann(self):
         """
