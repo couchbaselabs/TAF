@@ -438,12 +438,12 @@ class UpgradeTests(UpgradeBase):
             if self.preferred_storage_mode == Bucket.StorageBackend.couchstore:
                 self.disable_history_on_buckets()
             for bucket in self.cluster.buckets:
+                migration_allowed = False
                 try:
                     self.bucket_util.update_bucket_property(
                         self.cluster.master, bucket,
                         storageBackend=self.preferred_storage_mode)
-                    if self.test_guardrail_migration and self.breach_guardrail:
-                        self.fail("Migration was allowed even when it would breach guardrail limits")
+                    migration_allowed = True
                 except Exception as e:
                     self.log.info("Exception = {}. Updating of storageBackend failed".format(e))
                     err_msg = "Storage mode migration is not allowed"
@@ -452,6 +452,12 @@ class UpgradeTests(UpgradeBase):
                         self.assertTrue(exp, "Wrong error message")
                     if self.test_guardrail_migration and not self.breach_guardrail:
                         self.fail("Migration was restricted even when it wouldn't breach guardrail limits")
+
+                # Checked outside the try block so this failure is reported
+                # as-is, instead of being re-caught by the except above
+                # (self.fail() raises AssertionError, which is an Exception).
+                if migration_allowed and self.test_guardrail_migration and self.breach_guardrail:
+                    self.fail("Migration was allowed even when it would breach guardrail limits")
             self.bucket_util.get_all_buckets(self.cluster)
 
             if self.test_guardrail_migration and self.breach_guardrail:
@@ -2427,6 +2433,9 @@ class UpgradeTests(UpgradeBase):
             if status:
                 self.log.info("Bucket RR Guardrails set {}".format(content))
                 self.sleep(30, "Wait for 30 seconds after setting guardrail")
+            else:
+                self.fail("Failed to set bucket RR guardrails, value={}, "
+                         "response={}".format(guardrail_val, content))
 
         elif self.guardrail_type == "bucket_size":
             current_bucket_sizes = self.check_bucket_data_size_per_node(self.cluster)
@@ -2456,6 +2465,9 @@ class UpgradeTests(UpgradeBase):
             if status:
                 self.log.info("Bucket max data Guardrails set {}".format(content))
                 self.sleep(30, "Wait for 30 seconds after setting guardrail")
+            else:
+                self.fail("Failed to set bucket max-data-size guardrails, "
+                         "value={}, response={}".format(guardrail_val, content))
 
     def disable_history_on_buckets(self):
         self.log.info("Disabling history before migrating to CouchStore")

@@ -758,7 +758,7 @@ class UpgradeBase(BaseTestCase):
             return
 
         install_tasks = ["populate_build_url", "check_url_status",
-                         "download_build", "install"]
+                         "download_build", "pre_install", "install"]
         # Install target version on spare node
         profile = self.cluster_profile if self.cluster_profile else "default"
         self.upgrade_helper.new_install_version_on_all_nodes(
@@ -812,7 +812,8 @@ class UpgradeBase(BaseTestCase):
             cbstats.disconnect()
         if install_on_spare_node:
             install_tasks = ["populate_build_url", "check_url_status",
-                             "download_build", "uninstall", "install"]
+                             "download_build", "uninstall", "pre_install",
+                             "install"]
             # Install target version on spare node
             profile = self.cluster_profile or "default"
             self.upgrade_helper.new_install_version_on_all_nodes(
@@ -1129,7 +1130,7 @@ class UpgradeBase(BaseTestCase):
         shell.disconnect()
 
         install_tasks = ["populate_build_url", "check_url_status",
-                         "download_build", "install"]
+                         "download_build", "pre_install", "install"]
         # Install target version on the node
         profile = self.cluster_profile if self.cluster_profile else "default"
         self.upgrade_helper.new_install_version_on_all_nodes(
@@ -1171,7 +1172,7 @@ class UpgradeBase(BaseTestCase):
             shell.stop_couchbase()
 
         install_tasks = ["populate_build_url", "check_url_status",
-                         "download_build", "install"]
+                         "download_build", "pre_install", "install"]
         # Install target version on all the nodes
         profile = self.cluster_profile or "default"
         self.upgrade_helper.new_install_version_on_all_nodes(

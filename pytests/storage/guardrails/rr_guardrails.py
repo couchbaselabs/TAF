@@ -413,6 +413,11 @@ class RRGuardrails(GuardrailsBase):
                                               {"name": "scope-1"})
         self.bucket_util.create_collection(self.cluster.master, new_bucket,
                                     "scope-1", {"name": "collection-1"})
+        # Without this, the high-rate Sirius load below can start before the
+        # new collection's manifest has propagated cluster-wide, so most of
+        # its writes fail against a collection the target node doesn't know
+        # about yet.
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         self.log.info("Creating SDK clients for the new bucket")
         self.create_sdk_clients_for_buckets()
