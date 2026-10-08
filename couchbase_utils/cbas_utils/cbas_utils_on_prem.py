@@ -2065,7 +2065,7 @@ class Dataset_Util(Link_Util):
                     "percent_of_remote_datasets")) // 100
                 no_of_local_datasets = total_no_of_datasets - no_of_external_datasets - no_of_remote_datasets
 
-            for dataverse in self.dataverses.values():
+            for dataverse in list(self.dataverses.values()):
                 if dataset_spec.get(
                     "include_dataverses", []) and CBASHelper.unformat_name(
                         dataverse.name) not in dataset_spec["include_dataverses"]:
