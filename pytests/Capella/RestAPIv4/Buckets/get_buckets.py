@@ -80,6 +80,41 @@ class GetBucket(GetCluster):
                 self.expected_res['durabilityLevel'],
                 self.expected_res['replicas'], self.expected_res['flush'],
                 self.expected_res['timeToLiveInSeconds'])
+        if (res.status_code == 422 and
+                res.json().get("code") == 6001):
+            # This bucket name is deterministic (not randomised), so if
+            # a previous run (e.g. crashed mid-test, or an earlier run
+            # sharing this reused cluster) left it behind without
+            # cleaning up, every subsequent run collides with it forever.
+            # Treat it as a stale leftover: find and delete it, then
+            # retry the create once.
+            self.log.warning(
+                "Bucket '{}' already exists - treating it as a stale "
+                "leftover from a previous run, deleting it and retrying "
+                "the create.".format(self.expected_res['name']))
+            list_res = self.capellaAPI.cluster_ops_apis.list_buckets(
+                self.organisation_id, self.project_id, self.cluster_id)
+            stale_bucket_id = None
+            if list_res.status_code == 200:
+                for bucket in list_res.json().get("data", []):
+                    if bucket.get("name") == self.expected_res['name']:
+                        stale_bucket_id = bucket.get("id")
+                        break
+            if stale_bucket_id:
+                self.delete_buckets([stale_bucket_id])
+                res = self.capellaAPI.cluster_ops_apis.create_bucket(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.expected_res['name'], self.expected_res['type'],
+                    self.expected_res['storageBackend'],
+                    self.expected_res['memoryAllocationInMb'],
+                    self.expected_res['bucketConflictResolution'],
+                    self.expected_res['durabilityLevel'],
+                    self.expected_res['replicas'], self.expected_res['flush'],
+                    self.expected_res['timeToLiveInSeconds'])
+            else:
+                self.log.error("Could not find the colliding bucket '{}' "
+                               "via list_buckets to delete it: {}".format(
+                                self.expected_res['name'], list_res.content))
         if res.status_code != 201:
             self.log.error("Error : {}".format(res.content))
             self.tearDown()
