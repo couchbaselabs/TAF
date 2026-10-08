@@ -21,12 +21,13 @@ from TestInput import TestInputSingleton
 from pytests.Capella.RestAPIv4.api_base import APIBase
 from pytests.aGoodDoctor.fusion.fusion_aws_util import (
     FusionAWSUtil, resolve_fusion_aws_credentials)
+from pytests.aGoodDoctor.fusion.fusion_log_collector import FusionFailureLogsMixin
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from sirius_client_framework.sirius_setup import SiriusSetup
 
 
-class FusionBackupRestoreBase(APIBase):
+class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
     """
     Reusable base for Fusion backup/restore test classes.
 
@@ -1114,6 +1115,23 @@ class FusionBackupRestoreBase(APIBase):
             "https://" + self.url, "", "",
             self.user, self.passwd,
             self._internal_support_token() or "")
+
+    def _fusion_failure_log_targets(self):
+        """FusionFailureLogsMixin hook: this suite tracks its clusters by id
+        (source/target/created) rather than in self.tenants. cbcollect goes
+        through the same internal-support token as _v2_api()."""
+        api = self._v2_api() if self._internal_support_token() else None
+        cluster_ids = [getattr(self, "source_cluster_id", None),
+                       getattr(self, "target_cluster_id", None)]
+        cluster_ids += list(getattr(self, "_clusters_created", []) or [])
+        targets, seen = [], set()
+        for cluster_id in cluster_ids:
+            if not cluster_id or cluster_id in seen:
+                continue
+            seen.add(cluster_id)
+            targets.append({"cluster_id": cluster_id, "capella_api": api,
+                            "aws_util": getattr(self, "fusion_aws_util", None)})
+        return targets
 
     def _apply_tenant_feature_flag(self, v2, ff, value):
         """Create-or-update a single tenant feature flag to `value`.

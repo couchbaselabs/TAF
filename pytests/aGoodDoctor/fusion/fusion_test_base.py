@@ -18,16 +18,21 @@ from aGoodDoctor.hostedOPD import hostedOPD
 from .fusion_aws_util import FusionAWSUtil, resolve_fusion_aws_credentials
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
+from .fusion_log_collector import FusionFailureLogsMixin
 from .awslib.s3_lib import S3Lib
 from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 from BucketLib.BucketOperations import BucketHelper
 from membase.api.rest_client import RestConnection
 
 
-class _FusionTestBase(BaseTestCase, hostedOPD):
+class _FusionTestBase(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
     """Shared base for all fusion lifecycle test classes.
 
     Not runnable directly — subclasses define test methods.
+
+    On a failed/errored test, FusionFailureLogsMixin collects cbcollect_info,
+    node dp-agent logs and fusion accelerator logs before any tearDown runs
+    (see fusion_log_collector.py).
 
     Cluster lifecycle
     -----------------

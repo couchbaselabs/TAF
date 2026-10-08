@@ -488,6 +488,60 @@ class EC2Lib(AWSBase):
         result['success'] = True
         return result
 
+    def read_file_via_ssm(self, instance_id: str, remote_path: str,
+                          max_bytes: int = None) -> Dict[str, Any]:
+        """
+        Read a text file from an instance over SSM in _SSM_OUTPUT_LIMIT-byte
+        chunks (``dd`` with block seek, one SSM call per chunk).
+
+        Unlike run_shell_command_large_output this reads an existing file
+        whose path the caller owns, so concurrent readers on the same
+        instance cannot clobber each other's temp file. Only use it for
+        ASCII content (e.g. base64): SSM returns stdout as text.
+
+        :param instance_id: EC2 instance to read from
+        :param remote_path: Absolute path of the file on the instance
+        :param max_bytes:   Refuse to read files larger than this (None = no cap)
+        :return: dict with stdout (file content), stderr, size, success
+        """
+        result = {'stdout': '', 'stderr': '', 'size': -1, 'success': False}
+        size_r = self.run_shell_command(
+            instance_id, f"stat -c %s {remote_path}", timeout=60)
+        try:
+            total_size = int(size_r.get('stdout', '').strip())
+        except ValueError:
+            result['stderr'] = (
+                f"Could not stat {remote_path} on {instance_id}: "
+                f"{size_r.get('stderr', '')}")
+            return result
+        result['size'] = total_size
+        if max_bytes is not None and total_size > max_bytes:
+            result['stderr'] = (
+                f"{remote_path} on {instance_id} is {total_size} bytes, "
+                f"over the {max_bytes}-byte cap")
+            return result
+
+        assembled = []
+        chunk_num = 0
+        while chunk_num * self._SSM_OUTPUT_LIMIT < total_size:
+            chunk_r = self.run_shell_command(
+                instance_id,
+                f"dd if={remote_path} bs={self._SSM_OUTPUT_LIMIT} "
+                f"skip={chunk_num} count=1 2>/dev/null",
+                timeout=60,
+                check_ssm_ready=False,
+            )
+            if not chunk_r['success']:
+                result['stderr'] = (
+                    f"chunk {chunk_num} read failed: {chunk_r.get('stderr', '')}")
+                return result
+            assembled.append(chunk_r['stdout'])
+            chunk_num += 1
+
+        result['stdout'] = ''.join(assembled)
+        result['success'] = True
+        return result
+
     def run_multiple_commands(self, instance_id: str, commands: List[str],
                             timeout: int = 30, document_name: str = 'AWS-RunShellScript',
                             check_ssm_ready: bool = True) -> List[Dict[str, Any]]:

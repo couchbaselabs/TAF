@@ -43,6 +43,7 @@ export AWS_SECRET_ACCESS_KEY=your-secret-key
 - `fusion_aws_util.py` - AWS orchestration facade that wraps EC2, S3, and Secrets Manager
 - `fusion_monitor_util.py` - Core fusion stats monitoring via cbstats and REST API (NEW!)
 - `fusion_cp_resource_monitor.py` - AWS control plane resource monitoring (NEW!)
+- `fusion_log_collector.py` - Failure-time log collection (`FusionLogCollector`: cbcollect via internal-support API, dp-agent journals via SSM) plus the `FusionFailureLogsMixin` hook used by the fusion base classes
 
 ### Test Orchestration (Layer 3)
 - `fusion_volume.py` - Main test class for fusion volume scaling operations (REFACTORED)
@@ -68,6 +69,52 @@ For detailed architecture information including:
 - Extensibility guidelines
 
 Please see the [comprehensive architecture documentation](architecture.md).
+
+## Log Collection on Failure
+
+`_FusionTestBase`, `VolumeTest` and `FusionBackupRestoreBase` include
+`FusionFailureLogsMixin` (`fusion_log_collector.py`). When a test fails or
+errors, the logs are collected before any `tearDown` runs, so before
+scale-in, bucket deletes or cluster destroy. A collection error is logged as a
+warning and never replaces the test's own failure. The logs go to
+`<logs_folder>/fusion_failure_logs/<cluster_id>/`:
+
+- `collection_summary.log`: the table of what was collected, including the
+  per-node cbcollect S3 URLs (CP uploads them to cb-engineering)
+- `dp-agent/node_<instance>_dp-agent.log`: the output of
+  `journalctl --since "N days ago" -u dp-agent`, which is exactly what Fleet
+  Manager's dp-agent-logs endpoint returns. It is pulled over SSM from every
+  Couchbase node. Accelerator instances are not queried.
+- `accelerator-s3/<plan_uuid>/<node_id>/logs_<shard>/`: the logs accelerators
+  upload to `cbc-storage-<cluster>/logs/fusion/<plan_uuid>/`, only for the
+  rebalance plans created during the test (plans already present after setUp
+  are skipped).
+- `accelerator-live/<plan_uuid>/accelerator_<instance>_bundle.log`: pulled over
+  SSM from every accelerator still running (plan read from its EC2 user data),
+  with the same content the accelerator uploads to S3: stats.json, manifest,
+  disk stats, dmesg and the full journal. This covers plans with no S3 logs yet.
+
+Manual collection, outside a test run:
+
+```
+python pytests/aGoodDoctor/fusion/collect_fusion_logs.py \
+    --cluster-id <cluster_id> --plan-uuid <plan_uuid> --account-id <aws_account_id>
+```
+
+`--plan-uuid` is repeatable. Without it, plans with accelerator logs from the
+last `--since-hours` (6) are downloaded and every running accelerator is
+collected. AWS access is resolved like the tests (`-i <ini>` for its
+[capella] account_id, `--account-id`, `--role-arn`, or `--aws-access-key`/
+`--aws-secret-key`). The region is detected from the `cbc-storage-<cluster>`
+bucket unless `--region` is given. cbcollect is not part of the CLI.
+
+Params: `collect_logs_on_failure` (default True), `force_collect_logs`
+(collect even on pass, for verification), `get-cbcollect-info=False` (skip
+the cbcollect part only), `failure_logs_dp_agent`, `failure_logs_accelerator_s3`,
+`failure_logs_accelerator_live`,
+`dp_agent_log_days` (1), `dp_agent_log_units` (`:`-separated, default `dp-agent`),
+`failure_logs_s3_bucket` (default `cbc-storage-<cluster>`, `none` = inline SSM only),
+`cbcollect_timeout` (1800), `cbcollect_ticket`.
 
 ## Code Patterns
 

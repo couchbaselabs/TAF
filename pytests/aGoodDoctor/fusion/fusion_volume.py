@@ -16,6 +16,7 @@ from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from .fusion_aws_util import FusionAWSUtil, resolve_fusion_aws_credentials
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
+from .fusion_log_collector import FusionFailureLogsMixin
 from .awslib.cloudtrail_delete_setup import CloudTrailSetup
 from pytests.basetestcase import BaseTestCase
 from py_constants.cb_constants.CBServer import CbServer
@@ -28,7 +29,9 @@ from aGoodDoctor.hostedOPD import hostedOPD
 from aGoodDoctor.workloads import default, Hotel, siftBigANN, nimbus
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
-class VolumeTest(BaseTestCase, hostedOPD):
+class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
+    # FusionFailureLogsMixin: cbcollect, dp-agent and fusion accelerator logs
+    # on test failure, collected before tearDown (see fusion_log_collector.py).
 
     DEFAULT_TIMEOUT = FusionMonitorUtil.DEFAULT_TIMEOUT
 

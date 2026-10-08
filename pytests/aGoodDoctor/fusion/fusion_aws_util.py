@@ -12,8 +12,16 @@ from .awslib.iam_lib import IAMLib
 from .awslib.s3_lib import S3Lib
 from .awslib.secrets_manager_lib import SecretsManagerLib
 import time, datetime
+import base64
 import concurrent.futures
+import gzip
+import json
 import os
+import random
+import re
+import shutil
+import uuid
+import zipfile
 import yaml
 from prettytable import PrettyTable
 from global_vars import logger as global_logger
@@ -526,6 +534,454 @@ class FusionAWSUtil:
             all_healthy = False
 
         return all_healthy, results
+
+    # ------------------------------------------------------------------
+    # Failure-time log collection (dp-agent journal, accelerator S3 logs)
+    # ------------------------------------------------------------------
+
+    # Staging directory on the cluster node for log bundles before they are
+    # shipped off the box. Removed again after each unit.
+    FAILURE_LOG_REMOTE_DIR = "/tmp/taf_failure_logs"
+
+    # Key prefix accelerators upload their logs under in the cluster storage
+    # bucket, followed by <plan_uuid>/<node_id>/logs_<shard>.zip.
+    ACCELERATOR_LOG_PREFIX = "logs/fusion/"
+
+    def list_cluster_instances_for_log_collection(self, cluster_id):
+        """
+        Return every running Couchbase node EC2 instance of a cluster, without
+        the per-volume describe calls list_instances() makes. Fusion
+        accelerators (which also carry the couchbase-cloud-cluster-id tag) are
+        excluded; their logs come from S3 by rebalance plan UUID instead (see
+        download_fusion_accelerator_s3_logs).
+
+        :param cluster_id: Cluster identifier
+        :return: list of {InstanceId, Role ('node'), PrivateIp, PublicIp}
+        """
+        result = []
+        for instance in self.ec2.list_instances(filters=self._cluster_filter(cluster_id)):
+            if instance.get('State', {}).get('Name') != 'running':
+                continue
+            tags = {t.get('Key'): t.get('Value') for t in instance.get('Tags', [])}
+            if tags.get('couchbase-cloud-function') == 'fusion-accelerator':
+                continue
+            result.append({
+                'InstanceId': instance.get('InstanceId'),
+                'Role': 'node',
+                'PrivateIp': instance.get('PrivateIpAddress', 'N/A'),
+                'PublicIp': instance.get('PublicIpAddress', 'N/A'),
+            })
+        return result
+
+    @staticmethod
+    def _gunzip_to(src_gz, dest_path):
+        """Decompress src_gz into dest_path and delete src_gz."""
+        with gzip.open(src_gz, 'rb') as f_in, open(dest_path, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        os.remove(src_gz)
+
+    def _collect_unit_journal(self, instance, unit, dest_dir, days,
+                              s3_bucket, s3_bucket_region, s3_prefix,
+                              inline_max_raw_bytes, ssm_timeout):
+        """
+        Collect one systemd unit's journal from one instance. See
+        collect_dp_agent_logs_from_cluster_instances for the transfer strategy.
+        Never raises; the outcome is in the returned dict.
+        """
+        # Byte-for-byte the command dp-agent's own log server runs for Fleet
+        # Manager (couchbase-cloud internal/clusters/agent/logs.go).
+        journal_cmd = f"journalctl --since '{int(days)} days ago' -u {unit} --no-pager"
+        return self._collect_remote_output(
+            instance, unit, journal_cmd, dest_dir, s3_bucket, s3_bucket_region,
+            s3_prefix, inline_max_raw_bytes, ssm_timeout)
+
+    def _run_ssm_with_backoff(self, instance_id, command, attempts=5, **kwargs):
+        """run_shell_command, retried with backoff when SSM throttles
+        SendCommand (ThrottlingException: Rate exceeded). That happens when
+        logs are collected from many instances at once, e.g. 200 accelerators."""
+        result = {}
+        for attempt in range(attempts):
+            result = self.ec2.run_shell_command(instance_id, command, **kwargs)
+            if result.get('success') or 'ThrottlingException' not in result.get('stderr', ''):
+                return result
+            time.sleep(min(2 ** attempt, 30) + random.uniform(0, 2))
+        return result
+
+    def _collect_remote_output(self, instance, unit, output_cmd, dest_dir,
+                               s3_bucket, s3_bucket_region, s3_prefix,
+                               inline_max_raw_bytes, ssm_timeout):
+        """
+        Run output_cmd on one instance over SSM and save its stdout locally as
+        <role>_<instance>_<unit>.log. Transfer: presigned S3 PUT if s3_bucket
+        is set, else (or on failure) the last inline_max_raw_bytes inline over
+        SSM. Never raises; the outcome is in the returned dict.
+        """
+        instance_id = instance['InstanceId']
+        name = f"{instance['Role']}_{instance_id}_{unit}"
+        remote_gz = f"{self.FAILURE_LOG_REMOTE_DIR}/{name}.log.gz"
+        remote_b64 = f"{remote_gz}.b64"
+        local_log = os.path.join(dest_dir, f"{name}.log")
+        res = {'instance_id': instance_id, 'role': instance['Role'],
+               'private_ip': instance['PrivateIp'], 'unit': unit,
+               'status': 'failed', 'method': None, 'path': None, 'error': ''}
+        grouped_cmd = f"{{ {output_cmd} ; }}"
+        try:
+            prep = self._run_ssm_with_backoff(
+                instance_id,
+                f"mkdir -p {self.FAILURE_LOG_REMOTE_DIR} && "
+                f"{grouped_cmd} 2>&1 | gzip -c > {remote_gz} && stat -c %s {remote_gz}",
+                timeout=ssm_timeout, check_ssm_ready=False)
+            if not prep['success']:
+                res['error'] = f"journal export failed: {prep.get('stderr', '')[:300]}"
+                return res
+
+            # 1) Ship the gzip through S3 via a presigned PUT: the node only
+            #    needs curl + egress, not any IAM permission of its own.
+            if s3_bucket:
+                key = f"{s3_prefix}/{uuid.uuid4().hex}/{name}.log.gz"
+                url = self.s3.generate_presigned_url(
+                    s3_bucket, key, client_method='put_object',
+                    expires_in=3600, region=s3_bucket_region)
+                if url:
+                    try:
+                        # The URL is a bearer credential for this one key:
+                        # never log it.
+                        upload = self._run_ssm_with_backoff(
+                            instance_id,
+                            f"curl -sS -f --retry 3 --max-time {max(ssm_timeout - 30, 60)} "
+                            f"-T {remote_gz} '{url}' && echo TAF_UPLOAD_OK",
+                            timeout=ssm_timeout, check_ssm_ready=False)
+                        if 'TAF_UPLOAD_OK' in upload.get('stdout', ''):
+                            local_gz = f"{local_log}.gz"
+                            if self.s3.download_file(s3_bucket, key, local_gz):
+                                self._gunzip_to(local_gz, local_log)
+                                res.update(status='collected', method='ssm+s3-presigned',
+                                           path=local_log, error='')
+                                return res
+                            res['error'] = f"download of s3://{s3_bucket}/{key} failed; "
+                        else:
+                            res['error'] = (f"presigned upload failed: "
+                                            f"{upload.get('stderr', '')[:200]}; ")
+                    finally:
+                        self.s3.delete_file(s3_bucket, key)
+                else:
+                    res['error'] = "could not presign S3 upload URL; "
+
+            # 2) Fallback: pull the tail of the journal back inline over SSM
+            #    (gzip+base64, one SSM round-trip per ~20 KB chunk).
+            self.log.warning(
+                f"[failure-logs] {instance_id} {unit}: "
+                f"{res['error'].rstrip('; ') or 'no S3 staging bucket'}; falling back to inline SSM transfer of the last "
+                f"{inline_max_raw_bytes} bytes of the output")
+            prep = self._run_ssm_with_backoff(
+                instance_id,
+                f"{grouped_cmd} 2>&1 | tail -c {int(inline_max_raw_bytes)} | gzip -c "
+                f"| base64 -w0 > {remote_b64} && stat -c %s {remote_b64}",
+                timeout=ssm_timeout, check_ssm_ready=False)
+            if not prep['success']:
+                res['error'] += f"inline export failed: {prep.get('stderr', '')[:200]}"
+                return res
+            read = self.ec2.read_file_via_ssm(instance_id, remote_b64)
+            if not read['success']:
+                res['error'] += f"inline read failed: {read.get('stderr', '')[:200]}"
+                return res
+            data = gzip.decompress(base64.b64decode(''.join(read['stdout'].split())))
+            with open(local_log, 'wb') as f:
+                f.write(data)
+            res.update(status='collected', path=local_log,
+                       method=f"ssm-inline (last {inline_max_raw_bytes} B)")
+            return res
+        except Exception as e:
+            res['error'] += f"{type(e).__name__}: {e}"
+            return res
+        finally:
+            try:
+                self._run_ssm_with_backoff(
+                    instance_id, f"rm -f {remote_gz} {remote_b64}",
+                    timeout=60, check_ssm_ready=False)
+            except Exception:
+                pass
+
+    def collect_dp_agent_logs_from_cluster_instances(
+            self, cluster_id, dest_dir, days=1, units=("dp-agent",),
+            s3_bucket=None, s3_prefix="taf-failure-logs",
+            inline_max_raw_bytes=20 * 1024 * 1024, ssm_timeout=600):
+        """
+        Collect dp-agent (and optionally other systemd unit) logs from every
+        running Couchbase node of a cluster. Fusion accelerators are not
+        queried; their logs are taken from S3 by plan UUID.
+
+        What is collected mirrors Fleet Manager exactly. FM's
+        POST /nodes/{nodeId}/dp-agent-logs (couchbase-cloud
+        cmd/cp-fm-gateway/nodes/nodes.go) proxies to dp-agent's log server at
+        https://<node>:12009/dpagent?days=N, whose handler just streams
+        `journalctl --since "N days ago" -u dp-agent`
+        (internal/clusters/agent/logs.go). The FM route needs a Fleet Manager
+        SSO JWT carrying the log-collection role, which TAF does not have, so
+        the same journalctl is run directly over SSM instead.
+
+        Transfer, per instance and unit:
+          1. The journal is gzipped on the instance. If s3_bucket is set, a
+             presigned PUT URL (signed with this util's credentials) is passed
+             to curl on the node, the object is downloaded locally and then
+             deleted from S3. The node needs no IAM permission of its own.
+          2. If that fails, the last inline_max_raw_bytes of the journal are
+             read back inline over SSM (gzip+base64, ~20 KB per round-trip).
+        Files are written decompressed as <role>_<instance>_<unit>.log so
+        Jenkins' **/*.log artifact pattern archives them.
+
+        :param cluster_id: Cluster identifier
+        :param dest_dir: Local directory for the logs (created if missing)
+        :param days: journalctl --since window, same meaning as FM's `days`
+        :param units: systemd units to collect (default dp-agent only)
+        :param s3_bucket: Bucket to stage the upload in, or None for inline only
+        :param s3_prefix: Key prefix for the staged objects
+        :param inline_max_raw_bytes: Journal tail size for the inline fallback
+        :param ssm_timeout: Per-SSM-command timeout in seconds
+        :return: list of per (instance, unit) result dicts
+                 {instance_id, role, private_ip, unit, status, method, path, error}
+        """
+        os.makedirs(dest_dir, exist_ok=True)
+        units = [re.sub(r'[^A-Za-z0-9_.@-]', '', u) for u in units if u]
+        instances = self.list_cluster_instances_for_log_collection(cluster_id)
+        if not instances:
+            self.log.warning(
+                f"[failure-logs] No running instances found for cluster {cluster_id}; "
+                f"no dp-agent logs to collect")
+            return []
+
+        s3_bucket_region = None
+        if s3_bucket:
+            try:
+                self.s3.s3_client.head_bucket(Bucket=s3_bucket)
+                s3_bucket_region = self.s3.get_bucket_region(s3_bucket)
+            except Exception as e:
+                self.log.warning(
+                    f"[failure-logs] S3 staging bucket {s3_bucket} is not usable ({e}); "
+                    f"using inline SSM transfer only")
+                s3_bucket = None
+
+        def collect_instance(instance):
+            if not self.ec2.is_instance_ssm_ready(instance['InstanceId']):
+                return [{'instance_id': instance['InstanceId'], 'role': instance['Role'],
+                         'private_ip': instance['PrivateIp'], 'unit': unit,
+                         'status': 'skipped', 'method': None, 'path': None,
+                         'error': 'instance is not SSM-online'} for unit in units]
+            return [self._collect_unit_journal(
+                        instance, unit, dest_dir, days, s3_bucket, s3_bucket_region,
+                        s3_prefix, inline_max_raw_bytes, ssm_timeout)
+                    for unit in units]
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(len(instances), 20)) as executor:
+            for instance_results in executor.map(collect_instance, instances):
+                results.extend(instance_results)
+        return results
+
+    # Same content the accelerator's own log shipper uploads every 2 minutes
+    # (couchbase-cloud cmd/dp-accelerator-v2/internal/recorder/ship-logs.tmpl),
+    # as one text stream. The full journal goes last so the inline fallback,
+    # which keeps only the tail, still has the newest journal entries.
+    ACCELERATOR_LOG_BUNDLE_CMD = (
+        "echo '=== STATS (/home/ubuntu/stats.json) ==='; cat /home/ubuntu/stats.json; "
+        "echo; echo '=== MANIFEST (/home/ubuntu/manifest.json) ==='; cat /home/ubuntu/manifest.json; "
+        "echo; echo '=== LSBLK ==='; lsblk -fJ; "
+        "echo '=== DF ==='; df -h; "
+        "echo '=== DF INODES ==='; df -i; "
+        "echo '=== FREE ==='; free -h; "
+        "echo '=== MOUNT ==='; mount; "
+        "echo '=== DMESG ==='; dmesg -T --level=err,warn; "
+        "echo '=== JOURNAL (journalctl --all) ==='; journalctl --no-pager --all"
+    )
+
+    def _accelerator_identity(self, instance_id):
+        """Return the accelerator's identity (its EC2 user data: JSON with
+        planUUID, clusterNodeId, shard, ...), or {} if it cannot be read."""
+        try:
+            attr = self.ec2.ec2_client.describe_instance_attribute(
+                InstanceId=instance_id, Attribute='userData')
+            data = attr.get('UserData', {}).get('Value')
+            return json.loads(base64.b64decode(data)) if data else {}
+        except Exception as e:
+            self.log.warning(
+                f"[failure-logs] Could not read identity of accelerator {instance_id}: {e}")
+            return {}
+
+    def list_running_accelerators_for_log_collection(self, cluster_id, plan_uuids=None):
+        """
+        Return the running fusion accelerator instances of a cluster, with the
+        rebalance plan each one belongs to.
+
+        :param cluster_id: Cluster identifier
+        :param plan_uuids: If set, only accelerators of these plans. An
+                           accelerator whose plan cannot be read is kept.
+        :return: list of {InstanceId, Role ('accelerator'), PrivateIp,
+                 PublicIp, PlanUUID, ClusterNodeId, Shard}
+        """
+        filters = self._cluster_filter(cluster_id, [
+            {'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']},
+            {'Name': 'instance-state-name', 'Values': ['running']}])
+        result = []
+        for instance in self.ec2.list_instances(filters=filters):
+            identity = self._accelerator_identity(instance.get('InstanceId'))
+            plan = identity.get('planUUID')
+            if plan_uuids and plan and plan not in plan_uuids:
+                continue
+            result.append({
+                'InstanceId': instance.get('InstanceId'),
+                'Role': 'accelerator',
+                'PrivateIp': instance.get('PrivateIpAddress', 'N/A'),
+                'PublicIp': instance.get('PublicIpAddress', 'N/A'),
+                'PlanUUID': plan or 'unknown-plan',
+                'ClusterNodeId': identity.get('clusterNodeId', ''),
+                'Shard': identity.get('shard', ''),
+            })
+        return result
+
+    def collect_live_accelerator_logs(self, cluster_id, dest_dir, plan_uuids=None,
+                                      s3_bucket=None, s3_prefix="taf-failure-logs",
+                                      inline_max_raw_bytes=20 * 1024 * 1024,
+                                      ssm_timeout=600):
+        """
+        Collect logs straight from running fusion accelerators over SSM: the
+        same content the accelerator's log shipper uploads to S3 (journal,
+        stats.json, manifest, disk stats, dmesg). Covers the window before the
+        first upload, and accelerators whose upload failed.
+
+        Written as <dest_dir>/<plan_uuid>/accelerator_<instance>_bundle.log.
+        Transfer is the same as collect_dp_agent_logs_from_cluster_instances.
+
+        :param cluster_id: Cluster identifier
+        :param dest_dir: Local directory (created if missing)
+        :param plan_uuids: Only accelerators of these plans (None = all)
+        :param s3_bucket: Bucket to stage the upload in, or None for inline only
+        :return: list of result dicts {instance_id, role, private_ip, unit,
+                 status, method, path, error, plan_uuid}
+        """
+        accelerators = self.list_running_accelerators_for_log_collection(
+            cluster_id, plan_uuids=plan_uuids)
+        if not accelerators:
+            return []
+        s3_bucket_region = None
+        if s3_bucket:
+            try:
+                self.s3.s3_client.head_bucket(Bucket=s3_bucket)
+                s3_bucket_region = self.s3.get_bucket_region(s3_bucket)
+            except Exception as e:
+                self.log.warning(
+                    f"[failure-logs] S3 staging bucket {s3_bucket} is not usable ({e}); "
+                    f"using inline SSM transfer only")
+                s3_bucket = None
+
+        def collect_one(acc):
+            plan_dir = os.path.join(dest_dir, acc['PlanUUID'])
+            os.makedirs(plan_dir, exist_ok=True)
+            if not self.ec2.is_instance_ssm_ready(acc['InstanceId']):
+                res = {'instance_id': acc['InstanceId'], 'role': 'accelerator',
+                       'private_ip': acc['PrivateIp'], 'unit': 'bundle',
+                       'status': 'skipped', 'method': None, 'path': None,
+                       'error': 'instance is not SSM-online'}
+            else:
+                res = self._collect_remote_output(
+                    acc, 'bundle', self.ACCELERATOR_LOG_BUNDLE_CMD, plan_dir,
+                    s3_bucket, s3_bucket_region, s3_prefix,
+                    inline_max_raw_bytes, ssm_timeout)
+            res['plan_uuid'] = acc['PlanUUID']
+            return res
+
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(len(accelerators), 20)) as executor:
+            return list(executor.map(collect_one, accelerators))
+
+    def list_fusion_accelerator_log_plans(self, cluster_id, since=None):
+        """
+        Rebalance plan UUIDs that have accelerator logs in the cluster storage
+        bucket. Accelerators upload to
+        s3://cbc-storage-<cluster_id>/logs/fusion/<plan_uuid>/<node_id>/logs_<shard>.zip
+        (couchbase-cloud cmd/dp-accelerator-v2/internal/recorder/ship-logs.tmpl).
+
+        :param cluster_id: Cluster identifier
+        :param since: tz-aware datetime; if set, only plans with an object
+                      modified at/after it
+        :return: set of plan UUIDs, or None if the bucket could not be listed
+        """
+        bucket = f"cbc-storage-{cluster_id}"
+        prefix = self.ACCELERATOR_LOG_PREFIX
+        if since is None:
+            prefixes = self.s3.list_common_prefixes(bucket, prefix=prefix)
+            if prefixes is None:
+                return None
+            return {p[len(prefix):].strip('/') for p in prefixes} - {""}
+        plans = set()
+        for obj in self.s3.list_files_in_bucket(bucket, prefix=prefix):
+            if obj['LastModified'] >= since:
+                plan = obj['Key'][len(prefix):].split('/', 1)[0]
+                if plan:
+                    plans.add(plan)
+        return plans
+
+    def download_fusion_accelerator_s3_logs(self, cluster_id, dest_dir,
+                                            plan_uuids, max_objects=200):
+        """
+        Download the logs fusion accelerators upload for the given rebalance
+        plans (s3://cbc-storage-<cluster_id>/logs/fusion/<plan_uuid>/...,
+        the same objects download_accelerator_logs.sh reads). These outlive
+        the accelerator instance, so they cover accelerators that were
+        already torn down at failure time, but not past cluster destroy.
+
+        .zip objects are extracted and .gz members decompressed, and every
+        resulting file is given a .log suffix so Jenkins archives it. Local
+        layout: <dest_dir>/<plan_uuid>/<node_id>/logs_<shard>/...
+
+        :param cluster_id: Cluster identifier
+        :param dest_dir: Local directory (created if missing)
+        :param plan_uuids: Rebalance plan UUIDs to download
+        :param max_objects: Newest-first cap on the number of objects
+        :return: list of local file paths written
+        """
+        bucket = f"cbc-storage-{cluster_id}"
+        objects = []
+        for plan_uuid in sorted(plan_uuids):
+            objects.extend(self.s3.list_files_in_bucket(
+                bucket, prefix=f"{self.ACCELERATOR_LOG_PREFIX}{plan_uuid}/"))
+        objects = sorted(objects, key=lambda o: o['LastModified'], reverse=True)[:max_objects]
+        if not objects:
+            return []
+
+        written = []
+        for obj in objects:
+            rel = obj['Key'][len(self.ACCELERATOR_LOG_PREFIX):].lstrip('/')
+            if not rel or rel.endswith('/'):
+                continue
+            local_path = os.path.join(dest_dir, rel)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            if not self.s3.download_file(bucket, obj['Key'], local_path):
+                continue
+            try:
+                if local_path.endswith('.zip'):
+                    extract_dir = local_path[:-len('.zip')]
+                    with zipfile.ZipFile(local_path) as zf:
+                        zf.extractall(extract_dir)
+                    os.remove(local_path)
+                    paths = [os.path.join(root, f)
+                             for root, _, files in os.walk(extract_dir) for f in files]
+                else:
+                    paths = [local_path]
+                for path in paths:
+                    if path.endswith('.gz'):
+                        target = path[:-len('.gz')]
+                        self._gunzip_to(path, target)
+                        path = target
+                    if not path.endswith('.log'):
+                        os.rename(path, f"{path}.log")
+                        path = f"{path}.log"
+                    written.append(path)
+            except Exception as e:
+                self.log.warning(
+                    f"[failure-logs] Could not unpack {local_path}: {e}; kept as downloaded")
+                written.append(local_path)
+        return written
 
     def list_cluster_fusion_asg(self, cluster_id):
         """

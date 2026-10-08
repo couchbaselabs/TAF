@@ -154,6 +154,28 @@ class S3Lib:
             self.logger.error(f"Error listing files in bucket {bucket_name}: {e}")
             return []
 
+    def list_common_prefixes(self, bucket_name: str,
+                             prefix: str = '') -> Optional[List[str]]:
+        """
+        List the immediate "sub-folder" prefixes under prefix (Delimiter='/').
+
+        :param bucket_name: Name of the S3 bucket
+        :param prefix: Parent prefix, ending in '/'
+        :return: List of prefixes (each ending in '/'), or None if the
+                 listing failed (so callers can tell "empty" from "unknown")
+        """
+        try:
+            prefixes = []
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix,
+                                           Delimiter='/'):
+                prefixes.extend(p['Prefix'] for p in page.get('CommonPrefixes', []))
+            return prefixes
+        except ClientError as e:
+            self.logger.error(
+                f"Error listing prefixes under {prefix} in bucket {bucket_name}: {e}")
+            return None
+
     def get_file_size(self, bucket_name: str, file_key: str) -> Optional[int]:
         """
         Get the size of a specific file in S3.
@@ -469,6 +491,61 @@ class S3Lib:
             return True
         except ClientError as e:
             self.logger.error(f"Error creating bucket {bucket_name}: {e}")
+            return False
+
+    def generate_presigned_url(self, bucket_name: str, file_key: str,
+                               client_method: str = 'put_object',
+                               expires_in: int = 3600,
+                               region: str = None) -> Optional[str]:
+        """
+        Generate a SigV4 presigned URL for a single object.
+
+        The URL is signed for the bucket's own region (a presigned URL signed
+        for the wrong region is rejected by S3), so pass `region` when it is
+        known, otherwise it is looked up with get_bucket_region().
+
+        :param bucket_name: Name of the S3 bucket
+        :param file_key: Object key the URL is scoped to
+        :param client_method: boto3 client method to presign ('put_object'
+                              for an upload, 'get_object' for a download)
+        :param expires_in: URL lifetime in seconds. Capped by the lifetime of
+                           the signing credentials when they are temporary
+                           (assumed-role) credentials.
+        :param region: Bucket region (optional)
+        :return: The presigned URL, or None on failure
+        """
+        try:
+            from botocore.config import Config
+            region = region or self.get_bucket_region(bucket_name)
+            client = self.aws_session.client(
+                's3', region_name=region, endpoint_url=self.endpoint_url,
+                config=Config(signature_version='s3v4',
+                              s3={'addressing_style': 'virtual'}))
+            return client.generate_presigned_url(
+                ClientMethod=client_method,
+                Params={'Bucket': bucket_name, 'Key': file_key},
+                ExpiresIn=expires_in)
+        except Exception as e:
+            self.logger.error(
+                f"Error generating presigned {client_method} URL for "
+                f"s3://{bucket_name}/{file_key}: {e}")
+            return None
+
+    def download_file(self, bucket_name: str, file_key: str, local_path: str) -> bool:
+        """
+        Download a single S3 object to a local file.
+
+        :param bucket_name: Name of the S3 bucket
+        :param file_key: Key of the object to download
+        :param local_path: Destination file path (parent directory must exist)
+        :return: True if successful, False otherwise
+        """
+        try:
+            self.s3_client.download_file(bucket_name, file_key, local_path)
+            return True
+        except Exception as e:
+            self.logger.error(
+                f"Error downloading s3://{bucket_name}/{file_key} to {local_path}: {e}")
             return False
 
     def delete_bucket(self, bucket_name: str, force: bool = False) -> bool:
