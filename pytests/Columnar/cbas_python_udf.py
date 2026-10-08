@@ -397,15 +397,17 @@ class CBASPythonUDF(CBASBaseTest):
             if not exists:
                 self.fail(f"Library artifact missing on node {ip} after upload")
 
-    def test_library_listing_always_empty_known_bug(self):
-        # Regression guard for the unfiled known bug: GET /api/v1/library
-        # returns 200 with [] even with a library installed and callable.
-        # If this starts returning entries, that's a fix worth noticing,
-        # not a silent behavior change.
+    def test_library_listing_disabled_returns_405(self):
+        # GET /api/v1/library used to return 200 with [] even with a
+        # library installed and callable (MB-67950). Per Murtadha Al
+        # Hubail's comment on that ticket (2026-10-05): "We decided to
+        # disable this API. GET should now return 405 status code." --
+        # verified live on 3.0.0-1084: status=405, body="Method GET not
+        # allowed for the requested resource." This is a regression guard
+        # for that decision, not the original bug.
         #
         # The scope-qualified GET /api/v1/library/{scope} 404s -- verified
-        # live, this listing endpoint is not scope-qualifiable, only the
-        # bare form works.
+        # live, this listing endpoint is not scope-qualifiable either way.
         name = f"echo_{self.cbas_util.generate_name()}"
         self._upload(DEFAULT_SCOPE, name, "mylib", ECHO_MODULE_SOURCE)
 
@@ -415,10 +417,9 @@ class CBASPythonUDF(CBASBaseTest):
         finally:
             client.disconnect()
         self.log.info(f"Library listing after upload: status={http_status} body={body}")
-        if http_status != "200":
-            self.fail(f"Library listing returned unexpected status {http_status}")
-        if body and body.strip() not in ("[]", ""):
-            self.log.info(f"Library listing now returns entries -- the known always-empty bug appears fixed: {body}")
+        if http_status != "405":
+            self.fail(f"Library listing returned unexpected status {http_status} "
+                      f"(expected 405 now that GET is disabled per MB-67950): {body}")
 
     def test_library_upload_rejects_malformed_archives(self):
         # "empty" and "truncated" are not valid zip files at all, and are
@@ -1208,8 +1209,10 @@ class CBASPythonUDF(CBASBaseTest):
         # correctly defined function must still fail harmlessly on
         # hostile *data*, since there's no per-user sandboxing to fall
         # back on. echo_one just returns its argument unchanged, so any
-        # payload that comes back altered, or that errors, or that
-        # visibly disrupts the node, is the finding.
+        # payload that comes back altered, or that visibly disrupts the
+        # node, is the finding. pickle_like_bytes is handled separately
+        # below -- it's not valid UTF-8, and erroring on it is the
+        # confirmed correct behavior, not a finding.
         library = self._identity_fn()
         full_name = self._bind_identity(library, "Identity.echo_one")
 
@@ -1217,7 +1220,6 @@ class CBASPythonUDF(CBASBaseTest):
             ("shell_metachars", "; rm -rf / #`whoami`$(id)"),
             ("format_string", "%s%s%s%n{0.__class__}"),
             ("path_traversal", "../../../../etc/shadow"),
-            ("pickle_like_bytes", "\x80\x04\x95\x0c\x00\x00\x00\x00\x00\x00\x00\x8c\x08evil_code\x94."),
             ("deeply_nested_hostile", {"a": [{"b": [{"c": "; cat /etc/passwd"}]}]}),
             ("very_large", "A" * (4 * 1024 * 1024)),
         ]
@@ -1226,18 +1228,35 @@ class CBASPythonUDF(CBASBaseTest):
             if status != "success":
                 self.fail(f"Hostile payload {label} was rejected rather than handled harmlessly: {errors}")
             if results[0] != payload:
-                # Verified live: pickle_like_bytes fails with a real,
-                # actionable warning (msgpack's unpacker rejects the
-                # invalid-UTF-8 byte sequence: UnicodeDecodeError) rather
-                # than silently -- surface it instead of just the
-                # mismatched value, since this suite was blind to
-                # warnings until this fix (see MB-73975).
                 real_warning = _real_udf_exception(warnings)
                 self.fail(
                     f"Hostile payload {label} did not round-trip unchanged -- "
                     f"sent {payload!r}, got {results[0]!r}"
                     + (f" -- warning: {real_warning}" if real_warning else "")
                 )
+
+        # pickle_like_bytes: SQL++ has no distinct raw-bytes argument
+        # type -- a "string" argument is assumed to be valid Unicode
+        # text. The IPC transport to the Python executor serializes
+        # arguments via msgpack, whose string decoder enforces that
+        # assumption and raises UnicodeDecodeError on this payload
+        # instead of passing it through. Confirmed 2026-10-08: erroring
+        # loudly on genuinely invalid-UTF-8 input is the correct, safe
+        # behavior here, not a gap. The regression guard is that it
+        # fails *cleanly* -- with the real cause surfaced as a warning,
+        # not silently -- rather than that it round-trips.
+        pickle_like_bytes = "\x80\x04\x95\x0c\x00\x00\x00\x00\x00\x00\x00\x8c\x08evil_code\x94."
+        status, _, errors, results, _, warnings = self._call(full_name, [pickle_like_bytes])
+        real_warning = _real_udf_exception(warnings)
+        if status == "success" and results[0] == pickle_like_bytes:
+            self.fail(
+                "pickle_like_bytes round-tripped unchanged -- this contradicts the confirmed "
+                "rejection of invalid-UTF-8 string arguments, worth a closer look")
+        if not real_warning:
+            self.fail(
+                f"pickle_like_bytes failed to round-trip but surfaced no actionable warning "
+                f"naming the cause: status={status} result={results[0]!r} errors={errors}")
+
         if not self.cbas_util.is_analytics_running(self.cluster):
             self.fail("Analytics service is not healthy after hostile-argument-data payloads")
 
@@ -1362,6 +1381,8 @@ class CBASPythonUDF(CBASBaseTest):
             ("shadow", "/etc/shadow"),
             ("ea_data_dir", "/opt/enterprise-analytics/var/lib/couchbase/config/couchbase-server.properties"),
             ("node_config", "/opt/enterprise-analytics/var/lib/couchbase/config/config.dat"),
+            # 3.0.0 install root
+            ("node_config_3_0", "/opt/couchbase/var/lib/couchbase/config/config.dat"),
         ):
             report = self._probe_call(full_name, [path])
             self.log.info(f"Host-path read attempt '{label}' ({path}): {report}")
@@ -1529,7 +1550,19 @@ class CBASPythonUDF(CBASBaseTest):
         finally:
             observer.disconnect()
 
-    def test_sandbox_one_shared_container_no_cross_library_file_access(self):
+    def test_sandbox_cross_library_file_access_is_by_design(self):
+        # Originally written as a negative check (a UDF in library A should
+        # NOT be able to read library B's on-disk artifact). Verified live
+        # (2026-10-06/07, two independent runs, build 3.0.0-1076/1084) that
+        # it reliably CAN -- confirmed with dev afterward: every library on
+        # a node shares one executor container, and the bind-mount exposes
+        # the whole applications directory (every library, every scope)
+        # read-only inside it. There is no per-library filesystem
+        # isolation, and that's by design, not a gap -- the sandbox
+        # boundary is the gVisor container as a whole, not a per-library
+        # one. This is now a regression guard for that: if cross-library
+        # reads ever start failing, that's a behavior change worth
+        # noticing, not a silent fix.
         library_a = f"crosslib_a_{self.cbas_util.generate_name()}"
         library_b = f"crosslib_b_{self.cbas_util.generate_name()}"
         # library_a is the one the probe function is actually bound
@@ -1553,8 +1586,10 @@ class CBASPythonUDF(CBASBaseTest):
 
         report = self._probe_call(full_name, [other_artifact_path])
         self.log.info(f"Cross-library read attempt: {report}")
-        if report.get("ok"):
-            self.fail(f"A UDF in library A was able to read library B's on-disk artifact: {report}")
+        if not report.get("ok"):
+            self.fail(f"A UDF in library A could not read library B's on-disk artifact -- "
+                      f"this contradicts the confirmed by-design shared-container behavior, "
+                      f"worth a closer look: {report}")
 
     def test_sandbox_direct_escape_attempts_fail(self):
         full_name_proc, _ = self._bind_probe("SandboxProbe.attempt_proc_access", parameters=["a"])
@@ -1890,20 +1925,35 @@ class CBASPythonUDF(CBASBaseTest):
             shell.disconnect()
 
         try:
-            status, _, errors, _, _, _ = self._call(full_name, [1])
-            self.log.info(f"Call immediately after killing the executor container: status={status} errors={errors}")
-            if status == "success":
-                self.fail("A call succeeded immediately after the executor container was killed")
-
+            status, _, errors, results, _, _ = self._call(full_name, [1])
+            self.log.info(
+                f"Call immediately after killing the executor container: "
+                f"status={status} errors={errors} results={results}")
+            # A call succeeding here is an acceptable race, not a finding --
+            # confirmed 2026-10-08. The CBAS JVM pools its connection to the
+            # executor rather than dialing fresh per call (see MB-74053),
+            # and a request already in flight -- or a connection
+            # established in the instant before the kill signal is
+            # processed -- can complete before the kernel actually tears
+            # down the socket on the now-dead process. This test's real
+            # assertion is below: the container itself does not come back
+            # on its own (the product's systemd unit uses
+            # Restart=on-failure, which leaves a clean kill dead,
+            # NRestarts=0) -- not that every call immediately after the
+            # kill fails.
             recovered_shell = RemoteMachineShellConnection(node)
             try:
                 unit_state, _ = recovered_shell.execute_command(
                     f"docker inspect {UDF_EXECUTOR_CONTAINER_NAME} "
-                    "--format '{{.State.Status}} {{.State.ExitCode}}' 2>/dev/null"
+                    "--format '{{.State.Status}} {{.State.Running}}' 2>/dev/null"
                 )
             finally:
                 recovered_shell.disconnect()
             self.log.info(f"Executor container state after kill, before manual recovery: {unit_state}")
+            if unit_state and "true" in unit_state[0].lower():
+                self.fail(
+                    "Executor container is running again on its own after being killed with "
+                    f"--restart=no -- expected it to stay dead until manually recovered: {unit_state}")
         finally:
             self._force_recreate_executor()
 

@@ -18,6 +18,8 @@ class audit:
     WINCONFIFFILEPATH = "C:/Program Files/Couchbase/Server/var/lib/couchbase/config/"
     LINCONFIGFILEPATH = "/opt/couchbase/var/lib/couchbase/config/"
     LINCONFIGFILEPATH_EA = "/opt/enterprise-analytics/var/lib/couchbase/config/"
+    LINDESCFILEPATH = "/opt/couchbase/etc/security/"
+    LINDESCFILEPATH_EA = "/opt/enterprise-analytics/etc/security/"
     MACCONFIGFILEPATH = "/Users/couchbase/Library/Application Support/Couchbase/var/lib/couchbase/config/"
     DOWNLOADPATH = "/tmp/"
 
@@ -42,6 +44,17 @@ class audit:
             self.nonroot = True
         shell.disconnect()
         self._pathDescriptor = None
+        # Resolved eagerly (unlike pathDescriptor below): only does `test -f`
+        # existence checks / static OS-based path lookups, never reads
+        # audit.json's content, so it's safe even when config-at-rest
+        # encryption makes that file unparseable. setAuditEnable() and
+        # setAuditRotateInterval() both read self.currentLogFile directly
+        # without ever touching pathDescriptor first, so leaving this lazy
+        # left it unset -- AttributeError: 'audit' object has no attribute
+        # 'currentLogFile' -- on any caller that enables/configures audit
+        # before ever resolving descriptors. Verified live 2026-10-08 on
+        # operational-insights-3.0.0-1084.
+        self.getAuditConfigPathInitial()
         self.pathLogFile = self.getAuditLogPath()
         self.defaultFields = ['id', 'name', 'description']
         if (eventID is not None):
@@ -247,6 +260,32 @@ class audit:
         element of the config file or entire file if element == 'all'
     '''
     def getAuditConfigElement(self, element):
+        if element == "descriptors_path":
+            # The live audit.json this would otherwise parse is config-at-
+            # rest encrypted on nodes with encryption enabled -- verified
+            # live 2026-10-07 on operational-insights-3.0.0-1084: the file
+            # starts with a binary "Couchbase Encrypted" header, not JSON,
+            # so json.load failed on byte 0 (JSONDecodeError: Expecting
+            # value: line 1 column 1) regardless of its actual content.
+            # descriptors_path itself is just the static, install-time
+            # directory holding audit_events.json, which is never
+            # encrypted -- resolve it directly from the install root
+            # instead of reading the live config at all.
+            shell = RemoteMachineShellConnection(self.host)
+            try:
+                for candidate in (audit.LINDESCFILEPATH, audit.LINDESCFILEPATH_EA):
+                    out, _ = shell.execute_command(
+                        "test -f {0}{1} && echo present".format(
+                            candidate, audit.AUDITDESCFILE))
+                    if out and "present" in out[0]:
+                        return candidate.rstrip("/")
+                raise Exception(
+                    "Could not find {0} under either {1} or {2} on {3}".format(
+                        audit.AUDITDESCFILE, audit.LINDESCFILEPATH,
+                        audit.LINDESCFILEPATH_EA, self.host.ip))
+            finally:
+                shell.disconnect()
+
         data = []
         self.readFile(self.getAuditConfigPathInitial(), audit.AUDITCONFIGFILENAME)
         # errors='replace': verified live 2026-09-13 against an EA node --
