@@ -1,4 +1,5 @@
-from BucketLib.bucket import TravelSample
+import time
+
 from cb_constants import CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_utils.cb_tools.cb_cli import CbCli
@@ -27,8 +28,6 @@ class EnforceTls(CollectionBase):
             status = RestConnection(node)\
                 .update_autofailover_settings(False, 120)
             self.assertTrue(status)
-        self.log.info("Changing security settings to trust all CAs")
-        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         shell = RemoteMachineShellConnection(self.cluster.master)
         self.curl_path = "/opt/couchbase/bin/curl"
         if shell.extract_remote_info().distribution_type == "windows":
@@ -84,6 +83,23 @@ class EnforceTls(CollectionBase):
     def enable_tls_encryption_cli_on_nodes(self, nodes):
         self.set_n2n_encryption_level_on_nodes(nodes=nodes, level="strict")
 
+    def wait_for_services_to_obey_tls(self, nodes, port_map=None, timeout=120):
+        """
+        Services rebind their ports asynchronously after the n2n level
+        changes (indexer takes ~2s), so poll instead of checking once
+        """
+        if port_map is None:
+            port_map = CbServer.ssl_port_map
+        end_time = time.time() + timeout
+        while True:
+            if self.cluster_util.check_if_services_obey_tls(
+                    servers=nodes, port_map=port_map):
+                return True
+            if time.time() > end_time:
+                return False
+            self.sleep(10, "Waiting for services to rebind ports after "
+                           "enforcing TLS")
+
     @staticmethod
     def get_encryption_level_on_node(node):
         shell_conn = RemoteMachineShellConnection(node)
@@ -127,6 +143,9 @@ class EnforceTls(CollectionBase):
         and validate that it works
         """
         self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
+        self.assertTrue(
+            self.wait_for_services_to_obey_tls(nodes=[self.cluster.master]),
+            "services did not obey tls")
         CbServer.use_https = True
         rest = RestConnection(self.cluster.master)
         for non_ssl_request in self.sample_urls_map.keys():
@@ -144,10 +163,23 @@ class EnforceTls(CollectionBase):
 
         self.disable_n2n_encryption_cli_on_nodes(nodes=[self.cluster.master])
         CbServer.use_https = False
+        # Base setUp switched server objects to SSL ports (use_https=True);
+        # without this RestConnection sends plain HTTP to 18091
+        self.set_ports_for_server(self.cluster.master, "non_ssl")
         rest = RestConnection(self.cluster.master)
         for non_ssl_request in self.sample_urls_map.keys():
             api = non_ssl_request % self.cluster.master.ip
-            status, content, response = rest._http_request(api=api, timeout=10)
+            # Services rebind non-ssl ports asynchronously after disabling
+            end_time = time.time() + 120
+            while True:
+                try:
+                    status, content, _ = rest._http_request(api=api,
+                                                            timeout=10)
+                except Exception as e:
+                    status, content = False, str(e)
+                if status or time.time() > end_time:
+                    break
+                self.sleep(10, f"Waiting for {api} to be reachable")
             if not status:
                 self.fail("{0} api failed with content {1}".format(api, content))
 
@@ -162,8 +194,8 @@ class EnforceTls(CollectionBase):
                     "9102": "19102", "9130": "19130", "11209": "11206", "11210": "11207",
                     "21100": "21150", "8095": "18095", "8096": "18096", "8097": "18097",
                     "11211": "11207"}
-        status = self.cluster_util.check_if_services_obey_tls(servers=[self.cluster.master],
-                                                              port_map=port_map)
+        status = self.wait_for_services_to_obey_tls(nodes=[self.cluster.master],
+                                                    port_map=port_map)
         self.assertTrue(status, "services did not obey tls")
 
     def test_check_tls_after_restarting_nodes(self):

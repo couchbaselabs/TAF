@@ -726,8 +726,8 @@ class x509main:
             data = fh.read()
         self.log.info("Client cert to be Uploaded -- {0}".format(data))
         rest = RestConnection(server)
-        authorization = base64.encodestring(('%s:%s' %
-                                             (rest.username, rest.password)).encode()).decode().rstrip("\n")
+        authorization = base64.b64encode(('%s:%s' %
+                                          (rest.username, rest.password)).encode()).decode()
         headers = {'Content-Type': 'application/octet-stream',
                    'Authorization': 'Basic %s' % authorization,
                    'Accept': '*/*'}
@@ -999,8 +999,8 @@ class Validation:
     def urllib_request(self, api, verb='GET', params='', headers=None, timeout=100):
         if headers is None:
             credentials = '{}:{}'.format(self.server.rest_username, self.server.rest_password)
-            authorization = base64.encodestring(credentials.encode('utf-8'))
-            authorization = authorization.decode('utf-8').rstrip('\n')
+            authorization = base64.b64encode(credentials.encode('utf-8'))
+            authorization = authorization.decode('utf-8')
             headers = {'Authorization': 'Basic %s' % authorization}
         if self.client_cert_path_tuple:
             self.log.info("Using client cert auth")
