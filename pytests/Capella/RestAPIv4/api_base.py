@@ -24,7 +24,7 @@ from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from TestInput import TestInputSingleton
 
-# Serialises writes to collected_logs.log from the parallel dp-agent and server log collectors.
+# Serialises writes to the collected-logs list from the parallel dp-agent and server log collectors.
 _collected_logs_lock = threading.Lock()
 
 
@@ -1982,10 +1982,17 @@ class APIBase(CouchbaseBaseTest):
             return "stage_token_for_internal_support"
         return "token_for_internal_support"
 
+    def _collected_logs_file_name(self):
+        """Names the log list after the v4 suite (the executor's subcomponent), else the conf file, e.g. collected_logs_v4api_gcp.log."""
+        suite = os.environ.get("subcomponent") or \
+            os.path.splitext(os.path.basename(self.input.param("conf_file", "") or ""))[0]
+        name = "collected_logs_" + suite if suite else "collected_logs"
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", name) + ".log"
+
     def _record_collected_log(self, cluster_id, step, log_type, node, status, location, error=""):
-        """Appends one row to logs/testrunner-<run>/collected_logs.log, the same columns as cp-cli's collected_logs.csv."""
+        """Appends one row to logs/testrunner-<run>/collected_logs_<suite>.log, the same columns as cp-cli's list."""
         logs_folder = self.input.param("logs_folder", None)
-        path = os.path.join(os.path.dirname(logs_folder) if logs_folder else "logs", "collected_logs.log")
+        path = os.path.join(os.path.dirname(logs_folder) if logs_folder else "logs", self._collected_logs_file_name())
         test_name = "{}.{}".format(self.__class__.__name__, getattr(self, "_testMethodName", ""))
         row = [time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), test_name, "", cluster_id, step,
                log_type, node or "", status, location or "", error or ""]
