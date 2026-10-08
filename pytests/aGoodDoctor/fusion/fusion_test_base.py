@@ -208,6 +208,18 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         """Delete a Couchbase bucket and assert its S3 prefix (kv/<uuid>) is
         removed by the control plane within timeout seconds.
         """
+        _, s3_bucket_name = self._delete_bucket(bucket, timeout=timeout)
+        self._wait_for_bucket_s3_prefix_removed(
+            bucket, s3_bucket_name, timeout=timeout)
+
+    def _delete_bucket(self, bucket, timeout=300):
+        """Delete a Couchbase bucket and wait for ns_server to drop it.
+
+        Returns (delete_issued_at, s3_bucket_name): the time the first delete
+        request was sent (after the pre-delete healthy wait) and the fusion S3
+        log-store bucket name resolved before deletion (None if unavailable).
+        Pass both to _wait_for_bucket_s3_prefix_removed() to verify S3 cleanup.
+        """
         s3_bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         if s3_bucket_name and not (hasattr(bucket, "bucket_uuid") and bucket.bucket_uuid is not None):
             try:
@@ -227,6 +239,7 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
 
         # Retry the delete up to 5 times with backoff — the API can transiently
         # return non-204 even after wait_until_done if the CP is still settling.
+        delete_issued_at = time.time()
         for attempt in range(1, 6):
             try:
                 CapellaAPI.delete_bucket(self.pod, self.tenant, self.cluster, bucket.name)
@@ -260,7 +273,14 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
             self.log.warning(
                 f"Bucket {bucket.name} did not disappear from ns_server within {timeout}s")
 
-        if s3_bucket_name and bucket.bucket_uuid:
+        return delete_issued_at, s3_bucket_name
+
+    def _wait_for_bucket_s3_prefix_removed(self, bucket, s3_bucket_name,
+                                           timeout=300):
+        """Assert the deleted bucket's S3 prefix (kv/<uuid>) is removed from
+        the fusion log-store bucket within timeout seconds.
+        """
+        if s3_bucket_name and getattr(bucket, "bucket_uuid", None):
             prefix = f"kv/{bucket.bucket_uuid}"
             self.log.info(
                 f"Waiting for S3 prefix {prefix} to be removed from {s3_bucket_name}")

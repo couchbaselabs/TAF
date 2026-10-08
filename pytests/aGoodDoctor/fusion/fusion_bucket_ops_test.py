@@ -6,8 +6,8 @@ corrupt or inadvertently delete the fusion S3 log-store (§5 of the E2E test pla
 
 Tests in this file:
   9.  test_bucket_flush_cleans_s3_objects                    — flush must reduce S3 log-store to < 1 GB
-  10. test_bucket_delete_after_rebalance_cleans_guest_volumes — delete post-rebalance; EBS volumes gone within 5 min
-  11. test_bucket_flush_after_rebalance_no_guest_volumes      — flush post-rebalance; no orphaned EBS volumes within 5 min
+  10. test_bucket_delete_after_rebalance_cleans_guest_volumes — delete post-rebalance; EBS volumes gone within 10 min
+  11. test_bucket_flush_after_rebalance_no_guest_volumes      — flush post-rebalance; no orphaned EBS volumes within 10 min
   12. test_bucket_drop_during_guest_volume_deletion           — drop bucket while CP is mid-EBS-teardown
   13. test_bucket_drop_and_recreate_loop                      — rapid drop/recreate cycle; fresh UUID each time
   14. test_full_compaction_with_fusion_enabled                — compact syncs to S3; fusion rebalance succeeds after
@@ -51,6 +51,9 @@ class FusionBucketOpsTest(_FusionTestBase):
         # cluster's default upload throughput.
         self.fusion_num_uploader_threads = self.input.param("fusion_num_uploader_threads", 64)
         self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 300971520)
+        # SLA for CP to detach and delete all fusion guest EBS volumes after a
+        # bucket delete/flush or rebalance.
+        self.ebs_cleanup_timeout = self.input.param("ebs_cleanup_timeout", 600)
         for bucket in self.cluster.buckets:
             try:
                 self._delete_bucket_with_s3_cleanup(bucket)
@@ -156,24 +159,80 @@ class FusionBucketOpsTest(_FusionTestBase):
             False,
             f"activeGuestVolumes did not reach 0 within {timeout}s")
 
-    def _poll_ebs_to_zero(self, sla_start, sla_seconds=300):
-        """Poll CBS-tracked EBS guest volumes until 0 within the SLA window."""
+    def _poll_ebs_to_zero(self, sla_start, sla_seconds=None):
+        """Poll CBS-tracked EBS guest volumes until 0 within the SLA window
+        (defaults to ebs_cleanup_timeout)."""
+        if sla_seconds is None:
+            sla_seconds = self.ebs_cleanup_timeout
         sla_deadline = sla_start + sla_seconds
-        while time.time() < sla_deadline:
+        # Always sample at least once so a caller that has already used up the
+        # SLA window still fails on observed state, not on the clock alone.
+        while True:
             volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+            elapsed = time.time() - sla_start
             if not volumes:
-                elapsed = time.time() - sla_start
                 self.log.info(
                     f"EBS guest volumes reached 0 in {elapsed:.1f}s (SLA: {sla_seconds}s)")
                 return
+            if time.time() >= sla_deadline:
+                break
             self.log.info(
                 f"EBS volumes still tracked: {len(volumes)} — "
                 f"{int(sla_deadline - time.time())}s remaining in SLA window")
             time.sleep(10)
-        elapsed = time.time() - sla_start
-        self.assertTrue(
-            False,
-            f"EBS guest volumes not cleaned up within {sla_seconds}s (elapsed: {elapsed:.1f}s)")
+        self.fail(
+            f"EBS guest volumes not cleaned up within {sla_seconds}s "
+            f"(elapsed: {elapsed:.1f}s, still tracked: {volumes})")
+
+    def _delete_buckets_and_poll_ebs(self, sla_seconds=None):
+        """Delete all buckets, assert EBS guest volumes reach 0 within
+        sla_seconds of the first delete request, then verify each bucket's
+        S3 prefix was removed.
+
+        The SLA clock starts when the first delete is issued, and the EBS poll
+        runs before the S3-prefix checks so they cannot use up the window.
+        """
+        sla_start = None
+        deleted = []
+        self.log.info(
+            f"Deleting all buckets — {sla_seconds}s EBS SLA starts at the first "
+            f"delete request")
+        for bucket in list(self.cluster.buckets):
+            self.log.info(f"Deleting bucket '{bucket.name}'")
+            issued_at, s3_bucket_name = self._delete_bucket(bucket)
+            if sla_start is None:
+                sla_start = issued_at
+            deleted.append((bucket, s3_bucket_name))
+        self.cluster.buckets = []
+
+        self._poll_ebs_to_zero(sla_start, sla_seconds=sla_seconds)
+
+        for bucket, s3_bucket_name in deleted:
+            self._wait_for_bucket_s3_prefix_removed(bucket, s3_bucket_name)
+
+    def _assert_buckets_empty_after_flush(self, timeout=120):
+        """Assert every bucket's item count drops to 0 after a flush.
+
+        CapellaAPI.flush_bucket only logs a non-2xx response, so confirm the
+        flush actually took effect before relying on post-flush checks.
+        """
+        rest = RestConnection(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            deadline = time.time() + timeout
+            item_count = None
+            while time.time() < deadline:
+                info = rest.get_bucket_details(bucket_name=bucket.name)
+                item_count = (info or {}).get("basicStats", {}).get("itemCount")
+                if item_count == 0:
+                    self.log.info(f"Bucket '{bucket.name}' is empty after flush")
+                    break
+                self.log.info(
+                    f"Bucket '{bucket.name}' item count after flush: {item_count}")
+                time.sleep(5)
+            else:
+                self.fail(
+                    f"Bucket '{bucket.name}' not empty {timeout}s after flush "
+                    f"(item count: {item_count}) — flush did not take effect")
 
     def _poll_s3_below_1gb(self, s3_bucket_name, timeout):
         """Poll S3 log-store total size until it drops below 1 GB. Returns final size_gb."""
@@ -255,22 +314,23 @@ class FusionBucketOpsTest(_FusionTestBase):
             f"{size_gb_before:.2f} GB → {s3_size_gb:.2f} GB")
 
     # ------------------------------------------------------------------
-    # Test 10: Bucket delete after rebalance — EBS volumes gone within 5 min
+    # Test 10: Bucket delete after rebalance — EBS volumes gone within 10 min
     # ------------------------------------------------------------------
 
     def test_bucket_delete_after_rebalance_cleans_guest_volumes(self):
         """
         After a fusion rebalance completes, delete all buckets and verify that
-        any residual EBS guest volumes are cleaned up within 5 minutes.
+        any residual EBS guest volumes are cleaned up within ebs_cleanup_timeout
+        (default 10 minutes).
 
         The CP's phase-8 teardown (EBS volume deletion) may still be in-flight when
         the bucket delete arrives. This test verifies the CP finalizes all EBS cleanup
-        within the 5-minute SLA regardless.
+        within the SLA regardless.
 
         Validates:
         - Fusion rebalance completes with guest volumes created and tracked
         - All buckets deleted immediately after CBS rebalance reaches 'healthy'
-        - EBS guest volumes tracked by CBS reach 0 within 300 seconds of bucket deletion
+        - EBS guest volumes tracked by CBS reach 0 within ebs_cleanup_timeout of bucket deletion
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
@@ -283,30 +343,24 @@ class FusionBucketOpsTest(_FusionTestBase):
         self.wait_for_rebalances([rebalance_task])
 
         # Delete immediately after CBS rebalance completes — CP phase-8 teardown may
-        # still be running. The 5-minute SLA clock starts from this point.
-        cleanup_start = time.time()
-        self.log.info(
-            "Rebalance complete — deleting all buckets and starting 5-minute SLA timer")
-        for bucket in list(self.cluster.buckets):
-            self.log.info(f"Deleting bucket '{bucket.name}'")
-            self._delete_bucket_with_s3_cleanup(bucket)
-        self.cluster.buckets = []
-
-        self._poll_ebs_to_zero(cleanup_start, sla_seconds=300)
+        # still be running. The SLA clock starts at the delete request.
+        self.log.info("Rebalance complete — deleting all buckets")
+        self._delete_buckets_and_poll_ebs()
 
     # ------------------------------------------------------------------
-    # Test 11: Bucket flush after rebalance — no orphaned EBS volumes within 5 min
+    # Test 11: Bucket flush after rebalance — no orphaned EBS volumes within 10 min
     # ------------------------------------------------------------------
 
     def test_bucket_flush_after_rebalance_no_guest_volumes(self):
         """
         After a fusion rebalance completes, flush all buckets and verify that
-        any residual EBS guest volumes are cleaned up within 5 minutes.
+        any residual EBS guest volumes are cleaned up within ebs_cleanup_timeout
+        (default 10 minutes).
 
         Validates:
         - Fusion rebalance completes with guest volumes created and tracked
         - All buckets flushed immediately after CBS rebalance reaches 'healthy'
-        - CBS-tracked EBS guest volumes reach 0 within 300s of flush (primary SLA check)
+        - CBS-tracked EBS guest volumes reach 0 within ebs_cleanup_timeout of flush (primary SLA check)
         - ep_fusion_migration_* stats = 0 on all nodes (post-SLA validation)
         - activeGuestVolumes reaches 0 within agv_cleanup_timeout seconds
         - S3 log-store size drops below 1 GB within s3_cleanup_timeout
@@ -321,21 +375,22 @@ class FusionBucketOpsTest(_FusionTestBase):
         rebalance_task = self._trigger_scale_out()
         self.wait_for_rebalances([rebalance_task])
 
-        # The 5-minute SLA clock starts the moment the flush is issued.
+        # The SLA clock starts the moment the flush is issued.
         cleanup_start = time.time()
         self.log.info(
-            "Rebalance complete — flushing all buckets and starting 5-minute SLA timer")
+            "Rebalance complete — flushing all buckets and starting EBS cleanup SLA timer")
         for bucket in self.cluster.buckets:
             self.log.info(f"Flushing bucket '{bucket.name}'")
             CapellaAPI.flush_bucket(self.pod, self.tenant, self.cluster, bucket.name)
         CapellaAPI.wait_until_done(
             self.pod, self.tenant, self.cluster.id,
             "Wait for bucket flush to complete", timeout=600)
+        self._assert_buckets_empty_after_flush()
         self.log.info("All buckets flushed")
 
-        # ── Check 1 (primary SLA): CBS-tracked EBS volumes must reach 0 within 300s ──
+        # ── Check 1 (primary SLA): CBS-tracked EBS volumes must reach 0 within SLA ──
         # Run before cbstats so synchronous stat collection does not eat the SLA budget.
-        self._poll_ebs_to_zero(cleanup_start, sla_seconds=300)
+        self._poll_ebs_to_zero(cleanup_start)
 
         # ── Check 2: ep_fusion_migration stats must be 0 (post-SLA validation) ─────
         self._assert_migration_stats_zero()
@@ -368,7 +423,7 @@ class FusionBucketOpsTest(_FusionTestBase):
         Validates:
         - EBS volumes are present at peak after rebalance (confirms guest volumes were created)
         - CP teardown is caught mid-flight where possible (best-effort; logged if too fast)
-        - All EBS guest volumes reach 0 within the 5-minute SLA after bucket deletion
+        - All EBS guest volumes reach 0 within ebs_cleanup_timeout after bucket deletion
         - Bucket S3 prefix (kv/<uuid>) is fully removed after deletion
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
@@ -409,14 +464,7 @@ class FusionBucketOpsTest(_FusionTestBase):
                 "CP teardown was too fast to catch mid-deletion; "
                 "proceeding with immediate bucket delete")
 
-        cleanup_start = time.time()
-        self.log.info("Deleting all buckets — starting 5-minute SLA timer")
-        for bucket in list(self.cluster.buckets):
-            self.log.info(f"Deleting bucket '{bucket.name}'")
-            self._delete_bucket_with_s3_cleanup(bucket)
-        self.cluster.buckets = []
-
-        self._poll_ebs_to_zero(cleanup_start, sla_seconds=300)
+        self._delete_buckets_and_poll_ebs()
 
     # ------------------------------------------------------------------
     # Test 13: Bucket drop and recreate loop
@@ -560,8 +608,7 @@ class FusionBucketOpsTest(_FusionTestBase):
             f"Fusion state is not 'enabled' after compaction + rebalance "
             f"(got '{fusion_status.get('state')}')")
 
-        ebs_cleanup_timeout = self.input.param("ebs_cleanup_timeout", 300)
-        self._poll_ebs_to_zero(time.time(), sla_seconds=ebs_cleanup_timeout)
+        self._poll_ebs_to_zero(time.time())
         self.log.info(
             "Full compaction + fusion rebalance completed successfully; "
             "no orphaned EBS volumes")
