@@ -1404,15 +1404,17 @@ class FusionEnableDisableTests(_FusionTestBase):
 
     def test_disable_fusion_during_rebalance_waits_for_operations(self):
         """
-        Disabling fusion while a rebalance is in progress must wait for all
-        ongoing fusion operations to complete before proceeding.
+        Disabling fusion while a fusion rebalance is in progress must be
+        rejected; the CP only allows disable on a healthy cluster. Once the
+        rebalance completes, disable must succeed and clean up.
 
         Validates:
-        - Disable request is accepted while rebalance is running
-        - CP does not interrupt the in-progress fusion rebalance mid-flight
-        - Guest volumes remain active until rebalance completes
-        - After rebalance finishes, fusion status transitions to "disabled"
-        - S3 bucket is emptied after the disable completes
+        - Disable during rebalance is rejected with 422 ErrClusterNotHealthy
+        - The rejected disable does not disturb the in-progress fusion
+          rebalance (fusion stays 'enabled', guest volumes stay active)
+        - After rebalance finishes, disable is accepted and fusion status
+          transitions to "disabled"
+        - Accelerators are cleaned up and the S3 bucket is emptied
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
@@ -1451,19 +1453,46 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         self.log.info("Issuing disable while fusion rebalance is running")
         resp_disable = CapellaAPI.disable_fusion(self.pod, self.tenant, self.cluster.id)
-        self.log.info(f"disable_fusion response: {resp_disable.status_code}")
-        self.assertIn(
-            resp_disable.status_code, [200, 202],
-            f"disable_fusion during rebalance returned unexpected status: "
-            f"{resp_disable.status_code}")
+        self.log.info(
+            f"disable_fusion response: {resp_disable.status_code} "
+            f"{resp_disable.content}")
+        self.assertEqual(
+            resp_disable.status_code, 422,
+            f"disable_fusion during rebalance should be rejected with 422, got "
+            f"{resp_disable.status_code}: {resp_disable.content}")
+        try:
+            err_type = resp_disable.json().get("errorType", "")
+        except Exception:
+            err_type = ""
+        self.assertEqual(
+            err_type, "ErrClusterNotHealthy",
+            f"disable_fusion during rebalance rejected with unexpected error: "
+            f"{resp_disable.content}")
+
+        fusion_state = CapellaAPI.get_fusion_status(
+            self.pod, self.tenant, self.cluster.id).get("state", "unknown")
+        self.assertEqual(
+            fusion_state, "enabled",
+            f"Fusion state changed to '{fusion_state}' after a rejected "
+            f"disable during rebalance — expected 'enabled'")
 
         guest_vol_count = self._get_active_guest_volume_count(self.cluster)
         self.assertGreater(
             guest_vol_count, 0,
-            "Guest volumes disappeared before rebalance completed — "
-            "disable was too aggressive")
+            "Guest volumes disappeared during rebalance after a rejected "
+            "disable")
 
         self.wait_for_rebalances([rebalance_task])
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id,
+            "Wait for healthy state after fusion rebalance", timeout=600)
+
+        self.log.info("Rebalance complete; issuing disable on healthy cluster")
+        resp_disable = CapellaAPI.disable_fusion(self.pod, self.tenant, self.cluster.id)
+        self.assertIn(
+            resp_disable.status_code, [200, 202],
+            f"disable_fusion after rebalance returned unexpected status "
+            f"{resp_disable.status_code}: {resp_disable.content}")
 
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
@@ -1624,18 +1653,16 @@ class FusionEnableDisableTests(_FusionTestBase):
         """
         Disable fusion when log files are leased post prepareRebalance.
 
-        The control plane must either:
-        (a) Disallow the disable request while log files are leased, OR
-        (b) Accept the disable, abort the fusion rebalance, clean up all resources
-            (accelerators, guest volumes, S3 objects), and start a DCP rebalance.
+        The CP only allows disable on a healthy cluster, so a disable issued
+        while the fusion rebalance holds leased log files must be rejected
+        and must not disturb the rebalance.
 
         Validates:
         - prepareRebalance is initiated and log files become leased
-        - Disable request is sent during the leased window
-        - CP responds with either a rejection (409/423) or acceptance (200/202)
-        - If rejected: fusion status remains unchanged, rebalance continues normally
-        - If accepted: fusion status transitions to "disabled", all fusion resources
-          are cleaned up, and a DCP rebalance completes the data movement
+        - Disable during the leased window is rejected with 422
+          ErrClusterNotHealthy
+        - Fusion status remains 'enabled' and the rebalance completes normally
+        - Accelerator nodes are cleaned up after the rebalance
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
@@ -1678,45 +1705,36 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info(
             f"Disable response: {resp_disable.status_code} — {resp_disable.content}")
 
-        if resp_disable.status_code in [409, 423]:
-            self.log.info(
-                "CP rejected disable during leased state (expected behaviour A)")
-            self.wait_for_rebalances([rebalance_task])
-            state_resp = CapellaAPI.get_fusion_status(self.pod, self.tenant, self.cluster.id)
-            self.assertEqual(state_resp.get("state"), "enabled",
-                             "Fusion state changed despite reject — unexpected")
-            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-                self.cluster, timeout=self.fusion_infra_timeout)
-            self.assertTrue(
-                result,
-                "Accelerator nodes not cleaned up after rejected-disable rebalance")
+        self.assertEqual(
+            resp_disable.status_code, 422,
+            f"Disable during leased state should be rejected with 422, got "
+            f"{resp_disable.status_code}: {resp_disable.content}")
+        try:
+            err_type = resp_disable.json().get("errorType", "")
+        except Exception:
+            err_type = ""
+        self.assertEqual(
+            err_type, "ErrClusterNotHealthy",
+            f"Disable during leased state rejected with unexpected error: "
+            f"{resp_disable.content}")
 
-        elif resp_disable.status_code in [200, 202]:
-            self.log.info(
-                "CP accepted disable during leased state (expected behaviour B)")
-            self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
+        state_resp = CapellaAPI.get_fusion_status(self.pod, self.tenant, self.cluster.id)
+        self.assertEqual(state_resp.get("state"), "enabled",
+                         f"Fusion state changed to '{state_resp.get('state')}' "
+                         f"after a rejected disable during leased state")
 
-            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-                self.cluster, timeout=self.fusion_infra_timeout)
-            self.assertTrue(
-                result,
-                "Accelerator nodes not cleaned up after disable-aborted rebalance")
+        self.wait_for_rebalances([rebalance_task])
+        state_resp = CapellaAPI.get_fusion_status(self.pod, self.tenant, self.cluster.id)
+        self.assertEqual(state_resp.get("state"), "enabled",
+                         f"Fusion state is '{state_resp.get('state')}' after "
+                         f"rebalance following a rejected disable — expected "
+                         f"'enabled'")
+        result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
+            self.cluster, timeout=self.fusion_infra_timeout)
+        self.assertTrue(
+            result,
+            "Accelerator nodes not cleaned up after rejected-disable rebalance")
 
-            guest_vols = self._get_active_guest_volume_count(self.cluster)
-            self.assertEqual(guest_vols, 0,
-                             f"Guest volumes still active after abort: {guest_vols}")
-
-            self.wait_for_rebalances([rebalance_task])
-
-            bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
-            if bucket_name:
-                self._assert_s3_bucket_empty(bucket_name, timeout=300,
-                                             buckets=self.cluster.buckets)
-
-        else:
-            self.fail(
-                f"Unexpected disable response during leased state: "
-                f"{resp_disable.status_code} — {resp_disable.content}")
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
