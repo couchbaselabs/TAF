@@ -10,6 +10,7 @@ legacy /analytics/service: the multi-statement parameter and the wire status
 codes these cases assert on are only reachable there.
 """
 import json
+import logging
 import threading
 import time
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -82,16 +83,63 @@ class MultiStatementRequests(ColumnarOnPremBase):
         "test_deferred_handles_across_node_restart",
         "test_hard_failover_of_node_executing_statement")
 
-    def _base_setup(self):
-        if not TestInputSingleton.input.param("skip_cbas_cleanup", True):
-            super().setUp()
-            return
-        original = ColumnarCbasUtil.cleanup_cbas
-        ColumnarCbasUtil.cleanup_cbas = lambda *args, **kwargs: True
+    @staticmethod
+    def _cluster_is_initialized():
+        """Probe this suite's own cluster, not just that a node answers at
+        all. Every conf line sets skip_setup_cleanup=True on the assumption
+        that the cluster already exists - true against a persistent EA
+        deployment, false against a freshly installed CI node, which
+        answers /pools/default with "unknown pool" until setupServices()/
+        clusterInit() has run.
+        """
+        servers = TestInputSingleton.input.servers
+        if not servers:
+            return True
+        server = servers[0]
+        user = server.rest_username or "Administrator"
+        password = server.rest_password or "password"
         try:
-            super().setUp()
+            response = requests.get(
+                "http://{0}:{1}/pools/default".format(
+                    server.ip, server.port or 8091),
+                auth=(user, password), timeout=10)
+            return "unknown pool" not in response.text
+        except requests.exceptions.RequestException:
+            return True
+
+    def _base_setup(self):
+        original_skip_setup = TestInputSingleton.input.test_params.get(
+            "skip_setup_cleanup")
+        forced_setup = (
+            TestInputSingleton.input.param("skip_setup_cleanup", False)
+            and not self._cluster_is_initialized())
+        if forced_setup:
+            logging.warning(
+                "skip_setup_cleanup=True but the cluster has never been "
+                "initialized on this environment - forcing a real setup "
+                "for this test so later tests (which correctly assume it "
+                "already exists) don't all fail against an uninitialized "
+                "node.")
+            TestInputSingleton.input.test_params["skip_setup_cleanup"] = \
+                "False"
+        try:
+            if not TestInputSingleton.input.param("skip_cbas_cleanup", True):
+                super().setUp()
+                return
+            original = ColumnarCbasUtil.cleanup_cbas
+            ColumnarCbasUtil.cleanup_cbas = lambda *args, **kwargs: True
+            try:
+                super().setUp()
+            finally:
+                ColumnarCbasUtil.cleanup_cbas = original
         finally:
-            ColumnarCbasUtil.cleanup_cbas = original
+            if forced_setup:
+                if original_skip_setup is None:
+                    TestInputSingleton.input.test_params.pop(
+                        "skip_setup_cleanup", None)
+                else:
+                    TestInputSingleton.input.test_params[
+                        "skip_setup_cleanup"] = original_skip_setup
 
     def setUp(self):
         self._base_setup()
@@ -581,6 +629,37 @@ class MultiStatementRequests(ColumnarOnPremBase):
             disabled=",".join(str(d) for d in sorted(disabled_set)),
             users=users,
             rotateSize=current.get("rotateSize", 524288000))
+
+    def _wait_for_audit_config_effective(self, event_id, timeout=60):
+        """Poll with cheap canary SELECTs until `event_id` is actually
+        observed in the audit log for one of them.
+
+        Measured 2026-10-07: on a freshly rebalanced-in CBAS node the REST
+        config-API call above returns success immediately, but the audit
+        daemon does not necessarily honor the new enabled-set yet - firing
+        the real statements under test right away got audited by NEITHER
+        node for the entire test, not merely late. A long-lived cluster
+        (e.g. my-nodes.ini) does not show this gap; the REST call there
+        takes effect immediately. Firing disposable canaries until one is
+        actually audited makes the test robust to either case instead of
+        assuming the config call's own success response means it is live.
+        """
+        deadline = time.time() + timeout
+        while True:
+            canary = self._multi_statement("select 1;", multi_statement=None)
+            request_id = canary.get("requestID")
+            if request_id:
+                records = [r for r in self._audit_log()[1]
+                          if r.get("requestId") == request_id
+                          and r.get("id") == event_id]
+                if records:
+                    return
+            if time.time() >= deadline:
+                self.fail(
+                    f"audit event {event_id} was still not observed on a "
+                    f"canary SELECT after {timeout}s - the config-API "
+                    f"enable never became effective")
+            time.sleep(2)
 
     def _resolve_handle_url(self, handle_url):
         """The absolute URL to GET for a handle, whatever shape it came in.
@@ -1411,6 +1490,7 @@ class MultiStatementRequests(ColumnarOnPremBase):
     def test_failure_audit_per_statement_never_run_and_request_level(
             self):
         self._set_audit_events_enabled(enable_ids=[36867, 36879])
+        self._wait_for_audit_config_effective(36867)
 
         response = self._multi_statement(
             "select 1; select * from ms.noSuchCollection; select 999;",
@@ -1897,11 +1977,15 @@ class MultiStatementRequests(ColumnarOnPremBase):
                 wait_for_complete=True)
 
             thread.join(timeout=180)
+            response = result_holder.get("response")
+            exception = result_holder.get("exception")
             self.log.info(
-                "case31 ({} failover, NOT YET MEASURED baseline - "
-                "capture and promote): response={} exception={}".format(
-                    label, result_holder.get("response"),
-                    result_holder.get("exception")))
+                "case31 ({} failover): response={} exception={}".format(
+                    label, response, exception))
+            self.assertIsNone(
+                exception,
+                f"the {label} failover's background request raised a client "
+                f"exception instead of returning a response: {exception}")
 
             results = self._results(
                 self._completed_request_query(failover_ccid))
@@ -1909,10 +1993,37 @@ class MultiStatementRequests(ColumnarOnPremBase):
                 f"case31 ({label}) completed_requests() record: {results}")
 
             self._restore_topology_if_shrunk()
+
+            errors = (response or {}).get("errors") or []
+            hard_killed = (
+                response is not None
+                and response.get("status") == "fatal"
+                and any(e.get("code") == 23000 for e in errors))
+            if hard_killed:
+                # Measured 2026-10-07 against the non-coordinator sub-case
+                # (Jenkins build 271706, operational-insights 3.0.0-1084): a
+                # hard failover of the node executing the statement does not
+                # let the request continue elsewhere - it dies almost
+                # instantly with a fatal 23000 "service temporarily
+                # unavailable", and completed_requests() carries no record
+                # of it at all. Accepted as the measured contract for this
+                # sub-case rather than assumed; the coordinator sub-case has
+                # not been independently measured, so this branch is not
+                # assumed to be the ONLY valid outcome below.
+                self.assertFalse(
+                    results,
+                    f"the {label} failover's request died with a fatal "
+                    f"23000 (service unavailable) but STILL left a "
+                    f"completed_requests() record - the error-path and "
+                    f"record-bookkeeping disagree: {results}")
+                continue
+
             self.assertTrue(
                 results,
                 f"the {label} failover left no completed_requests() record "
-                f"for {failover_ccid} - the request is unaccounted for")
+                f"for {failover_ccid} and the response was not the measured "
+                f"fatal-23000 shape either - the request is unaccounted "
+                f"for: response={response}")
             record = results[0]
             jobs = record.get("jobs") or []
             statement_numbers = [self._statement_number(j) for j in jobs]
@@ -1938,6 +2049,35 @@ class MultiStatementRequests(ColumnarOnPremBase):
     PLAN_WITH_STATS_MARKERS = ("unnest-map", "BTREE_SEARCH",
                                "BROADCAST_EXCHANGE")
     PLAN_NO_STATS_MARKERS = ("HASH_PARTITION_EXCHANGE",)
+
+    def _wait_for_plan_statistics(self, label, present, timeout=60,
+                                  interval=3):
+        """Poll the reference join query's plan until it shows (or stops
+        showing) statistics-derived operators, instead of asserting on the
+        very first compile after ANALYZE.
+
+        Measured 2026-10-07: on a freshly rebalanced-in CBAS node, ANALYZE
+        COLLECTION reports success immediately, but the very next compile
+        on the node serving the request can still miss the new (or
+        dropped) statistics for a few seconds - a gap not seen on a
+        long-lived cluster (e.g. my-nodes.ini), where the next compile
+        already reflects it. An unclassifiable plan (neither shape) still
+        fails immediately via _plan_uses_statistics - that means the
+        marker set itself no longer matches the optimizer's output, which
+        retrying cannot fix.
+        """
+        deadline = time.time() + timeout
+        response = None
+        while True:
+            response = self._multi_statement(
+                CBO_JOIN_QUERY, multi_statement=None,
+                extra_params=PLAN_DEBUG_PARAMS)
+            if self._plan_uses_statistics(
+                    response.get("plans"), label) == present:
+                return response
+            if time.time() >= deadline:
+                return response
+            time.sleep(interval)
 
     def _plan_uses_statistics(self, plans, label):
         """Classify a plan as statistics-present or statistics-absent.
@@ -2005,9 +2145,8 @@ class MultiStatementRequests(ColumnarOnPremBase):
             "analyze collection cbo.big drop statistics; "
             "analyze collection cbo.small drop statistics;",
             multi_statement=True, http_timeout=180)
-        response = self._multi_statement(
-            CBO_JOIN_QUERY, multi_statement=None,
-            extra_params=PLAN_DEBUG_PARAMS)
+        response = self._wait_for_plan_statistics(
+            "no-statistics reference", present=False)
         self.assertFalse(
             self._plan_uses_statistics(
                 response.get("plans"), "no-statistics reference"),
@@ -2018,9 +2157,8 @@ class MultiStatementRequests(ColumnarOnPremBase):
         self._multi_statement(
             "analyze collection cbo.big; analyze collection cbo.small;",
             multi_statement=True, http_timeout=180)
-        response = self._multi_statement(
-            CBO_JOIN_QUERY, multi_statement=None,
-            extra_params=PLAN_DEBUG_PARAMS)
+        response = self._wait_for_plan_statistics(
+            "statistics-present reference", present=True)
         self.assertTrue(
             self._plan_uses_statistics(
                 response.get("plans"), "statistics-present reference"),

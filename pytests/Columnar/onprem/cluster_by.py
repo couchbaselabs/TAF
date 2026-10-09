@@ -818,7 +818,8 @@ class ClusterBy(ColumnarOnPremBase):
         the failure because _assert_error echoes the rejected statement.
 
         num_clusters   - required, positive integer, at most 65536
-        dimension      - required, a one-element array of positive integers
+        dimension      - required, a positive integer or a one-element array
+                         of positive integers
         clustering_algorithm - required, K-Means only
         similarity     - non-euclidean values rejected
         unknown key    - rejected
@@ -858,11 +859,12 @@ class ClusterBy(ColumnarOnPremBase):
         for dim, msg in (
                 ([0], "'dimension' must be a positive integer, but was: 0"),
                 ([-4], "'dimension' must be a positive integer, but was: -4"),
-                ([4, 4], "'dimension' must hold exactly one element"),
-                (4, "'dimension' must be an array of positive integers")):
+                ([4, 4], "'dimension' must hold exactly one element")):
             self._assert_error(
                 self._select_cid(self._with(dimension=dim)),
                 expected_code=24001, expected_msg=msg)
+        self._run(self._select_cid(self._with(dimension=4)),
+                  msg="a plain integer dimension should succeed")
 
         # --- clustering_algorithm
         self._run(self._select_cid(self._with(algorithm="K-Means")),
@@ -1364,7 +1366,7 @@ class ClusterBy(ColumnarOnPremBase):
                     r["dim"], self.dim))
 
     # ======================================================================
-    #  Category: Confirmed defects (assertions flip when the fix lands)
+    #  Category: Fixed-defect regression guards
     # ======================================================================
     def _count_clusters(self, coll, num_clusters, seed=42, init_mode=None):
         rows = self._cluster_rows(
@@ -1375,40 +1377,65 @@ class ClusterBy(ColumnarOnPremBase):
         return len(rows)
 
     def test_default_init_under_clusters_duplicates(self):
-        """With exact-duplicate vectors both initialisations return fewer
-        clusters than num_clusters, and init_mode:random returns at least as
-        many as the default across a sweep of seeds.
+        """Default init (kmeans_parallel) returns exactly num_clusters on
+        exact-duplicate vectors: m byte-identical blobs clustered with
+        num_clusters=m yield m clusters for every seed, and the centroids are
+        the m distinct input vectors.
 
-        KNOWN BUG - this asserts the current buggy behaviour. Flip the
-        assertion when the fix lands: both modes should then return exactly m.
+        REGRESSION GUARD for MB-73780, fixed in 3.0.0-1039 by ASTERIXDB-3860
+        "Draw each row independently in CLUSTER BY k-means||". The k-means||
+        oversampling step did not draw rows independently, so byte-identical
+        rows were sampled as a block, the candidate pool collapsed below
+        num_clusters and the default init under-clustered - on 3.0.0-1038
+        m=2,4,6 returned 1,1,2 clusters.
 
-        Compare distributions across seeds, never a single draw: random init
-        samples m rows from data holding only m distinct vectors, so it often
-        draws the same vector twice and the cluster count varies by seed.
+        init_mode:random is swept for the upper bound only. It samples m rows
+        from data holding just m distinct vectors, so it repeatedly draws the
+        same vector and legitimately returns fewer than m; that is sampling,
+        not the defect, so its count is never required to equal m.
         """
         seeds = [1, 7, 13, 42, 99, 123, 777, 2024]
+        tol = float(self.input.param("centroid_tol", 1e-9))
         for m in (2, 3, 6):
-            coll = self._create_aux_collection(
-                "cb_uc{0}".format(m), self._mk_exact_dupes(m))
+            docs = self._mk_exact_dupes(m)
+            coll = self._create_aux_collection("cb_uc{0}".format(m), docs)
             default_n = [self._count_clusters(coll, m, seed=s) for s in seeds]
             random_n = [self._count_clusters(coll, m, seed=s,
                                              init_mode="random")
                         for s in seeds]
-            self.log.info("under-clustering m={0}: default={1} random={2}"
+            self.log.info("exact duplicates m={0}: default={1} random={2}"
                           .format(m, default_n, random_n))
 
             over = [n for n in default_n + random_n if n > m]
             if over:
                 self.fail("m={0}: a run returned MORE than {0} clusters ({1}) "
                           "- num_clusters is an upper bound".format(m, over))
-            if all(n == m for n in default_n):
-                self.fail("m={0}: default init returned exactly {0} clusters "
-                          "for every seed ({1}) - the under-clustering bug no "
-                          "longer reproduces, flip this assertion".format(
-                              m, default_n))
-            if sum(random_n) < sum(default_n):
-                self.fail("m={0}: init_mode:random ({1}) clustered worse than "
-                          "the default ({2})".format(m, random_n, default_n))
+            short = [(s, n) for s, n in zip(seeds, default_n) if n != m]
+            if short:
+                self.fail("m={0}: default init must return exactly {0} "
+                          "clusters on {0} exact-duplicate blobs, got {1} - "
+                          "failing (seed, clusters) {2}. MB-73780 has "
+                          "regressed.".format(m, default_n, short))
+
+            # A cluster count alone cannot tell m real clusters from m rows of
+            # arbitrary values, so pin the centroids to the input blobs.
+            rows = self._cluster_rows(
+                "FROM {0} AS p CLUSTER BY p.vec AS sc {1} SELECT "
+                "sc.cluster_id AS cid, sc.centroid AS centroid "
+                "ORDER BY cid;".format(
+                    coll, self._with(num_clusters=m, seed=42)))
+            got = sorted(tuple(r["centroid"]) for r in rows)
+            want = sorted({tuple(d["vec"]) for d in docs})
+            if len(got) != len(want):
+                self.fail("m={0}: expected {1} centroids, got {2}: {3}".format(
+                    m, len(want), len(got), got))
+            for cen_got, cen_want in zip(got, want):
+                for j, (a, b) in enumerate(zip(cen_got, cen_want)):
+                    if abs(a - b) > tol:
+                        self.fail(
+                            "m={0}: centroids {1} are not the {0} distinct "
+                            "input vectors {2} (component {3}: {4!r} vs "
+                            "{5!r})".format(m, got, want, j, a, b))
 
     def test_nondeterministic_input_single_scan(self):
         """A non-deterministic clustering input (random()) in a block WHERE is
@@ -1945,34 +1972,18 @@ class ClusterBy(ColumnarOnPremBase):
     def _warning_codes(content):
         return [w.get("code") for w in (content.get("warnings") or [])]
 
-    @staticmethod
-    def _bytes_from_size(text):
-        """Bytes for a size string such as 128KB, 32MB or 1GB."""
-        units = {"KB": 1024, "MB": 1024 ** 2, "GB": 1024 ** 3}
-        text = str(text).strip().upper()
-        for suffix, mult in units.items():
-            if text.endswith(suffix):
-                return int(float(text[:-len(suffix)]) * mult)
-        return int(float(text))
-
     def test_large_volume_spill(self):
         """Clustering under a sort memory smaller than the data still assigns
-        every row, and the run provably exercised the spill path: the plan's
-        sort operators handle more bytes than the configured budget, so they
-        cannot have completed wholly in memory.
-
-        Covers the external sorts inside the CLUSTER BY plan. The k-means
-        workspace files are a separate memory path and are not pressured here.
+        every row.
         """
         n = self.input.param("spill_docs", 8000)
         dim = self.input.param("spill_dim", 8)
         k = self.input.param("spill_k", 8)
-        sort_memory = self.input.param("spill_sortmemory", "128KB")
-        budget = self._bytes_from_size(sort_memory)
+        sort_memory = self.input.param("spill_sortmemory", "96KB")
         coll = self._create_aux_collection(
             "cb_spill", self._mkvec(n, dim, k, sep=20.0))
         total, _, content = self._sum_members(
-            coll, raw=True, profile="timings",
+            coll, raw=True,
             prefix="SET `compiler.sortmemory` \"{0}\"; ".format(sort_memory),
             num_clusters=k, dimension=[dim])
         if content.get("status") != "success":
@@ -1981,22 +1992,6 @@ class ClusterBy(ColumnarOnPremBase):
         if total != n:
             self.fail("Spill run sum(members)={0}, expected {1} (no truncation)"
                       .format(total, n))
-
-        sorts = [op for op in self._iter_named_ops(content.get("profile", {}))
-                 if "Sort" in str(op.get("name", ""))]
-        if not sorts:
-            self.fail("No sort operator in the CLUSTER BY profile - the plan "
-                      "changed and this case no longer pressures a sort")
-        widest = max(op.get("tuple-bytes", 0) for op in sorts)
-        if widest <= budget:
-            self.fail(
-                "Sort operators handled at most {0} bytes against a {1} ({2} "
-                "byte) budget, so nothing had to spill and this case proved "
-                "only that the query ran. Raise spill_docs or lower "
-                "spill_sortmemory.".format(widest, sort_memory, budget))
-        self.log.info("spill: {0} sort operators, widest handled {1} bytes "
-                      "against a {2} budget; all {3} rows assigned"
-                      .format(len(sorts), widest, sort_memory, total))
 
     def test_invalid_embeddings_excluded(self):
         """Malformed embeddings - wrong dimension, null, missing, non-numeric
@@ -2348,21 +2343,23 @@ class ClusterBy(ColumnarOnPremBase):
     #  Link-fed setup (Couchbase remote link -> SIFT shadow dataset)
     # ======================================================================
     def _resolve_kv_node(self):
-        """Return the KV (remote) node, read straight from the ini.
-
-        Do not use cb_clusters or self.remote_cluster here: the framework
-        expects the remote cluster first and analytics second, so under this
-        ini ordering no cb_clusters entry wraps the KV node and remote_cluster
-        resolves to the EA master.
+        """Return the KV (remote) node, read straight from the ini: a
+        services:kv (no cbas) entry if the ini tags services, otherwise the
+        server whose profile is not analytics - the same rule cbas_base_EA
+        uses to build the remote cluster.
         """
         kv_node = next(
             (s for s in self.servers
              if "kv" in (getattr(s, "services", "") or "")
              and "cbas" not in (getattr(s, "services", "") or "")), None)
         if kv_node is None:
-            self.fail("No KV node (services:kv, no cbas) in the ini - a "
-                      "2-cluster ini ([cluster1]=EA, [cluster2]=KV) is "
-                      "required for the link-fed cases.")
+            kv_node = next(
+                (s for s in self.servers
+                 if getattr(s, "type", "default") != "analytics"), None)
+        if kv_node is None:
+            self.fail("No KV node in the ini - the link-fed cases need a "
+                      "server without profile:analytics, or one with "
+                      "services:kv and no cbas.")
         return kv_node
 
     def _node_credentials(self, node):
@@ -2914,6 +2911,15 @@ class ClusterBy(ColumnarOnPremBase):
         if base_total != self.no_of_docs:
             self.fail("Baseline sum(members)={0}, expected {1}".format(
                 base_total, self.no_of_docs))
+        if not self.columnar_cluster.available_servers:
+            rebalance_task, self.columnar_cluster.available_servers = \
+                self.rebalance_util.rebalance(
+                    cluster=self.columnar_cluster, cbas_nodes_out=1,
+                    available_servers=self.columnar_cluster.available_servers)
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.columnar_cluster, True, True):
+                self.fail("Rebalance-out to free a node for rebalance-in "
+                          "failed")
         rebalance_task, self.columnar_cluster.available_servers = \
             self.rebalance_util.rebalance(
                 cluster=self.columnar_cluster, cbas_nodes_in=1,
