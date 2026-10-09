@@ -1152,7 +1152,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.log.info("Volume Test Run Complete")
         self.mutations = False
-        self.doc_loading_tm.abortAllTasks()
+        self.doc_loading_tm.abort_all_tasks()
 
     def ClusterOpsVolume(self):
         self.loop = 1

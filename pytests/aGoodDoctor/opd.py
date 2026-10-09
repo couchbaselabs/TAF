@@ -740,7 +740,7 @@ class OPD:
                 result = self.check_coredump_exist(nodes)
                 if result:
                     self.task_manager.abort_all_tasks()
-                    self.doc_loading_tm.abortAllTasks()
+                    self.doc_loading_tm.abort_all_tasks()
                     self.assertFalse(
                         result,
                         "CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -749,7 +749,7 @@ class OPD:
                 result = self.check_coredump_exist(nodes)
                 if result:
                     self.task_manager.abort_all_tasks()
-                    self.doc_loading_tm.abortAllTasks()
+                    self.doc_loading_tm.abort_all_tasks()
                     self.assertFalse(
                         result,
                         "CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -862,7 +862,7 @@ class OPD:
         if result:
             self.stop_crash = True
             self.task_manager.abort_all_tasks()
-            self.doc_loading_tm.abortAllTasks()
+            self.doc_loading_tm.abort_all_tasks()
             self.assertFalse(
                 result,
                 "CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -881,7 +881,7 @@ class OPD:
             if not result:
                 self.stop_crash = True
                 self.task_manager.abort_all_tasks()
-                self.doc_loading_tm.abortAllTasks()
+                self.doc_loading_tm.abort_all_tasks()
                 self.assertTrue(result, "Warm-up failed in %s seconds"
                                 % (self.wait_timeout * 20))
             else:
@@ -1749,7 +1749,7 @@ class OPD:
             if result:
                 self.stop_crash = True
                 self.task_manager.abort_all_tasks()
-                self.doc_loading_tm.abortAllTasks()
+                self.doc_loading_tm.abort_all_tasks()
                 self.assertFalse(
                     result,
                     "CRASH | CRITICAL | WARN messages found in cb_logs")
