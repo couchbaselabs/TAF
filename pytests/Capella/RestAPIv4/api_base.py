@@ -1864,7 +1864,7 @@ class APIBase(CouchbaseBaseTest):
         self.log.error("Resource didn't deploy within half an hour.")
         return False
 
-    def collect_cluster_logs(self, cluster_id, timeout=600, poll_interval=10,
+    def collect_cluster_logs(self, cluster_id, timeout=1200, poll_interval=10,
                              max_poll_errors=6):
         """Collects dp-agent and Couchbase Server logs for a cluster when collect_logs=True; best effort, never fails the test."""
         if not self.input.param("collect_logs", False) or not cluster_id:
@@ -1928,36 +1928,41 @@ class APIBase(CouchbaseBaseTest):
                     self.log.warning("Failed to trigger server log collection for cluster {}: {}".format(
                         cluster_id, describe(resp)))
                     return
+            # Each node is judged on its own: uploaded is OK with its link whatever happened overall, anything else FAILED with its last status.
+            per_node = {}
+
+            def node_rows(reason):
+                for node, info in per_node.items():
+                    uploaded = info.get("status") == "uploaded" and info.get("url")
+                    self._record_collected_log(cluster_id, step, "server", node, "OK" if uploaded else "FAILED",
+                                               info.get("url") if uploaded else "",
+                                               "" if uploaded else 'node status "{}": {}'.format(info.get("status"), reason))
+                    self.log.info("Server logs for cluster {} node {}: {} ({})".format(
+                        cluster_id, node, info.get("url"), info.get("status")))
+                if not per_node:
+                    self._record_collected_log(cluster_id, step, "server", "", "FAILED", "", reason)
+
             end_time = time.time() + timeout
             poll_errors = 0
-            while time.time() < end_time:
+            while True:
                 resp = get_tasks()
                 ok = resp is not None and resp.status_code == 200
                 poll_errors = 0 if ok else poll_errors + 1
                 tasks = resp.json() if ok else []
                 task = tasks[0] if tasks else {}
+                # The API returns "PerNode"; accept either casing.
+                per_node = task.get("PerNode") or task.get("perNode") or per_node
                 if task.get("status") in ("completed", "failed", "cancelled"):
-                    # The API returns "PerNode"; accept either casing.
-                    per_node = task.get("PerNode") or task.get("perNode") or {}
-                    for node, info in per_node.items():
-                        uploaded = task.get("status") == "completed" and info.get("status") == "uploaded"
-                        self._record_collected_log(cluster_id, step, "server", node, "OK" if uploaded else "FAILED",
-                                                   info.get("url") or "",
-                                                   "" if uploaded else "node status {}".format(info.get("status")))
-                        self.log.info("Server logs for cluster {} node {}: {} ({})".format(
-                            cluster_id, node, info.get("url"), info.get("status")))
-                    if not per_node:
-                        self._record_collected_log(cluster_id, step, "server", "", "FAILED", "",
-                                                   "collection {} with no node uploads".format(task.get("status")))
+                    node_rows("collection {}".format(task.get("status")))
                     return
                 if poll_errors >= max_poll_errors:
-                    self._record_collected_log(cluster_id, step, "server", "", "FAILED", "",
-                                               "giving up after {} failed status checks: {}".format(
-                                                   poll_errors, describe(resp)))
+                    node_rows("giving up after {} failed status checks: {}".format(poll_errors, describe(resp)))
                     self.log.warning("Giving up on server log collection for cluster {}".format(cluster_id))
                     return
+                if time.time() >= end_time:
+                    break
                 time.sleep(poll_interval)
-            self._record_collected_log(cluster_id, step, "server", "", "FAILED", "", "timed out")
+            node_rows("timed out after {} minutes".format(timeout // 60))
             self.log.warning("Timed out waiting for server log collection on cluster {}".format(cluster_id))
 
         def safe(fn, log_type):
