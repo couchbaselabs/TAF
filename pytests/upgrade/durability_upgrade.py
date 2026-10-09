@@ -1398,7 +1398,7 @@ class UpgradeTests(UpgradeBase):
         vb_dict = self.vb_dict_list1[bucket.name]
 
         mismatch_count = 0
-        for vb_no in range(1024):
+        for vb_no in range(bucket.numVBuckets):
             mismatch = 0
             # Verifying active vbuckets
             vb_active_seq = vb_dict[vb_no]['active']['high_seqno']
@@ -1424,7 +1424,8 @@ class UpgradeTests(UpgradeBase):
                 mismatch_count))
         else:
             self.log.info(
-                "History start sequence numbers verified for all 1024 vbuckets")
+                "History start sequence numbers verified for all {0} vbuckets".format(
+                    bucket.numVBuckets))
 
     def _enable_continuous_backup_and_capture_initial_state(self):
         """
