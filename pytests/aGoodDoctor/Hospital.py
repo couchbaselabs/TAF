@@ -1544,14 +1544,15 @@ class Murphy(BaseTestCase, OPD):
                 self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
                 std = self.std_vbucket_dist or 1.0
 
-                prev_failover_stats = self.bucket_util.get_failovers_logs(
-                    nodes, self.cluster.buckets)
+                if service == "kv":
+                    prev_failover_stats = self.bucket_util.get_failovers_logs(
+                        nodes, self.cluster.buckets)
 
-                disk_replica_dataset, disk_active_dataset = self.bucket_util.\
-                    get_and_compare_active_replica_data_set_all(
-                        self.cluster.kv_nodes,
-                        self.cluster.buckets,
-                        path=None)
+                    disk_replica_dataset, disk_active_dataset = self.bucket_util.\
+                        get_and_compare_active_replica_data_set_all(
+                            self.cluster.kv_nodes,
+                            self.cluster.buckets,
+                            path=None)
 
                 self.rest = RestConnection(self.cluster.master)
                 self.nodes = self.cluster_util.get_nodes(self.cluster.master)
@@ -1585,22 +1586,23 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
-                self.bucket_util.compare_failovers_logs(
-                    self.cluster,
-                    prev_failover_stats,
-                    nodes,
-                    self.cluster.buckets)
+                if service == "kv":
+                    self.bucket_util.compare_failovers_logs(
+                        self.cluster,
+                        prev_failover_stats,
+                        nodes,
+                        self.cluster.buckets)
 
-                self.bucket_util.data_analysis_active_replica_all(
-                    disk_active_dataset, disk_replica_dataset,
-                    self.cluster.kv_nodes,
-                    self.cluster.buckets, path=None)
-                self.bucket_util.vb_distribution_analysis(
-                    self.cluster,
-                    servers=self.cluster.kv_nodes,
-                    buckets=self.cluster.buckets,
-                    num_replicas=self.num_replicas,
-                    std=std)
+                    self.bucket_util.data_analysis_active_replica_all(
+                        disk_active_dataset, disk_replica_dataset,
+                        self.cluster.kv_nodes,
+                        self.cluster.buckets, path=None)
+                    self.bucket_util.vb_distribution_analysis(
+                        self.cluster,
+                        servers=self.cluster.kv_nodes,
+                        buckets=self.cluster.buckets,
+                        num_replicas=self.num_replicas,
+                        std=std)
 
                 # Take incremental backup and record timestamp for PITR
                 self.traditional_backup_and_record_timestamp_for_continuous_backup()
