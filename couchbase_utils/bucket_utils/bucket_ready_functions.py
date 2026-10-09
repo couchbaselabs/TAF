@@ -44,7 +44,6 @@ from Jython_tasks.task import \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
-from capella_utils.dedicated import CapellaUtils as DedicatedCapellaUtils
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.security.security_api import SecurityRestAPI
@@ -53,7 +52,6 @@ from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from common_lib import sleep, humanbytes, IDENTIFIER_TOKEN
-from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
     DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
@@ -2849,23 +2847,15 @@ class BucketUtils(ScopeUtils):
             if encryption_at_rest_dek_lifetime is not None:
                 bucket_obj.encryptionAtRestDekLifetime = encryption_at_rest_dek_lifetime
 
-        if cluster.type == "dedicated":
-            bucket_params = {
-                CloudCluster.Bucket.name: bucket_obj.name,
-                CloudCluster.Bucket.conflictResolutionType:
-                    conflict_resolution,
-                CloudCluster.Bucket.ramQuotaMB: bucket_obj.ramQuotaMB,
-                CloudCluster.Bucket.flushEnabled:
-                    True if bucket_obj.flushEnabled else False,
-                CloudCluster.Bucket.replicaNumber: bucket_obj.replicaNumber,
-                CloudCluster.Bucket.durabilityMinLevel:
-                    bucket_obj.durabilityMinLevel,
-                CloudCluster.Bucket.maxTTL:
-                    {"unit": "seconds", "value": bucket_obj.maxTTL}
-            }
-            DedicatedCapellaUtils.create_bucket(cluster, bucket_params)
-            cluster.buckets.append(bucket_obj)
-        elif cluster.type == "serverless":
+        # POC-NOTE (remove later)
+        # WHY: the old "if dedicated" shortcut was removed from here (it
+        #      picked 7 settings, called Capella, dropped the rest silently,
+        #      only for this one helper). Dedicated clusters now take the
+        #      normal path below like on-prem
+        # CAME FROM: test setUp -> ClusterSetup.create_bucket -> here
+        # DOES: dedicated -> normal path -> BucketCreateTask
+        #      -> BucketHelper(master) = CapellaBucketHelper -> Capella API
+        if cluster.type == "serverless":
             task = self.async_create_database(cluster, bucket_obj)
             self.task_manager.get_task_result(task)
         else:

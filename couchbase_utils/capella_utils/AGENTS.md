@@ -19,6 +19,7 @@ Provides API wrappers and helpers for Capella-specific operations.
 | `serverless.py` | Utilities for serverless deployments |
 | `columnar.py` | Utilities for columnar analytics on Capella |
 | `common_utils.py` | Shared utilities for all Capella environments |
+| `dedicated_rest/` | Capella variants of on-prem REST classes (BucketHelper, ClusterRestAPI) - see [AGENTS.md](dedicated_rest/AGENTS.md) |
 
 ## Key Classes
 

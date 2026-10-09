@@ -180,6 +180,19 @@ status, content, _ = self.request(api, self.POST, params=params)
 If you see any forbidden import in a file under this module, flag it to the user
 before proceeding and replace it with the `self.request()` pattern.
 
+## Deployment Variants (`CBRestConnection.__new__`)
+
+When a REST class is constructed for a server with `type == "dedicated"`,
+`CBRestConnection.__new__` builds its Capella variant (a subclass) instead,
+using the map in `CBRestConnection.capella_variant()`. Call sites stay
+unchanged; other server types are not affected.
+
+- Variants live **outside** this module (they contain logic):
+  `capella_utils/dedicated_rest/` - see its AGENTS.md.
+- The map is hardcoded for now (POC) and imports the Capella classes
+  inside the method to avoid a circular import. To be made dynamic so
+  this module does not reference Capella classes.
+
 ## Anti-Patterns
 
 - **Do not add to `RestConnection`** — it is the legacy class being phased out.

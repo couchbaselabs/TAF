@@ -15,6 +15,52 @@ class CBRestConnection(object):
     PUT = "PUT"
     PATCH = "PATCH"
 
+    # POC-NOTE (remove later)
+    # WHY: Earlier, Capella handling was an "if cluster.type == dedicated"
+    #      inside helpers (eg: create_default_bucket). We moved that check
+    #      here, to the moment a REST object is created, so call sites
+    #      do not change.
+    # CAME FROM: any code doing BucketHelper(node) / ClusterRestAPI(node)
+    #      eg: test -> create_bucket -> BucketCreateTask.call()
+    #          -> BucketHelper(self.server)  -> lands here first
+    # DOES: Capella node (type == "dedicated") -> build the Capella class
+    #      from capella_variant(). Any other node -> same class as asked
+    def __new__(cls, *args, **kwargs):
+        server = args[0] if args else kwargs.get("server")
+        if getattr(server, "type", None) == "dedicated":
+            cls = CBRestConnection.capella_variant(cls)
+        return super(CBRestConnection, cls).__new__(cls)
+
+    # POC-NOTE (remove later)
+    # WHY: the "on-prem class -> Capella class" map
+    # NOTE: hardcoded for the POC. To be replaced with a more dynamic way
+    #      (so this REST module does not need to know Capella classes)
+    # DOES: requested class (or a parent of it) is in the map -> Capella
+    #      class. Not in the map -> same class (keeps talking to the node)
+    @staticmethod
+    def capella_variant(cls):
+        # Imported here, not at file top, to avoid a circular import:
+        # the Capella classes themselves import BucketHelper/ClusterRestAPI
+        from BucketLib.BucketOperations_Rest import BucketHelper
+        from cb_server_rest_util.cluster_nodes.cluster_nodes_api import \
+            ClusterRestAPI
+        from capella_utils.dedicated_rest.bucket_helper import \
+            CapellaBucketHelper
+        from capella_utils.dedicated_rest.cluster_rest import \
+            CapellaClusterRestAPI
+
+        capella_map = {
+            BucketHelper: CapellaBucketHelper,
+            ClusterRestAPI: CapellaClusterRestAPI,
+        }
+        for base in cls.__mro__:
+            capella_cls = capella_map.get(base)
+            if capella_cls is not None:
+                # Only swap if the Capella class is a child of what was
+                # asked for (eg: not for CapellaBucketHelper itself)
+                return capella_cls if issubclass(capella_cls, cls) else cls
+        return cls
+
     @staticmethod
     def get_auth(headers):
         key = 'Authorization'

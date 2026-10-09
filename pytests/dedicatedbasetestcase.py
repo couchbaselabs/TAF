@@ -13,6 +13,7 @@ from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
 from capella_utils.dedicated import CapellaUtils
 from capella_utils.common_utils import Pod, Tenant
+from capella_utils.dedicated_rest.context import CapellaContext
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from constants.cloud_constants.capella_constants import AWS, Cluster, AZURE, GCP
@@ -378,6 +379,14 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                     tenant.xdcr_clusters.append(xdcr)
                     tenant.clusters.remove(xdcr)
 
+            # POC-NOTE (remove later)
+            # WHY: tests (and ClusterSetup.setUp) use self.cluster, but the
+            #      Capella base never set it, so ClusterSetup.setUp crashed
+            #      with AttributeError on print_cluster_stats(self.cluster)
+            # CAME FROM: found on first sbx-28 run of basic_ops
+            # DOES: same as on-prem: self.cluster = first (non-XDCR) cluster
+            self.cluster = self.tenants[0].clusters[0]
+
             self.cluster_util = ClusterUtils(self.task_manager)
             self.bucket_util = BucketUtils(self.cluster_util, self.task)
             # Setting global_vars for future reference
@@ -502,6 +511,13 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         cluster.cluster_config = service_config
         cluster.pod = self.pod
         cluster.type = "dedicated"
+        # POC-NOTE (remove later)
+        # WHY: give every Capella node its "ID card" (pod/tenant/cluster) so
+        #      BucketHelper(cluster.master) etc can call the Capella API
+        # CAME FROM: setUp -> deploy new cluster or reuse "clusters=" id
+        #      -> __populate_cluster_info (here, where nodes are built)
+        # DOES: sets node.capella on every node
+        CapellaContext.attach(nodes, self.pod, tenant, cluster)
 
         for temp_server in nodes:
             cluster.nodes_in_cluster.append(temp_server)

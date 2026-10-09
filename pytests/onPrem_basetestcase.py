@@ -13,8 +13,6 @@ from importlib import reload
 import global_vars
 import cb_constants
 from BucketLib.bucket import Bucket
-from SystemEventLogLib.Events import Event
-from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_constants.ClusterRun import ClusterRun
@@ -47,7 +45,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Framework specific parameters (Extension from cb_basetest)
         self.skip_cluster_reset = self.input.param("skip_cluster_reset", True)
-        self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
         # End of framework parameters
 
         # Cluster level info settings
@@ -64,7 +61,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.num_servers = self.input.param("servers", len(self.servers))
         self.server_groups = self.input.param("server_groups",
                                               CbServer.default_server_group)
-        self.vbuckets = self.input.param("vbuckets", None)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # Memory quota settings
         # Max memory quota to utilize per node
@@ -95,10 +91,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.disable_file_based_rebalance = \
             self.input.param("disable_file_based_rebalance", False)
         # End of cluster info parameters
-
-        self.bucket_replica_index = self.input.param("bucket_replica_index", 1)
-        self.bucket_num_vb = self.input.param("bucket_num_vb", None)
-        # End of bucket parameters
 
         self.services_in = self.input.param("services_in", None)
         self.forceEject = self.input.param("forceEject", False)
@@ -1994,80 +1986,3 @@ class ClusterSetup(OnPremBaseTest):
         # Used to track spare nodes.
         # Test case can use this for further rebalance
         self.spare_nodes = self.servers[self.nodes_init:]
-
-    def create_bucket(self, cluster, bucket_name="default"):
-        create_bucket_params = {
-            "cluster": cluster,
-            "bucket_type": self.bucket_type,
-            "ram_quota": self.bucket_size,
-            "replica": self.num_replicas,
-            "maxTTL": self.bucket_ttl,
-            "bucket_rank": self.bucket_rank,
-            "compression_mode": self.compression_mode,
-            "wait_for_warmup": True,
-            "conflict_resolution": Bucket.ConflictResolution.SEQ_NO,
-            "replica_index": self.bucket_replica_index,
-            "storage": self.bucket_storage,
-            "eviction_policy": self.bucket_eviction_policy,
-            "flush_enabled": self.flush_enabled,
-            "bucket_durability": self.bucket_durability_level,
-            "purge_interval": self.bucket_purge_interval,
-            "autoCompactionDefined": "false",
-            "fragmentation_percentage": 50,
-            "bucket_name": bucket_name,
-            "width": self.bucket_width,
-            "weight": self.bucket_weight,
-            "history_retention_collection_default": self.bucket_collection_history_retention_default,
-            "history_retention_seconds": self.bucket_dedup_retention_seconds,
-            "history_retention_bytes": self.bucket_dedup_retention_bytes,
-            "magma_key_tree_data_block_size": self.magma_key_tree_data_block_size,
-            "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size,
-            "durability_impossible_fallback": self.durability_impossible_fallback,
-        }
-
-        if self.bucket_num_vb is not None:
-            create_bucket_params["vbuckets"] = self.bucket_num_vb
-
-        # Rate limiting feature values (EE-only; CE rejects these at creation)
-        if CbServer.enterprise_edition:
-            if self.bucket_throttle_reserved is not None:
-                create_bucket_params["throttle_reserved"] = self.bucket_throttle_reserved
-            if self.bucket_throttle_hard_limit is not None:
-                create_bucket_params["throttle_hard_limit"] = self.bucket_throttle_hard_limit
-
-        # This is needed because server will throw the error saying,
-        # "Support for variable number of vbuckets is not enabled"
-        if CbServer.cluster_profile == "serverless":
-            create_bucket_params["vbuckets"] = self.vbuckets
-
-        self.bucket_util.create_default_bucket(**create_bucket_params)
-
-        # Add bucket create event in system event log
-        if self.system_events.test_start_time is not None:
-            bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
-            eviction_policy_val = "full_eviction"
-            if self.bucket_eviction_policy \
-                    == Bucket.EvictionPolicy.VALUE_ONLY:
-                eviction_policy_val = "value_only"
-            elif self.bucket_eviction_policy \
-                    == Bucket.EvictionPolicy.NO_EVICTION:
-                eviction_policy_val = "no_eviction"
-            bucket_create_event = DataServiceEvents.bucket_create(
-                self.cluster.master.ip, self.bucket_type,
-                bucket.name, bucket.uuid,
-                {'compression_mode': self.compression_mode,
-                 'max_ttl': self.bucket_ttl,
-                 'storage_mode': self.bucket_storage,
-                 'conflict_resolution_type': Bucket.ConflictResolution.SEQ_NO,
-                 'eviction_policy': eviction_policy_val,
-                 'purge_interval': 'undefined',
-                 'durability_min_level': self.bucket_durability_level,
-                 'num_replicas': self.num_replicas})
-            if self.bucket_type == Bucket.Type.EPHEMERAL:
-                bucket_create_event[Event.Fields.EXTRA_ATTRS][
-                    'bucket_props']['storage_mode'] = Bucket.Type.EPHEMERAL
-                bucket_create_event[Event.Fields.EXTRA_ATTRS][
-                    'bucket_props'].pop('purge_interval', None)
-                bucket_create_event[Event.Fields.EXTRA_ATTRS][
-                    'bucket_props']['eviction_policy'] = "no_eviction"
-            self.system_events.add_event(bucket_create_event)

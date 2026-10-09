@@ -344,6 +344,14 @@ class UpgradeProvisionedCluster(Task):
         self.servers = DedicatedUtils.get_nodes(
             self.pod, self.tenant, self.cluster.id)
         nodes = list()
+        # POC-NOTE (remove later)
+        # WHY: after a scale / upgrade, TAF throws away the old node objects
+        #      and builds new ones. Without this, new nodes lose their
+        #      Capella "ID card" and Capella REST variants stop working
+        # CAME FROM: test -> cluster.async_rebalance (dedicated)
+        #      -> RebalanceTaskCapella.call (or UpgradeProvisionedCluster)
+        # DOES: copies node.capella from the current master to new nodes
+        capella_context = getattr(self.cluster.master, "capella", None)
         for server in self.servers:
             temp_server = TestInputServer()
             temp_server.ip = server.get("hostname")
@@ -355,6 +363,7 @@ class UpgradeProvisionedCluster(Task):
             temp_server.hosted_on_cloud = True
             temp_server.memcached_port = "11207"
             temp_server.type = "dedicated"
+            temp_server.capella = capella_context
             nodes.append(temp_server)
 
         self.cluster.refresh_object(nodes)
@@ -438,6 +447,14 @@ class RebalanceTaskCapella(Task):
             if self.servers:
                 break
         nodes = list()
+        # POC-NOTE (remove later)
+        # WHY: after a scale / upgrade, TAF throws away the old node objects
+        #      and builds new ones. Without this, new nodes lose their
+        #      Capella "ID card" and Capella REST variants stop working
+        # CAME FROM: test -> cluster.async_rebalance (dedicated)
+        #      -> RebalanceTaskCapella.call (or UpgradeProvisionedCluster)
+        # DOES: copies node.capella from the current master to new nodes
+        capella_context = getattr(self.cluster.master, "capella", None)
         for server in self.servers:
             temp_server = TestInputServer()
             temp_server.ip = server.get("hostname")
@@ -449,6 +466,7 @@ class RebalanceTaskCapella(Task):
             temp_server.hosted_on_cloud = True
             temp_server.memcached_port = "11207"
             temp_server.type = "dedicated"
+            temp_server.capella = capella_context
             nodes.append(temp_server)
 
         if self.servers:

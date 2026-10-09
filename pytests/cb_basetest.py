@@ -7,7 +7,8 @@ import global_vars
 from BucketLib.bucket import Bucket
 from cb_constants import CbServer
 from Jython_tasks.task_manager import TaskManager
-from SystemEventLogLib.Events import EventHelper
+from SystemEventLogLib.Events import Event, EventHelper
+from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
 from constants.sdk_constants.java_client import SDKConstants
 from common_lib import sleep, IDENTIFIER_TOKEN
@@ -109,6 +110,15 @@ class CouchbaseBaseTest(unittest.TestCase):
             self.input.param("bucket_throttle_hard_limit", None)
         self.bucket_throttle_reserved = \
             self.input.param("bucket_throttle_reserved", None)
+        # POC-NOTE (remove later)
+        # WHY: these were read only in onPrem_basetestcase, but tests (eg
+        #      basic_ops.setUp) and create_bucket() below need them on
+        #      Capella too
+        # CAME FROM: moved from OnPremBaseTest.setUp (same names/defaults)
+        self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
+        self.vbuckets = self.input.param("vbuckets", None)
+        self.bucket_replica_index = self.input.param("bucket_replica_index", 1)
+        self.bucket_num_vb = self.input.param("bucket_num_vb", None)
         # End of bucket params
 
         # Doc specific params
@@ -279,6 +289,94 @@ class CouchbaseBaseTest(unittest.TestCase):
 
     def get_clusters(self):
         return [self.cb_clusters[name] for name in self.cb_clusters.keys()]
+
+    # POC-NOTE (remove later)
+    # WHY: tests call self.create_bucket(cluster) (23 files, eg basic_ops
+    #      setUp). It existed only in on-prem ClusterSetup, so on Capella
+    #      the test crashed in setUp. Moved here unchanged so both on-prem
+    #      and Capella have the same one method
+    # CAME FROM: test setUp -> self.create_bucket(self.cluster)
+    # DOES: reads test params -> bucket_util.create_default_bucket(...)
+    #      -> ... -> BucketHelper(master): on-prem node -> node REST,
+    #      Capella node -> CapellaBucketHelper -> Capella API
+    #      System event part only runs on-prem (test_start_time is set
+    #      only by OnPremBaseTest.setUp)
+    def create_bucket(self, cluster, bucket_name="default"):
+        create_bucket_params = {
+            "cluster": cluster,
+            "bucket_type": self.bucket_type,
+            "ram_quota": self.bucket_size,
+            "replica": self.num_replicas,
+            "maxTTL": self.bucket_ttl,
+            "bucket_rank": self.bucket_rank,
+            "compression_mode": self.compression_mode,
+            "wait_for_warmup": True,
+            "conflict_resolution": Bucket.ConflictResolution.SEQ_NO,
+            "replica_index": self.bucket_replica_index,
+            "storage": self.bucket_storage,
+            "eviction_policy": self.bucket_eviction_policy,
+            "flush_enabled": self.flush_enabled,
+            "bucket_durability": self.bucket_durability_level,
+            "purge_interval": self.bucket_purge_interval,
+            "autoCompactionDefined": "false",
+            "fragmentation_percentage": 50,
+            "bucket_name": bucket_name,
+            "width": self.bucket_width,
+            "weight": self.bucket_weight,
+            "history_retention_collection_default": self.bucket_collection_history_retention_default,
+            "history_retention_seconds": self.bucket_dedup_retention_seconds,
+            "history_retention_bytes": self.bucket_dedup_retention_bytes,
+            "magma_key_tree_data_block_size": self.magma_key_tree_data_block_size,
+            "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size,
+            "durability_impossible_fallback": self.durability_impossible_fallback,
+        }
+
+        if self.bucket_num_vb is not None:
+            create_bucket_params["vbuckets"] = self.bucket_num_vb
+
+        # Rate limiting feature values (EE-only; CE rejects these at creation)
+        if CbServer.enterprise_edition:
+            if self.bucket_throttle_reserved is not None:
+                create_bucket_params["throttle_reserved"] = self.bucket_throttle_reserved
+            if self.bucket_throttle_hard_limit is not None:
+                create_bucket_params["throttle_hard_limit"] = self.bucket_throttle_hard_limit
+
+        # This is needed because server will throw the error saying,
+        # "Support for variable number of vbuckets is not enabled"
+        if CbServer.cluster_profile == "serverless":
+            create_bucket_params["vbuckets"] = self.vbuckets
+
+        self.bucket_util.create_default_bucket(**create_bucket_params)
+
+        # Add bucket create event in system event log
+        if self.system_events.test_start_time is not None:
+            bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+            eviction_policy_val = "full_eviction"
+            if self.bucket_eviction_policy \
+                    == Bucket.EvictionPolicy.VALUE_ONLY:
+                eviction_policy_val = "value_only"
+            elif self.bucket_eviction_policy \
+                    == Bucket.EvictionPolicy.NO_EVICTION:
+                eviction_policy_val = "no_eviction"
+            bucket_create_event = DataServiceEvents.bucket_create(
+                self.cluster.master.ip, self.bucket_type,
+                bucket.name, bucket.uuid,
+                {'compression_mode': self.compression_mode,
+                 'max_ttl': self.bucket_ttl,
+                 'storage_mode': self.bucket_storage,
+                 'conflict_resolution_type': Bucket.ConflictResolution.SEQ_NO,
+                 'eviction_policy': eviction_policy_val,
+                 'purge_interval': 'undefined',
+                 'durability_min_level': self.bucket_durability_level,
+                 'num_replicas': self.num_replicas})
+            if self.bucket_type == Bucket.Type.EPHEMERAL:
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props']['storage_mode'] = Bucket.Type.EPHEMERAL
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props'].pop('purge_interval', None)
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props']['eviction_policy'] = "no_eviction"
+            self.system_events.add_event(bucket_create_event)
 
     def get_task(self):
         return self.task
