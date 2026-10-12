@@ -605,16 +605,26 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("Polling CLUSTER: {}".format(
                 self.capella["clusters"]["cluster_id"]))
             start_time = time.time()
-            res,_ = self.validate_onoff_state(["healthy"])
+            # deploymentFailed is final too: still delete the cluster, there is just nothing to collect.
+            res,_ = self.validate_onoff_state(["healthy", "deploymentFailed"])
             while not res:
                 if time.time() > 1800 + start_time:
                     self.collect_cluster_logs(self.cluster_id)
                     self.fail("!!!...Cluster didn't stabilize within half an "
                               "hour...!!!")
-                res,_ = self.validate_onoff_state(["healthy"])
+                res,_ = self.validate_onoff_state(["healthy", "deploymentFailed"])
+            info = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id, self.cluster_id)
+            deployment_failed = info.status_code == 200 and \
+                info.json().get("currentState") == "deploymentFailed"
 
             # Collect server and dp-agent logs before anything below can fail the teardown (collect_logs=True).
-            self.collect_cluster_logs(self.cluster_id)
+            if deployment_failed:
+                self.skip_cluster_logs(
+                    self.cluster_id, "cluster never finished deploying "
+                    "(state deploymentFailed), so no node can answer")
+            else:
+                self.collect_cluster_logs(self.cluster_id)
 
             # Delete the app service if it was a part of the tests.
             if self.capella["clusters"]["app_id"] and not isinstance(
@@ -1678,6 +1688,11 @@ class APIBase(CouchbaseBaseTest):
                 return True, None
             return True, res.json()['cloudProvider']['cidr']
 
+        # deploymentFailed never recovers, so stop now rather than poll every test until the build times out.
+        if res.json()['currentState'] == "deploymentFailed":
+            self.fail("!!!...Resource is in deploymentFailed and will not "
+                      "reach {}...!!!".format(states))
+
         self.log.warning("Current State: '{}', Expected States: '{}'"
                          .format(res.json()["currentState"], states))
         return False, None
@@ -1976,6 +1991,14 @@ class APIBase(CouchbaseBaseTest):
         agent_thread.start()
         safe(collect_server_logs, "server")
         agent_thread.join(timeout + 60)
+
+    def skip_cluster_logs(self, cluster_id, reason):
+        """Lists a cluster with nothing to collect as SKIPPED with the reason when collect_logs=True."""
+        if not self.input.param("collect_logs", False) or not cluster_id:
+            return
+        for log_type in ("dp-agent", "server"):
+            self._record_collected_log(cluster_id, "before destroy", log_type, "", "SKIPPED", "", reason)
+        self.log.info("Skipping log collection for cluster {}: {}".format(cluster_id, reason))
 
     def _internal_support_token_env(self):
         """Name of the per-environment token variable the TAF Jenkins executors export, chosen from the pod URL."""
