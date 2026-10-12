@@ -49,3 +49,30 @@ class IPCUtils:
             headers={"Content-Type": "application/octet-stream"},
             timeout=timeout,
         )
+
+    @classmethod
+    def get_internal_settings(cls, server, auth=None, timeout=30):
+        """
+        GET /internalSettings. `auth` defaults to the server's admin
+        credentials; pass () to send none. Returns the requests.Response.
+        """
+        return requests.get(
+            cls._url(server, "/internalSettings"),
+            auth=cls._admin_auth(server) if auth is None else auth,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def post_internal_settings(cls, server, data, auth=None, timeout=30):
+        """
+        POST /internalSettings. `data` may be a dict or a raw form-encoded
+        string -- the raw form is how a body with a duplicated key is sent.
+        `auth` as for get_internal_settings. Returns the requests.Response.
+        """
+        return requests.post(
+            cls._url(server, "/internalSettings"),
+            auth=cls._admin_auth(server) if auth is None else auth,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=timeout,
+        )

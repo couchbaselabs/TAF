@@ -11,7 +11,8 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
-from couchbase_utils.security_utils.crl_utils import CRLUtils
+from couchbase_utils.security_utils.crl_utils import CRLUtils, \
+    get_audit_event
 from couchbase_utils.security_utils.ipc_utils import IPCUtils
 from pytests.onPrem_basetestcase import ClusterSetup
 from TestInput import TestInputSingleton
@@ -54,6 +55,8 @@ class IPCBase(ClusterSetup):
     IPC_CONFIG_KEY = "internal_identity_password_check_under_mtls"
 
     MGMT_SSL_PORT = 18091
+    AUDIT_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/current-audit.log"
+    INTERNAL_SETTINGS_AUDIT_ID = 8228
     KV_SSL_PORT = 11207
 
     def setUp(self):
@@ -113,15 +116,25 @@ class IPCBase(ClusterSetup):
 
     # -- The setting under test ---------------------------------------------
 
-    def get_ipc_setting(self):
+    def get_ipc_setting(self, server=None, auth=None):
         """
         Current value of internalIdentityPasswordCheckUnderMtls.
 
         Returns the server's own answer rather than a cached expectation: the
         default is version-derived, not written to config, so GET is the only
         honest source of truth for what the cluster is actually enforcing.
+
+        With `server`, asks that node directly over plain HTTP -- each node
+        serves the value from its own copy of the config. `auth` as for
+        IPCUtils.get_internal_settings.
         """
-        status, content = self.cluster_rest.set_internal_settings()
+        if server is None and auth is None:
+            status, content = self.cluster_rest.set_internal_settings()
+        else:
+            resp = IPCUtils.get_internal_settings(
+                server or self.cluster.master, auth=auth)
+            status = resp.status_code == 200
+            content = resp.json() if status else resp.text
         if not status:
             self.fail(f"GET /internalSettings failed: {content}")
         if self.IPC_SETTING not in content:
@@ -150,17 +163,111 @@ class IPCBase(ClusterSetup):
             )
         self.log.info(f"{self.IPC_SETTING} set to {enabled}")
 
-    def _ipc_key_in_config(self):
-        """True if the key is explicitly stored in ns_config, False if the
-        value GET reports is the compat-derived default."""
-        status, content = self.rest.diag_eval(
-            f"ns_config:search({self.IPC_CONFIG_KEY})."
-        )
+    def _diag_eval(self, code, server=None):
+        rest = RestConnection(server) if server else self.rest
+        status, content = rest.diag_eval(code)
         if not status:
-            self.fail(f"diag/eval ns_config:search failed: {content}")
+            self.fail(f"diag/eval {code!r} failed: {content}")
         if isinstance(content, bytes):
             content = content.decode()
-        return content.strip() != "false"
+        return content.strip()
+
+    def _ipc_key_in_config(self, server=None):
+        """True if the key is explicitly stored in ns_config, False if the
+        value GET reports is the compat-derived default."""
+        return self._diag_eval(
+            f"ns_config:search({self.IPC_CONFIG_KEY}).", server) != "false"
+
+    def delete_ipc_key(self, server=None):
+        """Remove the stored key so the compat-derived default applies."""
+        self._diag_eval(f"ns_config:delete({self.IPC_CONFIG_KEY}).", server)
+
+    def ipc_config_raw(self, server=None):
+        """
+        The key's raw config entry, vclock included. Equal before and after
+        a request proves the request wrote nothing -- the value alone cannot
+        show that, since a write of the same value leaves it unchanged.
+        """
+        return self._diag_eval(
+            f"ns_config:search_raw(ns_config:get(), {self.IPC_CONFIG_KEY}).",
+            server)
+
+    def wait_for_ipc_value(self, servers, expected, timeout=120):
+        """Poll every node until each reports `expected`."""
+        deadline = time.time() + timeout
+        while True:
+            seen = {s.ip: self.get_ipc_setting(server=s) for s in servers}
+            if all(v == expected for v in seen.values()):
+                return
+            if time.time() > deadline:
+                self.fail(f"{self.IPC_SETTING} did not converge to "
+                          f"{expected} within {timeout}s: {seen}")
+            time.sleep(2)
+
+    def assert_cert_enforcement(self, servers, cert_path, key_path, ipc,
+                                what=""):
+        """
+        The setting is not just reported but enforced on every node: the
+        internal certificate alone gets 401 with IPC on, 200 with it off.
+        """
+        expected = 401 if ipc else 200
+        for server in servers:
+            resp = self.mtls_request(cert_path, key_path, server=server)
+            self.assert_status(
+                resp, expected,
+                f"{what} cert alone on {server.ip} with ipc={ipc}")
+
+    def restart_nodes(self, servers):
+        """Stop every node, then start every node, then wait for each to
+        report healthy -- a full-cluster restart when given all nodes."""
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            try:
+                shell.stop_couchbase()
+            finally:
+                shell.disconnect()
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            try:
+                shell.start_couchbase()
+            finally:
+                shell.disconnect()
+        for server in servers:
+            if not RestConnection(server).is_ns_server_running(300):
+                self.fail(f"{server.ip} not healthy after restart")
+
+    def wait_for_internal_settings_audit(self, baseline, expected,
+                                         timeout=60):
+        """
+        Wait for a new 8228 'internal settings' audit event (one that is
+        not `baseline`) recording `expected` for this setting.
+        """
+        deadline = time.time() + timeout
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            while True:
+                event = get_audit_event(shell, self.AUDIT_LOG_PATH,
+                                        self.INTERNAL_SETTINGS_AUDIT_ID)
+                if event and event != baseline and \
+                        event.get("settings", {}).get(
+                            self.IPC_CONFIG_KEY) == expected:
+                    return event
+                if time.time() > deadline:
+                    self.fail(f"No new audit event "
+                              f"{self.INTERNAL_SETTINGS_AUDIT_ID} with "
+                              f"{self.IPC_CONFIG_KEY}={expected} within "
+                              f"{timeout}s. Last seen: {event}")
+                time.sleep(2)
+        finally:
+            shell.disconnect()
+
+    def latest_internal_settings_audit(self):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            return get_audit_event(shell, self.AUDIT_LOG_PATH,
+                                   self.INTERNAL_SETTINGS_AUDIT_ID)
+        finally:
+            shell.disconnect()
 
     def _restore_ipc_setting(self):
         """
@@ -179,11 +286,7 @@ class IPCBase(ClusterSetup):
                     f"Deleting {self.IPC_CONFIG_KEY} -- it was derived, not "
                     f"stored, at setUp"
                 )
-                status, content = self.rest.diag_eval(
-                    f"ns_config:delete({self.IPC_CONFIG_KEY})."
-                )
-                if not status:
-                    self.fail(f"diag/eval ns_config:delete failed: {content}")
+                self.delete_ipc_key()
             return
         current = self.get_ipc_setting()
         if current != self._original_ipc_state:
