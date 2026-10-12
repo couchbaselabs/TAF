@@ -1065,6 +1065,22 @@ class EC2Lib(AWSBase):
             self.logger.error(f"Error describing subnets {subnet_ids}: {e}")
             return []
 
+    def describe_asgs_by_name(self, asg_names: List[str]) -> List[Dict[str, Any]]:
+        """
+        Describe the given Auto Scaling Groups by name.
+
+        :param asg_names: ASG names (at most 100 per AWS call; batched here)
+        :return: List of ASG dicts; ASGs that no longer exist are omitted
+        """
+        asg_client = self.create_service_client(service_name="autoscaling", region=self.region)
+        asgs = []
+        names = list(asg_names)
+        for i in range(0, len(names), 100):
+            paginator = asg_client.get_paginator("describe_auto_scaling_groups")
+            for page in paginator.paginate(AutoScalingGroupNames=names[i:i + 100]):
+                asgs.extend(page.get("AutoScalingGroups", []))
+        return asgs
+
     def list_asgs(self, filters: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         List Auto Scaling Groups (ASGs) filtered by tags.

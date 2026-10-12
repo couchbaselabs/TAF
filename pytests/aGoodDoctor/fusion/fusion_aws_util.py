@@ -215,15 +215,50 @@ class FusionAWSUtil:
             self.log.info(f"{log}: \n" + str(table))
         return instances
 
+    def _log_accelerator_asgs(self, instances, log):
+        """Log a summary of the ASGs the given accelerator instances belong to:
+        desired/min/max capacity and how many of each ASG's instances are
+        InService, Pending or Terminating. Never raises."""
+        asg_names = sorted({tag.get('Value') for instance in instances
+                            for tag in instance.get('Tags', [])
+                            if tag.get('Key') == 'aws:autoscaling:groupName'})
+        if not asg_names:
+            return
+        try:
+            asgs = self.ec2.describe_asgs_by_name(asg_names)
+        except Exception as e:
+            self.log.warning(f"{log}: could not describe ASGs {asg_names}: {e}")
+            return
+        asg_table = PrettyTable()
+        asg_table.field_names = ["ASG", "Desired", "Min", "Max", "InService",
+                                 "Pending", "Terminating", "Other", "Created"]
+        for asg in asgs:
+            states = [i.get('LifecycleState', '') for i in asg.get('Instances', [])]
+            in_service = states.count('InService')
+            pending = sum(1 for st in states if st.startswith('Pending'))
+            terminating = sum(1 for st in states if st.startswith('Terminating'))
+            created = asg.get('CreatedTime')
+            asg_table.add_row([
+                asg.get('AutoScalingGroupName'),
+                asg.get('DesiredCapacity'), asg.get('MinSize'), asg.get('MaxSize'),
+                in_service, pending, terminating,
+                len(states) - in_service - pending - terminating,
+                created.strftime('%Y-%m-%d %H:%M:%S') if created else 'N/A'])
+        missing = set(asg_names) - {a.get('AutoScalingGroupName') for a in asgs}
+        for name in sorted(missing):
+            asg_table.add_row([name, 'deleted', '-', '-', '-', '-', '-', '-', '-'])
+        self.log.info(f"{log} ASGs: \n {asg_table}")
+
     def list_accelerator_instances(self, filters: list[dict[str, str]], log="Fusion Accelerator") -> list:
         """
         List and filter fusion accelerator instances by IOPS.
 
         Retrieves instances matching filters and returns only those with fusion accelerator
         instances (identified by FUSION_ACCELERATOR_IOPS = 16000). Logs detailed information
-        including instance count, and a warning listing any tagged instance that currently
-        has no guest volume at that IOPS attached (still launching, mid-detach, or winding
-        down after its volume was reclaimed).
+        including instance count and the ASG each instance belongs to, a summary of those
+        ASGs (desired/min/max and instance lifecycle counts), and a warning listing any
+        tagged instance that currently has no guest volume at that IOPS attached (still
+        launching, mid-detach, or winding down after its volume was reclaimed).
 
         :param filters: List of EC2 filter dictionaries
         :param log: Custom log prefix (default: "Fusion Accelerator")
@@ -237,7 +272,7 @@ class FusionAWSUtil:
 
         # Create detailed table with instance and volume information
         table = PrettyTable()
-        table.field_names = ["Instance ID", "Instance Type", "VolumeId", "Disk Size (GiB)", "IOPS", "Public IP", "Instance Create Time", "Volume Create Time", "Time Alive", "FusionRebalance"]
+        table.field_names = ["Instance ID", "Instance Type", "VolumeId", "Disk Size (GiB)", "IOPS", "Public IP", "Instance Create Time", "Volume Create Time", "Time Alive", "FusionRebalance", "ASG"]
 
         # Filter only instances which are in 'running' state for meaningful monitoring
         instances = [instance for instance in instances if instance.get('State', {}).get('Name') == 'running']
@@ -250,12 +285,17 @@ class FusionAWSUtil:
             temp['PublicIpAddress'] = instance.get('PublicIpAddress', 'N/A')
             temp['InstanceCreateTime'] = instance.get('LaunchTime', None)
             temp['FusionRebalance'] = 'N/A'
+            temp['ASG'] = 'N/A'
 
-            # Extract fusion rebalance tag if present
+            # Extract the fusion rebalance tag and the ASG the instance was
+            # launched by (AWS tags every ASG instance with its group name)
             for tag in instance.get('Tags', []):
                 if tag.get('Key') == 'couchbase-cloud-fusion-rebalance':
                     temp['FusionRebalance'] = tag.get('Value')
-                    break
+                elif tag.get('Key') == 'aws:autoscaling:groupName':
+                    # cc-fusion-asg-<cluster_id>-<plan>-<az>: drop the prefix to
+                    # keep the table narrow; the ASG summary has the full name
+                    temp['ASG'] = re.sub(r'^cc-fusion-asg-[0-9a-f-]{36}-', '…', tag.get('Value'))
 
             # Process EBS volume information from block device mappings
             block_devices = instance.get('BlockDeviceMappings', [])
@@ -285,13 +325,15 @@ class FusionAWSUtil:
                             temp['InstanceCreateTime'].strftime('%Y-%m-%d %H:%M:%S') if temp['InstanceCreateTime'] else 'N/A',
                             temp['VolumeCreateTime'].strftime('%Y-%m-%d %H:%M:%S') if temp['VolumeCreateTime'] else 'N/A',
                             str(datetime.datetime.now(datetime.timezone.utc) - temp['InstanceCreateTime']) if temp['InstanceCreateTime'] else 'N/A',
-                            temp['FusionRebalance'] if temp['FusionRebalance'] else 'N/A'])
+                            temp['FusionRebalance'] if temp['FusionRebalance'] else 'N/A',
+                            temp['ASG']])
                         if temp["IOPS"] == self.FUSION_ACCELERATOR_IOPS and instance not in return_instances:
                             return_instances.append(instance)
 
         # Log accelerator instance details with count
         if table.rowcount > 0:
             self.log.info(f"{log}{' Count: ' + str(len(return_instances)) if len(return_instances) > 0 else ''} - Details: \n {table}")
+            self._log_accelerator_asgs(instances, log)
 
         # Note: an accelerator instance has no volume at FUSION_ACCELERATOR_IOPS while it
         # is still launching (guest volume not attached yet), mid-detach (a chaos fault,
