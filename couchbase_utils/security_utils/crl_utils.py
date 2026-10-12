@@ -1438,7 +1438,8 @@ class CRLUtils:
 
     @staticmethod
     def perform_mtls_handshake(host, port, client_cert_path, client_key_path,
-                               path="/whoami", timeout=30, auth=None):
+                               path="/whoami", timeout=30, auth=None,
+                               method="GET", data=None, headers=None):
         """
         Performs a mutual TLS (mTLS) handshake and HTTP GET request using the 
         provided client certificate.
@@ -1455,6 +1456,10 @@ class CRLUtils:
                 certificate ALONE -- a request carrying an Authorization header
                 is authenticated by password, so passing auth here would mask
                 whether the certificate itself established any identity.
+            method (str): HTTP verb (default "GET").
+            data: Optional request body.
+            headers (dict|None): Extra request headers. `Connection: close`
+                is always forced on top of them.
 
         Returns:
             requests.Response: On a successful handshake and HTTP response.
@@ -1472,13 +1477,15 @@ class CRLUtils:
               sockets, ensuring a fresh TLS handshake occurs on every invocation.
         """
         url = f"https://{host}:{port}{path}"
-        return requests.get(
+        return requests.request(
+            method,
             url,
             cert=(client_cert_path, client_key_path),
             verify=False,
             timeout=timeout,
             auth=auth,
-            headers={"Connection": "close"}
+            data=data,
+            headers={**(headers or {}), "Connection": "close"}
         )
 
     @classmethod

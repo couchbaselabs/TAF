@@ -1,7 +1,10 @@
 import json
 import shlex
+import time
 
 import requests
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -9,6 +12,7 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from couchbase_utils.security_utils.crl_utils import CRLUtils
+from couchbase_utils.security_utils.ipc_utils import IPCUtils
 from pytests.onPrem_basetestcase import ClusterSetup
 from TestInput import TestInputSingleton
 
@@ -47,6 +51,7 @@ class IPCBase(ClusterSetup):
     INTERNAL_CERT_DOMAIN = "internal.couchbase.com"
 
     IPC_SETTING = "internalIdentityPasswordCheckUnderMtls"
+    IPC_CONFIG_KEY = "internal_identity_password_check_under_mtls"
 
     MGMT_SSL_PORT = 18091
     KV_SSL_PORT = 11207
@@ -69,7 +74,11 @@ class IPCBase(ClusterSetup):
         # Remember what the cluster reported before we touched anything, so
         # tearDown can put it back whichever way the test drove it.
         self._original_ipc_state = self.get_ipc_setting()
-        self.log.info(f"{self.IPC_SETTING} at setUp: {self._original_ipc_state}")
+        self._ipc_key_was_absent = not self._ipc_key_in_config()
+        self.log.info(
+            f"{self.IPC_SETTING} at setUp: {self._original_ipc_state} "
+            f"({'derived' if self._ipc_key_was_absent else 'explicit'})"
+        )
 
         # The cluster's own trusted CA for this run. Tests that need to prove
         # the cluster boundary generate a second, unrelated CA themselves.
@@ -77,14 +86,16 @@ class IPCBase(ClusterSetup):
         self._trust_ca_on_cluster(self.ca_cert)
 
     def tearDown(self):
-        try:
-            self._restore_ipc_setting()
-        except Exception as exc:
-            self.log.warning(f"{self.IPC_SETTING} restore error: {exc}")
+        # clientCertAuth first: left 'mandatory', it blocks the HTTPS REST
+        # call that restores the setting.
         try:
             self._disable_client_cert_auth()
         except Exception as exc:
             self.log.warning(f"clientCertAuth disable error: {exc}")
+        try:
+            self._restore_ipc_setting()
+        except Exception as exc:
+            self.log.warning(f"{self.IPC_SETTING} restore error: {exc}")
         try:
             self._cleanup_rbac_users()
         except Exception as exc:
@@ -139,6 +150,18 @@ class IPCBase(ClusterSetup):
             )
         self.log.info(f"{self.IPC_SETTING} set to {enabled}")
 
+    def _ipc_key_in_config(self):
+        """True if the key is explicitly stored in ns_config, False if the
+        value GET reports is the compat-derived default."""
+        status, content = self.rest.diag_eval(
+            f"ns_config:search({self.IPC_CONFIG_KEY})."
+        )
+        if not status:
+            self.fail(f"diag/eval ns_config:search failed: {content}")
+        if isinstance(content, bytes):
+            content = content.decode()
+        return content.strip() != "false"
+
     def _restore_ipc_setting(self):
         """
         Put the setting back only if a test actually changed it.
@@ -146,8 +169,22 @@ class IPCBase(ClusterSetup):
         Writing it back unconditionally would be worse than a no-op: an explicit
         write pins the key in config, and from then on the version-derived
         default no longer applies -- so a cluster reused by a later test would
-        silently stop tracking its own compat version.
+        silently stop tracking its own compat version. For the same reason,
+        if the key was absent at setUp it is deleted rather than re-written,
+        since any POST pins the key.
         """
+        if self._ipc_key_was_absent:
+            if self._ipc_key_in_config():
+                self.log.info(
+                    f"Deleting {self.IPC_CONFIG_KEY} -- it was derived, not "
+                    f"stored, at setUp"
+                )
+                status, content = self.rest.diag_eval(
+                    f"ns_config:delete({self.IPC_CONFIG_KEY})."
+                )
+                if not status:
+                    self.fail(f"diag/eval ns_config:delete failed: {content}")
+            return
         current = self.get_ipc_setting()
         if current != self._original_ipc_state:
             self.log.info(
@@ -206,7 +243,8 @@ class IPCBase(ClusterSetup):
     # -- mTLS probes ---------------------------------------------------------
 
     def mtls_request(self, cert_path, key_path, path="/pools/default",
-                     server=None, port=None, auth=None, timeout=30):
+                     server=None, port=None, auth=None, timeout=30,
+                     method="GET", data=None, headers=None):
         """
         One HTTPS request presenting `cert_path`/`key_path`.
 
@@ -224,8 +262,38 @@ class IPCBase(ClusterSetup):
         server = server or self.cluster.master
         return self.crl_utils.perform_mtls_handshake(
             server.ip, port or self.MGMT_SSL_PORT, cert_path, key_path,
-            path=path, timeout=timeout, auth=auth,
+            path=path, timeout=timeout, auth=auth, method=method, data=data,
+            headers=headers,
         )
+
+    def https_request(self, path="/pools/default", server=None, auth=None,
+                      method="GET", data=None, headers=None, timeout=30):
+        """The same request as mtls_request but with NO client certificate,
+        for the certificate-less control in each comparison."""
+        server = server or self.cluster.master
+        return requests.request(
+            method, f"https://{server.ip}:{self.MGMT_SSL_PORT}{path}",
+            verify=False, auth=auth, data=data, timeout=timeout,
+            headers={**(headers or {}), "Connection": "close"},
+        )
+
+    def get_internal_password(self, server=None):
+        """
+        Current internal ('special') password of `server`.
+
+        With IPC enabled this password, not the certificate, is what proves an
+        '@' identity. Passwords are per node and rotate, so read it from the
+        node being probed, right before use.
+        """
+        rest = RestConnection(server) if server else self.rest
+        status, content = rest.diag_eval(
+            "ns_config_auth:get_password(special).", print_log=False
+        )
+        if not status:
+            self.fail(f"diag/eval get_password(special) failed: {content}")
+        if isinstance(content, bytes):
+            content = content.decode()
+        return content.strip().strip('"')
 
     def whoami_via_mtls(self, cert_path, key_path, server=None, auth=None,
                         timeout=30):
@@ -291,6 +359,113 @@ class IPCBase(ClusterSetup):
             f"Anonymous caller should hold no roles, got {identity!r}"
         )
         return resp
+
+    # -- Auth probes and assertions -----------------------------------------
+
+    CCA_STATES = ("disable", "enable", "hybrid", "mandatory")
+    TLS_REJECT = "tls_reject"
+
+    def probe_identity(self, cert_path, key_path, auth=None):
+        """
+        (whoami id, /pools/default status) for one credential combination.
+
+        cert_path=None sends no client certificate. whoami id is None when
+        /whoami itself is refused, and the whole tuple is TLS_REJECT when the
+        connection never reaches the application.
+        """
+        try:
+            if cert_path:
+                who = self.mtls_request(cert_path, key_path, path="/whoami",
+                                        auth=auth)
+                pools = self.mtls_request(cert_path, key_path, auth=auth)
+            else:
+                who = self.https_request("/whoami", auth=auth)
+                pools = self.https_request(auth=auth)
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError):
+            return self.TLS_REJECT, self.TLS_REJECT
+        who_id = who.json().get("id") if who.status_code == 200 else None
+        return who_id, pools.status_code
+
+    def expected_auth_matrix_cells(self, cca, ipc, admin):
+        """
+        What each probe_identity combination must resolve to for one
+        (cca, IPC) pair, keyed by combination name.
+
+        The certificate confers identity only when cca is not 'disable' AND
+        IPC is off; when it does, it overrides any supplied credentials.
+        """
+        cert_wins = cca != "disable" and not ipc
+        internal = "@internal"
+        return {
+            "cert alone":
+                (internal, 200) if cert_wins else ("", 401),
+            "cert + admin":
+                (internal if cert_wins else admin, 200),
+            "no cert + admin":
+                ((self.TLS_REJECT, self.TLS_REJECT) if cca == "mandatory"
+                 else (admin, 200)),
+            "cert + @internal:password":
+                (internal, 200),
+            "cert + @internal:wrong":
+                (internal, 200) if cert_wins else (None, 401),
+        }
+
+    def wait_for_mandatory(self, timeout=30):
+        """Wait until the listener refuses a certificate-less connection,
+        so probes see 'mandatory' rather than the reload window."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                self.https_request("/whoami", timeout=5)
+            except (requests.exceptions.SSLError,
+                    requests.exceptions.ConnectionError):
+                return
+            time.sleep(1)
+        self.fail(f"clientCertAuth=mandatory not enforced after {timeout}s")
+
+    def assert_status(self, resp, expected, what):
+        expected = expected if isinstance(expected, tuple) else (expected,)
+        self.assertIn(
+            resp.status_code, expected,
+            f"{what}: expected HTTP {expected}, got {resp.status_code}: "
+            f"{resp.text[:300]}")
+
+    def assert_identity_is_per_request(self, cert, key, admin_auth):
+        """
+        Two requests on ONE kept-alive TLS connection: the first with admin
+        credentials, the second with none. The second must be anonymous.
+        Pool connection count proves the socket was actually reused.
+        """
+        url = (f"https://{self.cluster.master.ip}:{self.MGMT_SSL_PORT}"
+               f"/whoami")
+        with requests.Session() as session:
+            session.cert = (cert, key)
+            session.verify = False
+            first = session.get(url, auth=admin_auth, timeout=30).json()
+            second = session.get(url, timeout=30).json()
+            pools = session.get_adapter(url).poolmanager.pools
+            conns = sum(pools[k].num_connections for k in pools.keys())
+        self.log.info(f"N-02 first={first} second={second} conns={conns}")
+        self.assertEqual(conns, 1,
+                         "N-02: both requests must share one connection")
+        self.assertEqual(first.get("id"), admin_auth[0],
+                         f"N-02 first request: {first}")
+        self.assertEqual(second.get("domain"), "anonymous",
+                         f"N-02: identity leaked across requests on one "
+                         f"connection: {second}")
+
+    def set_user_locked(self, username, locked):
+        resp = IPCUtils.set_user_locked(self.cluster.master, username, locked)
+        self.assert_status(resp, 200, f"lock={locked} {username}")
+
+    def cbauth_extract_user(self, cert_path):
+        """POST /_cbauth/extractUserFromCert; asserts the HTTP 200 the
+        cbauth contract requires for both 'user' and 'no identity'."""
+        resp = IPCUtils.extract_user_from_cert(
+            self.cluster.master, self._cert_der_from_path(cert_path))
+        self.assert_status(resp, 200, "C-21 extractUserFromCert")
+        return resp.json()
 
     # -- EE gating -----------------------------------------------------------
 
@@ -407,7 +582,32 @@ class IPCBase(ClusterSetup):
         )
 
     def _disable_client_cert_auth(self):
-        self.crl_utils.disable_client_cert_auth(self.cluster.master)
+        self._set_client_cert_auth_http("disable")
+
+    def _set_client_cert_auth_http(self, state):
+        """
+        Set clientCertAuth over plain HTTP 8091. The framework's own REST
+        goes over HTTPS without a client certificate, so it cannot switch
+        'mandatory' back off, or do anything else while it is on.
+
+        Always sends a prefix rule: memcached rejects an empty 'prefixes'
+        array and would be left enforcing the previous state until
+        restarted.
+        """
+        server = self.cluster.master
+        requests.post(
+            f"http://{server.ip}:8091/settings/clientCertAuth",
+            auth=(server.rest_username, server.rest_password),
+            json={"state": state, "prefixes": [
+                {"path": "subject.cn", "prefix": "", "delimiter": ""}]},
+            timeout=30,
+        ).raise_for_status()
+
+    @staticmethod
+    def _cert_der_from_path(cert_path):
+        with open(cert_path, "rb") as f:
+            cert = x509.load_pem_x509_certificate(f.read())
+        return cert.public_bytes(serialization.Encoding.DER)
 
     def _write_temp_pem(self, pem_bytes, suffix=".pem"):
         return self.crl_utils.write_temp_pem(pem_bytes, suffix=suffix)
@@ -426,6 +626,10 @@ class IPCBase(ClusterSetup):
         )
         self._rbac_users.append(username)
         return username, password
+
+    def _set_rbac_roles(self, username, roles):
+        """Replace an existing local user's roles (comma-separated)."""
+        RbacUtils(self.cluster.master)._update_user_roles(username, roles)
 
     def _cleanup_rbac_users(self):
         for username in self._rbac_users:
