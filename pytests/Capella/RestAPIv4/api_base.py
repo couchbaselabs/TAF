@@ -608,9 +608,13 @@ class APIBase(CouchbaseBaseTest):
             res,_ = self.validate_onoff_state(["healthy"])
             while not res:
                 if time.time() > 1800 + start_time:
+                    self.collect_cluster_logs(self.cluster_id)
                     self.fail("!!!...Cluster didn't stabilize within half an "
                               "hour...!!!")
                 res,_ = self.validate_onoff_state(["healthy"])
+
+            # Collect server and dp-agent logs before anything below can fail the teardown (collect_logs=True).
+            self.collect_cluster_logs(self.cluster_id)
 
             # Delete the app service if it was a part of the tests.
             if self.capella["clusters"]["app_id"] and not isinstance(
@@ -647,9 +651,6 @@ class APIBase(CouchbaseBaseTest):
                         self.cluster_id, self.capella["clusters"]["app_id"]):
                     self.log.error("!!!...App Svc could not be deleted...!!!")
                 self.log.info("App Svc Deleted Successfully")
-
-            # Collect server and dp-agent logs before the cluster is deleted (collect_logs=True).
-            self.collect_cluster_logs(self.cluster_id)
 
             # Delete the cluster that was created.
             self.log.info("Destroying Cluster: {}".format(self.cluster_id))
@@ -1995,9 +1996,11 @@ class APIBase(CouchbaseBaseTest):
         return re.sub(r"[^A-Za-z0-9._-]+", "_", name) + ".log"
 
     def _record_collected_log(self, cluster_id, step, log_type, node, status, location, error=""):
-        """Appends one row to logs/testrunner-<run>/collected_logs_<suite>.log, the same columns as cp-cli's list."""
+        """Appends one row to logs/collected_logs_<suite>.log (top of the build artifacts), the same columns as cp-cli's list."""
         logs_folder = self.input.param("logs_folder", None)
-        path = os.path.join(os.path.dirname(logs_folder) if logs_folder else "logs", self._collected_logs_file_name())
+        # logs_folder is logs/testrunner-<run>/test_<n>; the list sits in logs/ itself.
+        logs_dir = os.path.dirname(os.path.dirname(logs_folder)) if logs_folder else "logs"
+        path = os.path.join(logs_dir, self._collected_logs_file_name())
         test_name = "{}.{}".format(self.__class__.__name__, getattr(self, "_testMethodName", ""))
         row = [time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), test_name, "", cluster_id, step,
                log_type, node or "", status, location or "", error or ""]

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import csv
 import logging
 import logging.config
 import os
@@ -55,6 +56,38 @@ def parse_args():
         sys.exit(0)
 
     return tests, test_params, options.ini, options.params, options
+
+
+def print_collected_logs_summary(logs_dir):
+    """Prints where each collected server/dp-agent logs list is and its OK/FAILED/SKIPPED counts."""
+    try:
+        names = sorted(f for f in os.listdir(logs_dir)
+                       if f.startswith("collected_logs") and f.endswith(".log"))
+    except OSError:
+        return
+    build_url = os.environ.get("BUILD_URL", "")
+    for name in names:
+        counts, errors = {}, []
+        try:
+            with open(os.path.join(logs_dir, name)) as f:
+                rows = list(csv.reader(f))[1:]
+        except (IOError, csv.Error):
+            continue
+        for cols in rows:
+            # Columns: Time,Scenario,Cluster Name,Cluster ID,Step,Log Type,Node,Status,Location,Error
+            if len(cols) < 10:
+                continue
+            key = (cols[5], cols[7])
+            counts[key] = counts.get(key, 0) + 1
+            if cols[7] == "FAILED" and len(errors) < 5:
+                errors.append("%s %s %s: %s" % (cols[3], cols[5], cols[6], cols[9]))
+        print("Collected server and dp-agent logs: %s"
+              % (build_url + "artifact/logs/" + name if build_url
+                 else os.path.join(logs_dir, name)))
+        print("  " + ", ".join("%s %s %d" % (t, s, n)
+                               for (t, s), n in sorted(counts.items())))
+        for error in errors:
+            print("  FAILED " + error)
 
 
 def create_log_file(log_config_file_name, log_file_name):
@@ -263,6 +296,8 @@ def main():
                 TestInputSingleton.input.param("stop-on-failure", False):
             print("Test fails, all of the following tests will be skipped!!!")
             break
+
+    print_collected_logs_summary(os.path.dirname(root_log_dir))
 
     if "makefile" in TestInputSingleton.input.test_params:
         # Print fail for those tests which failed and do sys.exit() error code
