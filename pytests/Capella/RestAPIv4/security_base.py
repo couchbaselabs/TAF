@@ -285,7 +285,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "description": "Security Cluster v4",
                     "cloudProvider": {
                         "type": "aws",
-                        "region": self.input.param("region", "us-east-1"),
+                        "region": self.input.param("region", self.input.capella.get("region", "us-east-1")),
                         "cidr": "10.7.22.0/23"
                     },
                     "couchbaseServer": {
@@ -326,7 +326,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "description": "My first test azure cluster.",
                     "cloudProvider": {
                         "type": "azure",
-                        "region": self.input.param("region", "eastus"),
+                        "region": self.input.param("region", self.input.capella.get("region", "eastus")),
                         "cidr": "10.1.35.0/23"
                     },
                     "couchbaseServer": {
@@ -383,7 +383,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "description": "My first test gcp cluster.",
                     "cloudProvider": {
                         "type": "gcp",
-                        "region": self.input.param("region", "us-east1"),
+                        "region": self.input.param("region", self.input.capella.get("region", "us-east1")),
                         "cidr": "10.9.82.0/23"
                     },
                     "couchbaseServer": {

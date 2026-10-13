@@ -19,7 +19,7 @@ class GetFreeTier(GetProject):
             "description": "",
             "cloudProvider": {
                 "cidr": "10.1.0.0/20",
-                "region": self.input.param("region", "us-east-2"),
+                "region": self._get_region("us-east-2"),
                 "type": "aws"
             },
             "configurationType": "singleNode",

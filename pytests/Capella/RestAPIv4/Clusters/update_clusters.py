@@ -34,7 +34,7 @@ class UpdateCluster(GetProject):
             "description": None,
             "cloudProvider": {
                 "type": "aws",
-                "region": self.input.param("region", "us-east-1"),
+                "region": self._get_region("us-east-1"),
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {

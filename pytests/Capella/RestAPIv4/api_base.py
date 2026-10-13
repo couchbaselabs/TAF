@@ -42,6 +42,11 @@ class APIBase(CouchbaseBaseTest):
             "server_version",
             self.input.capella.get("server_version", "7.6"))
 
+    def _get_region(self, default):
+        # -p param wins; otherwise use the [capella] section from the ini
+        return self.input.param(
+            "region", self.input.capella.get("region", default))
+
     def setUp(self, nomenclature="WRAPPER", services=[]):
         CouchbaseBaseTest.setUp(self)
 
@@ -190,7 +195,7 @@ class APIBase(CouchbaseBaseTest):
             "AWS_r5_xlarge": {
                 "cloudProvider": {
                     "type": "aws",
-                    "region": self.input.param("region", "us-east-1"),
+                    "region": self._get_region("us-east-1"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -228,7 +233,7 @@ class APIBase(CouchbaseBaseTest):
             "AWS_r5_xlarge_eventing": {
                     "cloudProvider": {
                         "type": "aws",
-                        "region": self.input.param("region", "us-east-1"),
+                        "region": self._get_region("us-east-1"),
                         "cidr": "10.1.0.0/20"
                     },
                     "couchbaseServer": {
@@ -267,7 +272,7 @@ class APIBase(CouchbaseBaseTest):
             "AWS_singleNode": {
                 "cloudProvider": {
                     "type": "aws",
-                    "region": self.input.param("region", "us-east-1"),
+                    "region": self._get_region("us-east-1"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -305,7 +310,7 @@ class APIBase(CouchbaseBaseTest):
             "Azure_E4s_v5": {
                 "cloudProvider": {
                     "type": "azure",
-                    "region": self.input.param("region", "eastus"),
+                    "region": self._get_region("eastus"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -342,7 +347,7 @@ class APIBase(CouchbaseBaseTest):
             "Azure_singleNode": {
                 "cloudProvider": {
                     "type": "azure",
-                    "region": self.input.param("region", "eastus"),
+                    "region": self._get_region("eastus"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -379,7 +384,7 @@ class APIBase(CouchbaseBaseTest):
             "GCP_n2_highmem_4": {
                 "cloudProvider": {
                     "type": "gcp",
-                    "region": self.input.param("region", "us-east1"),
+                    "region": self._get_region("us-east1"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -416,7 +421,7 @@ class APIBase(CouchbaseBaseTest):
             "GCP_singleNode": {
                 "cloudProvider": {
                     "type": "gcp",
-                    "region": self.input.param("region", "us-east1"),
+                    "region": self._get_region("us-east1"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -453,7 +458,7 @@ class APIBase(CouchbaseBaseTest):
             "AWS_Free_Tier": {
                 "cloudProvider": {
                     "cidr": "10.1.0.0/20",
-                    "region": self.input.param("region", "us-east-1"),
+                    "region": self._get_region("us-east-1"),
                     "type": "aws"
                 },
                 "description": "Cluster for AWS free tier v4 API testing."
@@ -511,7 +516,7 @@ class APIBase(CouchbaseBaseTest):
             # TEMPLATES :
             "AWS_singleNode": {
                 "nodes": self.input.param("nodes", 1),
-                "region": self.input.param("region", "us-east-1"),
+                "region": self._get_region("us-east-1"),
                 "cloudProvider": "aws",
                 "compute": {
                     "cpu": self.input.param("cpu", 4),
@@ -527,7 +532,7 @@ class APIBase(CouchbaseBaseTest):
             },
             "AWS_4v16_4node": {
                 "nodes": self.input.param("nodes", 4),
-                "region": self.input.param("region", "us-east-1"),
+                "region": self._get_region("us-east-1"),
                 "cloudProvider": "aws",
                 "compute": {
                     "cpu": self.input.param("cpu", 4),
