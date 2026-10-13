@@ -818,8 +818,10 @@ class RestConnection(newRC):
                                 .format(self.ip, status, content))
             raise Exception("certificate API failed")
 
-    def regenerate_cluster_certificate(self):
+    def regenerate_cluster_certificate(self, allow_unreachable_nodes=False):
         api = self.baseUrl + 'controller/regenerateCertificate'
+        if allow_unreachable_nodes:
+            api += '?allowUnreachableNodes=true'
         status, content, _ = self._http_request(api, 'POST')
         if status:
             return content

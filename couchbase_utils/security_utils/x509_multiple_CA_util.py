@@ -943,9 +943,10 @@ class x509main:
             shell.disconnect()
 
     @staticmethod
-    def regenerate_certs(server):
+    def regenerate_certs(server, allow_unreachable_nodes=False):
         rest = RestConnection(server)
-        rest.regenerate_cluster_certificate()
+        rest.regenerate_cluster_certificate(
+            allow_unreachable_nodes=allow_unreachable_nodes)
 
     def teardown_certs(self, servers):
         """
@@ -957,7 +958,9 @@ class x509main:
             self.delete_inbox_folder_on_server(server=server)
             self.delete_scripts_folder_on_server(server=server)
         for server in servers:
-            self.regenerate_certs(server=server)
+            # Certs are being discarded in teardown, so don't fail if
+            # ns_server transiently reports a node as unreachable
+            self.regenerate_certs(server=server, allow_unreachable_nodes=True)
             self.delete_trusted_CAs(server=server)
 
 
