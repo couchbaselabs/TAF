@@ -171,3 +171,26 @@ class IPCUtils:
             auth=cls._admin_auth(server) if auth is None else auth,
             timeout=timeout,
         )
+
+    @classmethod
+    def rotate_internal_credentials(cls, server, timeout=300):
+        """
+        POST /node/controller/rotateInternalCredentials on `server`: a full
+        rotation of that node's internal password. Blocks until the
+        rotation, including its protection sleep, has finished. Returns the
+        requests.Response.
+        """
+        return requests.post(
+            cls._url(server, "/node/controller/rotateInternalCredentials"),
+            auth=cls._admin_auth(server), timeout=timeout,
+        )
+
+    @classmethod
+    def set_rotation_interval(cls, server, interval_ms, timeout=30):
+        """POST /settings/security intCredsRotationInterval. Returns the
+        requests.Response."""
+        return requests.post(
+            cls._url(server, "/settings/security"),
+            auth=cls._admin_auth(server),
+            data={"intCredsRotationInterval": interval_ms}, timeout=timeout,
+        )

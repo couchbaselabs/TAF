@@ -1,6 +1,8 @@
 import base64
 import datetime
+import json
 import threading
+import time
 
 import requests
 from cryptography import x509
@@ -1220,3 +1222,270 @@ class IPCTest(IPCBase):
         self.log.info(
             "Test passed: CA trust and join parameters behave as designed "
             "with IPC on")
+
+    def test_ipc_internal_password_rotation_enforcement(self):
+        """
+        With IPC on, the internal password -- not the certificate -- proves
+        an internal identity, so rotation sits on the security boundary.
+
+        Steps:
+            1. Internal cert plus '@internal' and the current password is
+               accepted, a wrong password refused, the cert alone refused.
+            2. While an on-demand rotation runs, the pre-rotation password
+               keeps working; once it completes that password is refused,
+               the new one accepted, and one password remains.
+            3. A rotation interval below the minimum is rejected.
+            4. At the minimum interval a rotation happens on its own, and a
+               client using the current password sees no failure.
+            5. Toggling IPC just before and after a rotation leaves no window
+               where the cert alone is accepted or credentials refused.
+            6. With protection sleep 0 the old password is dropped at once;
+               with 60s it stays valid until the rotation completes.
+            7. No current password appears in REST responses or log files.
+            8. Killing the rotation process does not fall back to the
+               certificate; it is restarted and the passwords survive.
+        """
+        master = self.cluster.master
+        admin = (master.rest_username, master.rest_password)
+        self._set_client_cert_auth_http("enable")
+        self.set_ipc_setting(True)
+        cert, key = self.generate_internal_client_cert(self.ca_cert,
+                                                       self.ca_key)
+
+        def status(password):
+            return self.internal_auth_status(cert, key, password)
+
+        self.log.info("Step 1: password proves the internal identity")
+        current = self.internal_passwords()[0]
+        self.assertEqual(status(current), 200, "C-05 current password")
+        self.assertEqual(status("not-the-password"), 401, "C-06 wrong")
+        self.assert_cert_enforcement([master], cert, key, True, "baseline")
+
+        self.log.info("Step 2: old password valid during the rotation")
+        old = current
+        samples = []
+        stop = threading.Event()
+
+        def keep_using_old():
+            while not stop.is_set():
+                samples.append((time.time(), status(old)))
+                time.sleep(0.5)
+
+        worker = threading.Thread(target=keep_using_old)
+        worker.start()
+        try:
+            resp = IPCUtils.rotate_internal_credentials(master)
+            finished = time.time()
+        finally:
+            stop.set()
+            worker.join(30)
+        self.assert_status(resp, 200, "F-03 on-demand rotation")
+        during = [code for ts, code in samples if ts < finished - 2]
+        self.log.info(f"F-03 old password during rotation: {during}")
+        self.assertTrue(during and all(c == 200 for c in during),
+                        f"F-03: old password refused mid-rotation: {during}")
+        passwords = self.internal_passwords()
+        self.assertEqual(len(passwords), 1, f"F-04 list: {len(passwords)}")
+        self.assertNotEqual(passwords[0], old, "F-04 password not rotated")
+        self.assertEqual(status(old), 401, "F-04 old password after rotation")
+        self.assertEqual(status(passwords[0]), 200, "F-04 new password")
+
+        self.log.info("Step 3: interval below the minimum is rejected")
+        _, content = self.rest.get_security_settings()
+        interval = json.loads(content)["intCredsRotationInterval"]
+        resp = IPCUtils.set_rotation_interval(master, 10000)
+        self.assert_status(resp, 400, "F-02 interval 10000")
+        self.assertIn("must be between 30000 and 31536000000", resp.text,
+                      "F-02 message")
+        _, content = self.rest.get_security_settings()
+        self.assertEqual(json.loads(content)["intCredsRotationInterval"],
+                         interval, "F-02 interval changed by a rejected "
+                                   "write")
+
+        self.log.info("Step 4: automatic rotation at the minimum interval")
+        before = self.internal_passwords()[0]
+        self.set_rotation_interval(30000)
+        failures, rotated = [], False
+        deadline = time.time() + 180
+        while time.time() < deadline:
+            head = self.internal_passwords()[0]
+            code = status(head)
+            if code != 200:
+                failures.append(code)
+            if head != before:
+                rotated = True
+                break
+            time.sleep(3)
+        self.set_rotation_interval(interval)
+        self.assertTrue(rotated, "F-01/F-02 no automatic rotation in 180s")
+        self.assertFalse(failures,
+                         f"F-02 current password refused: {failures}")
+
+        self.log.info("Step 5: IPC toggled around a rotation")
+        checks = []
+
+        def sample(when):
+            checks.append((
+                when,
+                self.mtls_request(cert, key).status_code,
+                self.mtls_request(cert, key, auth=admin).status_code,
+                status(self.internal_passwords()[0])))
+
+        self.set_ipc_setting(False)
+        self.set_ipc_setting(True)
+        rotation = threading.Thread(
+            target=IPCUtils.rotate_internal_credentials, args=(master,))
+        rotation.start()
+        while rotation.is_alive():
+            sample("during rotation")
+            time.sleep(3)
+        rotation.join()
+        self.set_ipc_setting(False)
+        self.set_ipc_setting(True)
+        sample("after toggle")
+        self.log.info(f"F-08 samples: {checks}")
+        bad = [c for c in checks if c[1:] != (401, 200, 200)]
+        self.assertFalse(bad, f"F-08: unexpected (cert alone, cert + "
+                              f"admin, @internal) codes: {bad}")
+
+        self.log.info("Step 6: protection sleep extremes")
+        self.set_protection_sleep(0)
+        old = self.internal_passwords()[0]
+        self.assert_status(IPCUtils.rotate_internal_credentials(master), 200,
+                           "F-09 rotation, sleep 0")
+        self.assertEqual(len(self.internal_passwords()), 1,
+                         "F-09 sleep 0: old password not dropped at once")
+        self.assertEqual(status(old), 401, "F-09 sleep 0: old password")
+
+        self.set_protection_sleep(60000)
+        old = self.internal_passwords()[0]
+        rotation = threading.Thread(
+            target=IPCUtils.rotate_internal_credentials, args=(master,))
+        rotation.start()
+        while_running = []
+        while rotation.is_alive():
+            while_running.append(status(old))
+            time.sleep(5)
+        rotation.join()
+        self.log.info(f"F-09 sleep 60s, old password: {while_running}")
+        self.assertIn(200, while_running,
+                      "F-09 sleep 60s: old password never accepted")
+        self.assertEqual(status(old), 401,
+                         "F-09 sleep 60s: old password after rotation")
+
+        self.log.info("Step 7: the password does not leak")
+        passwords = self.internal_passwords()
+        for path in ("/settings/security", "/internalSettings",
+                     "/pools/default", "/nodes/self",
+                     "/settings/clientCertAuth"):
+            body = self.https_request(path, auth=admin).text
+            for password in passwords:
+                self.assertNotIn(password, body, f"F-10 leak in {path}")
+        shell = RemoteMachineShellConnection(master)
+        try:
+            logs_dir = "/opt/couchbase/var/lib/couchbase/logs"
+            for password in passwords:
+                out, _ = shell.execute_command(
+                    f"grep -rlF -- '{password}' {logs_dir} || true")
+                self.assertFalse([line for line in out if line.strip()],
+                                 f"F-10 password found in logs: {out}")
+        finally:
+            shell.disconnect()
+
+        self.log.info("Step 8: killing the rotation process fails closed")
+        head = self.internal_passwords()[0]
+        pid = self.creds_rotation_pid()
+        self.kill_creds_rotation()
+        self.assert_cert_enforcement([master], cert, key, True,
+                                     "G-08 after kill")
+        self.assertEqual(self.mtls_request(cert, key, auth=admin).status_code,
+                         200, "G-08 cert + admin after kill")
+        deadline = time.time() + 60
+        restarted = pid
+        while time.time() < deadline:
+            restarted = self.creds_rotation_pid()
+            if restarted not in (pid, "undefined"):
+                break
+            time.sleep(2)
+        self.assertNotIn(restarted, (pid, "undefined"),
+                         "G-08 cb_creds_rotation not restarted")
+        self.assertEqual(self.internal_passwords()[0], head,
+                         "G-08 password list changed by the kill")
+        self.assertEqual(status(head), 200, "G-08 @internal after restart")
+
+        self.log.info(
+            "Test passed: rotation keeps the internal password the only "
+            "proof of an internal identity, with no window and no fallback")
+
+    def test_ipc_rotation_across_node_outage_and_rebalance(self):
+        """
+        Rotation across the cluster.
+
+        Steps:
+            1. With one node down, the other two rotate. When it returns it
+               holds both peers' new passwords with no manual step, and every
+               node accepts its own '@' identity with its current password
+               while refusing the cert alone.
+            2. A rotation on the master during a rebalance does not disturb
+               the rebalance, and auth still works on the remaining nodes.
+        """
+        nodes = self.cluster.servers[:self.nodes_init]
+        self.assertGreaterEqual(len(nodes), 3, "Needs a 3-node cluster")
+        master, second, third = nodes[0], nodes[1], nodes[2]
+        self._set_client_cert_auth_http("enable")
+        self.set_ipc_setting(True)
+        self.set_protection_sleep(0)
+        cert, key = self.generate_internal_client_cert(self.ca_cert,
+                                                       self.ca_key)
+
+        self.log.info("Step 1: rotate while a node is down")
+        shell = RemoteMachineShellConnection(third)
+        try:
+            shell.stop_couchbase()
+            before = {s.ip: self.internal_passwords(s) for s in (master,
+                                                                 second)}
+            for server in (master, second):
+                self.assert_status(
+                    IPCUtils.rotate_internal_credentials(server), 200,
+                    f"F-05 rotation on {server.ip}")
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        self.assertTrue(RestConnection(third).is_ns_server_running(300),
+                        f"{third.ip} did not come back")
+        for peer in (master, second):
+            own = self.internal_passwords(peer)[0]
+            self.assertNotIn(own, before[peer.ip],
+                             f"F-05 {peer.ip} did not rotate")
+            deadline = time.time() + 120
+            while self.peer_internal_password(third, peer) != own:
+                if time.time() > deadline:
+                    self.fail(f"F-05 {third.ip} never saw {peer.ip}'s new "
+                              f"password")
+                time.sleep(3)
+        for server in nodes:
+            own = self.internal_passwords(server)[0]
+            self.assertEqual(
+                self.internal_auth_status(cert, key, own, server=server),
+                200, f"F-05 @internal on {server.ip}")
+        self.assert_cert_enforcement(nodes, cert, key, True, "F-05")
+
+        self.log.info("Step 2: rotate during a rebalance")
+        self.rest.rebalance(
+            otpNodes=[node.id for node in self.rest.node_statuses()],
+            ejectedNodes=[self.otp_of(third)])
+        self.assert_status(IPCUtils.rotate_internal_credentials(master), 200,
+                           "F-06 rotation during rebalance")
+        self.assertTrue(self.rest.monitorRebalance(),
+                        "F-06 rebalance failed")
+        for server in (master, second):
+            own = self.internal_passwords(server)[0]
+            self.assertEqual(
+                self.internal_auth_status(cert, key, own, server=server),
+                200, f"F-06 @internal on {server.ip}")
+        self.assert_cert_enforcement([master, second], cert, key, True,
+                                     "F-06")
+
+        self.log.info(
+            "Test passed: rotation propagates across outages and rebalances "
+            "with enforcement intact")

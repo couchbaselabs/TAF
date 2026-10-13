@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import shlex
 import time
 
@@ -75,6 +76,8 @@ class IPCBase(ClusterSetup):
         # RBAC users created during a test -- cleaned up in tearDown. Trusted
         # CAs and temp PEM files are tracked on self.crl_utils itself.
         self._rbac_users = []
+        # Rotation settings a test changed, as {name: value at setUp}.
+        self._rotation_restore = {}
 
         # Remember what the cluster reported before we touched anything, so
         # tearDown can put it back whichever way the test drove it.
@@ -101,6 +104,10 @@ class IPCBase(ClusterSetup):
             self._restore_ipc_setting()
         except Exception as exc:
             self.log.warning(f"{self.IPC_SETTING} restore error: {exc}")
+        try:
+            self._restore_rotation_settings()
+        except Exception as exc:
+            self.log.warning(f"Rotation settings restore error: {exc}")
         try:
             self._cleanup_rbac_users()
         except Exception as exc:
@@ -617,6 +624,69 @@ class IPCBase(ClusterSetup):
             self.cluster.master, self._cert_der_from_path(cert_path))
         self.assert_status(resp, 200, "C-21 extractUserFromCert")
         return resp.json()
+
+    # -- Internal password rotation ------------------------------------------
+
+    PROTECTION_SLEEP_KEY = "int_creds_protection_sleep"
+
+    def internal_passwords(self, server=None):
+        """The node's current internal ('special') password list, newest
+        first. Two entries during a rotation, one otherwise."""
+        raw = self._diag_eval(
+            "ns_config_auth:get_special_passwords(node(), "
+            "ns_config:latest()).", server)
+        return re.findall(r'"([^"]*)"', raw)
+
+    def peer_internal_password(self, viewer, peer):
+        """The newest internal password of `peer` as `viewer` sees it."""
+        raw = self._diag_eval(
+            f"ns_config_auth:get_password('{self.otp_of(peer)}', special).",
+            viewer)
+        return raw.strip('"')
+
+    def internal_auth_status(self, cert_path, key_path, password,
+                             server=None):
+        """Status of /pools/default for the internal certificate plus the
+        '@internal' identity with `password`."""
+        return self.mtls_request(cert_path, key_path, server=server,
+                                 auth=("@internal", password)).status_code
+
+    def set_protection_sleep(self, ms):
+        """Set int_creds_protection_sleep cluster-wide; restored in
+        tearDown."""
+        if "protection_sleep" not in self._rotation_restore:
+            self._rotation_restore["protection_sleep"] = self._diag_eval(
+                f"ns_config:search({self.PROTECTION_SLEEP_KEY}).")
+        self._diag_eval(f"ns_config:set({self.PROTECTION_SLEEP_KEY}, {ms}).")
+
+    def set_rotation_interval(self, interval_ms):
+        """Set intCredsRotationInterval; restored in tearDown."""
+        if "interval" not in self._rotation_restore:
+            status, content = self.rest.get_security_settings()
+            self._rotation_restore["interval"] = json.loads(content)[
+                "intCredsRotationInterval"]
+        resp = IPCUtils.set_rotation_interval(self.cluster.master,
+                                              interval_ms)
+        self.assert_status(resp, 200, f"set rotation interval {interval_ms}")
+
+    def _restore_rotation_settings(self):
+        if "interval" in self._rotation_restore:
+            IPCUtils.set_rotation_interval(
+                self.cluster.master, self._rotation_restore["interval"])
+        if "protection_sleep" in self._rotation_restore:
+            found = self._rotation_restore["protection_sleep"]
+            match = re.match(r"\{value,(\d+)\}", found)
+            self._diag_eval(
+                f"ns_config:set({self.PROTECTION_SLEEP_KEY}, "
+                f"{match.group(1)})." if match else
+                f"ns_config:delete({self.PROTECTION_SLEEP_KEY}).")
+        self._rotation_restore = {}
+
+    def creds_rotation_pid(self, server=None):
+        return self._diag_eval("whereis(cb_creds_rotation).", server)
+
+    def kill_creds_rotation(self, server=None):
+        self._diag_eval("exit(whereis(cb_creds_rotation), kill).", server)
 
     # -- Node addition fixtures ----------------------------------------------
 
