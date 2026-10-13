@@ -314,13 +314,31 @@ class IPCBase(ClusterSetup):
         Returns:
             (cert_path, key_path) -- temp PEM files, tracked for teardown.
         """
-        cert, key, _serial = self.crl_utils.generate_leaf_cert(
-            ca_cert, ca_key, cn or name,
+        cert_path, key_path, _serial = self.generate_client_cert(
+            cn or name, ca_cert=ca_cert, ca_key=ca_key,
             email_names=[f"{name}@{self.INTERNAL_CERT_DOMAIN}"],
+        )
+        return cert_path, key_path
+
+    def generate_client_cert(self, cn, ca_cert=None, ca_key=None,
+                             **leaf_kwargs):
+        """
+        Any client certificate, written to temp PEM files tracked for
+        teardown. Issued by the cluster's trusted CA unless another is
+        given; `leaf_kwargs` go to CRLUtils.generate_leaf_cert (SANs, EKU,
+        validity window, extra_extension).
+
+        Returns:
+            (cert_path, key_path, serial)
+        """
+        cert, key, serial = self.crl_utils.generate_leaf_cert(
+            ca_cert if ca_cert is not None else self.ca_cert,
+            ca_key if ca_key is not None else self.ca_key,
+            cn, **leaf_kwargs,
         )
         cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
         key_path = self._write_temp_pem(self.crl_utils.key_to_pem(key))
-        return cert_path, key_path
+        return cert_path, key_path, serial
 
     def generate_forged_internal_cert(self, ca_cert=None, ca_key=None,
                                       cn="ads-dashboard.example.com"):
@@ -363,18 +381,33 @@ class IPCBase(ClusterSetup):
         usually unwanted) outcome from an application-layer 401.
         """
         server = server or self.cluster.master
-        return self.crl_utils.perform_mtls_handshake(
+        return self._retry_on_timeout(
+            self.crl_utils.perform_mtls_handshake,
             server.ip, port or self.MGMT_SSL_PORT, cert_path, key_path,
             path=path, timeout=timeout, auth=auth, method=method, data=data,
             headers=headers,
         )
+
+    def _retry_on_timeout(self, fn, *args, **kwargs):
+        """
+        Retry once on a timeout. A handshake occasionally stalls with the
+        request never reaching the server; that is not an auth outcome, so
+        it must not decide an assertion. TLS rejections are SSLError, not
+        timeouts, and are never retried.
+        """
+        try:
+            return fn(*args, **kwargs)
+        except requests.exceptions.Timeout as exc:
+            self.log.warning(f"Request timed out, retrying once: {exc}")
+            return fn(*args, **kwargs)
 
     def https_request(self, path="/pools/default", server=None, auth=None,
                       method="GET", data=None, headers=None, timeout=30):
         """The same request as mtls_request but with NO client certificate,
         for the certificate-less control in each comparison."""
         server = server or self.cluster.master
-        return requests.request(
+        return self._retry_on_timeout(
+            requests.request,
             method, f"https://{server.ip}:{self.MGMT_SSL_PORT}{path}",
             verify=False, auth=auth, data=data, timeout=timeout,
             headers={**(headers or {}), "Connection": "close"},
@@ -513,6 +546,19 @@ class IPCBase(ClusterSetup):
             "cert + @internal:wrong":
                 (internal, 200) if cert_wins else (None, 401),
         }
+
+    def wait_for_probe(self, cert_path, key_path, expected, timeout=60):
+        """
+        Poll probe_identity until its whoami part is `expected`, for
+        changes the server applies asynchronously (e.g. a CRL reload).
+        Returns the last whoami part seen.
+        """
+        deadline = time.time() + timeout
+        while True:
+            who, _ = self.probe_identity(cert_path, key_path)
+            if who == expected or time.time() > deadline:
+                return who
+            time.sleep(2)
 
     def wait_for_mandatory(self, timeout=30):
         """Wait until the listener refuses a certificate-less connection,
@@ -687,22 +733,25 @@ class IPCBase(ClusterSetup):
     def _disable_client_cert_auth(self):
         self._set_client_cert_auth_http("disable")
 
-    def _set_client_cert_auth_http(self, state):
+    DEFAULT_CCA_PREFIXES = [
+        {"path": "subject.cn", "prefix": "", "delimiter": ""}]
+
+    def _set_client_cert_auth_http(self, state, prefixes=None):
         """
         Set clientCertAuth over plain HTTP 8091. The framework's own REST
         goes over HTTPS without a client certificate, so it cannot switch
         'mandatory' back off, or do anything else while it is on.
 
-        Always sends a prefix rule: memcached rejects an empty 'prefixes'
-        array and would be left enforcing the previous state until
-        restarted.
+        Always sends at least one prefix rule: memcached rejects an empty
+        'prefixes' array and would be left enforcing the previous state
+        until restarted.
         """
         server = self.cluster.master
         requests.post(
             f"http://{server.ip}:8091/settings/clientCertAuth",
             auth=(server.rest_username, server.rest_password),
-            json={"state": state, "prefixes": [
-                {"path": "subject.cn", "prefix": "", "delimiter": ""}]},
+            json={"state": state,
+                  "prefixes": prefixes or self.DEFAULT_CCA_PREFIXES},
             timeout=30,
         ).raise_for_status()
 

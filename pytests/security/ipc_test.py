@@ -1,7 +1,10 @@
 import base64
+import datetime
 import threading
 
 import requests
+from cryptography import x509
+from cryptography.x509.oid import ExtendedKeyUsageOID
 
 from couchbase_utils.security_utils.ipc_utils import IPCUtils
 from membase.api.rest_client import RestConnection
@@ -697,3 +700,340 @@ class IPCTest(IPCBase):
         self.log.info(
             "Test passed: the setting replicates, converges, persists and "
             "is enforced on every node")
+
+    def test_ipc_internal_san_extraction_edge_cases(self):
+        """
+        Which certificates count as internal, and that certificate
+        validation still runs before identity is considered.
+
+        Steps:
+            1. Internal-SAN variants -- any local part, including reserved
+               service names, an empty one, a leading space and a very long
+               one, and the internal email first or last among several.
+               IPC off: each resolves to the '@<local part>' it names, with
+               admin rights, so the holder chooses the identity. IPC on:
+               each is anonymous and refused.
+            2. Near-miss domains are never internal in either state: they
+               fall through to prefix mapping, name no user, and fail
+               authentication -- distinct from step 1's 'no identity'.
+            3. Expired and not-yet-valid internal certs fail at TLS in both
+               states.
+            4. A CRL-revoked internal cert fails at TLS in both states under
+               the nodeToNode scope, while an unrevoked one from the same CA
+               still connects.
+            5. An internal cert whose EKU lacks clientAuth fails at TLS in
+               both states.
+        """
+        domain = self.INTERNAL_CERT_DOMAIN
+        self._set_client_cert_auth_http("enable")
+
+        self.log.info("Step 1: internal-SAN variants")
+        long_local = "a" * 300
+        variants = [
+            ("internal", [f"internal@{domain}"]),
+            ("prometheus", [f"prometheus@{domain}"]),
+            ("localtoken", [f"localtoken@{domain}"]),
+            ("", [f"@{domain}"]),
+            (" x", [f" x@{domain}"]),
+            (long_local, [f"{long_local}@{domain}"]),
+            ("internal", ["someone@example.com", f"internal@{domain}"]),
+            ("internal", [f"internal@{domain}", "someone@example.com"]),
+        ]
+        certs = []
+        for i, (local, emails) in enumerate(variants):
+            cert, key, _ = self.generate_client_cert(
+                f"ipc-o-variant-{i}", email_names=emails)
+            certs.append((f"@{local}", emails, cert, key))
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            for identity, emails, cert, key in certs:
+                expected = ("", 401) if ipc else (identity, 200)
+                actual = self.probe_identity(cert, key)
+                self.assertEqual(
+                    actual, expected,
+                    f"O-01..O-03 ipc={ipc} SAN {emails[:1]}...: expected "
+                    f"{expected}, got {actual}")
+
+        self.log.info("Step 2: near-miss domains")
+        near_misses = [
+            f"x@{domain}.evil.com", f"x@sub.{domain}",
+            f"x@{domain.upper()}", "x@Internal.Couchbase.Com",
+            f"x@{domain}.", f"x@{domain} ",
+        ]
+        near_certs = [
+            (email,) + self.generate_client_cert(
+                f"ipc-o-nearmiss-{i}", email_names=[email])[:2]
+            for i, email in enumerate(near_misses)]
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            for email, cert, key in near_certs:
+                actual = self.probe_identity(cert, key)
+                self.assertEqual(
+                    actual, (None, 401),
+                    f"O-04 ipc={ipc} {email!r} must not be treated as "
+                    f"internal, got {actual}")
+
+        self.log.info("Step 3: validity window checked before identity")
+        now = datetime.datetime.now(datetime.timezone.utc)
+        day = datetime.timedelta(days=1)
+        internal = [f"internal@{domain}"]
+        invalid = {
+            "expired": self.generate_client_cert(
+                "ipc-o-expired", email_names=internal,
+                not_valid_before=now - 10 * day,
+                not_valid_after=now - day)[:2],
+            "not yet valid": self.generate_client_cert(
+                "ipc-o-future", email_names=internal,
+                not_valid_before=now + day,
+                not_valid_after=now + 10 * day)[:2],
+        }
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            for label, (cert, key) in invalid.items():
+                self.assertEqual(
+                    self.probe_identity(cert, key)[0], self.TLS_REJECT,
+                    f"O-06 ipc={ipc}: {label} internal cert must fail at "
+                    f"TLS")
+
+        self.log.info("Step 4: CRL-revoked internal cert")
+        revoked, revoked_key, serial = self.generate_client_cert(
+            "ipc-o-revoked", email_names=internal)
+        valid, valid_key, _ = self.generate_client_cert(
+            "ipc-o-unrevoked", email_names=internal)
+        filename = "ipc_revoked_internal.pem"
+        try:
+            status, content = self.crl_utils.revoke_and_upload(
+                self.rest, self.ca_cert, self.ca_key, [serial], filename,
+                crl_number=1)
+            self.assertTrue(status, f"CRL upload failed: {content}")
+            self.crl_utils.track_uploaded_file(filename)
+            self.crl_utils.set_settings(
+                self.rest, policyPerScope={"clientAuth": "Disabled",
+                                           "nodeToNode": "Require"})
+            for ipc in (False, True):
+                self.set_ipc_setting(ipc)
+                self.assertEqual(
+                    self.wait_for_probe(revoked, revoked_key,
+                                         self.TLS_REJECT),
+                    self.TLS_REJECT,
+                    f"O-07 ipc={ipc}: revoked internal cert must fail at "
+                    f"TLS")
+                expected = "" if ipc else "@internal"
+                self.assertEqual(
+                    self.probe_identity(valid, valid_key)[0], expected,
+                    f"O-07 ipc={ipc}: unrevoked cert from the same CA")
+        finally:
+            self.crl_utils.reset_crl_settings(self.rest, self.cluster.master)
+            self.crl_utils.cleanup_created_files(self.rest)
+
+        self.log.info("Step 5: EKU without clientAuth")
+        server_eku, server_eku_key, _ = self.generate_client_cert(
+            "ipc-o-server-eku", email_names=internal,
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH])
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            self.assertEqual(
+                self.probe_identity(server_eku, server_eku_key)[0],
+                self.TLS_REJECT,
+                f"O-08 ipc={ipc}: internal cert without clientAuth EKU "
+                f"must fail at TLS")
+
+        self.log.info(
+            "Test passed: only the exact internal domain is internal, IPC "
+            "neutralises every variant, and validation precedes identity")
+
+    def test_ipc_prefix_mapped_cert_regression_and_no_narrowing(self):
+        """
+        Ordinary client certificates are untouched by IPC, and with IPC on an
+        internal certificate neither adds nor removes anything from the
+        credentials sent with it.
+
+        Steps:
+            1. A prefix-mapped cert resolves to the same user in every
+               clientCertAuth state that uses certs, with IPC off and on;
+               'disable' ignores it in both.
+            2. A prefix-mapped cert naming no user fails in both states.
+            3. Rule handling: a cert matching only the third rule; the
+               san.email, san.dnsname and san.uri paths; a prefix plus
+               delimiter, and a CN missing that prefix.
+            4. A cert with both an internal SAN and a matching prefix field
+               is internal: '@internal' with IPC off, anonymous with it on --
+               never the prefix-mapped user.
+            5. A cert whose CN is the administrator maps to the
+               administrator in both states.
+            6. Changing the rules while IPC is on keeps mapping working.
+            7. Six principals x six endpoints x three connection types
+               (internal cert, no cert, own prefix cert, each with the
+               principal's credentials). IPC on: the connection type makes
+               no difference. IPC off: the internal cert overrides the
+               credentials and every principal becomes '@internal'.
+        """
+        master = self.cluster.master
+        user, pw = self._create_rbac_test_user("ipciuser", "ro_admin")
+        cn_cert, cn_key, _ = self.generate_client_cert(user)
+
+        self.log.info("Step 1: prefix-mapped cert across cca states")
+        try:
+            for cca in self.CCA_STATES:
+                for ipc in (False, True):
+                    self._set_client_cert_auth_http("enable")
+                    self.set_ipc_setting(ipc)
+                    self._set_client_cert_auth_http(cca)
+                    try:
+                        if cca == "mandatory":
+                            self.wait_for_mandatory()
+                        expected = ("", 401) if cca == "disable" \
+                            else (user, 200)
+                        actual = self.probe_identity(cn_cert, cn_key)
+                        self.assertEqual(
+                            actual, expected,
+                            f"I-01 cca={cca} ipc={ipc}: got {actual}")
+                    finally:
+                        if cca == "mandatory":
+                            self._set_client_cert_auth_http("enable")
+        finally:
+            self._set_client_cert_auth_http("enable")
+
+        self.log.info("Step 2: prefix-mapped cert naming no user")
+        ghost, ghost_key, _ = self.generate_client_cert("ipcnosuchuser")
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            self.assertEqual(self.probe_identity(ghost, ghost_key),
+                             (None, 401), f"I-02 ipc={ipc}")
+
+        self.set_ipc_setting(True)
+        self.log.info("Step 3: rule handling")
+        uri = f"https://{user}/ipc"
+        cases = [
+            ("third rule",
+             [{"path": "san.uri", "prefix": "nomatch-", "delimiter": ""},
+              {"path": "san.dnsname", "prefix": "nomatch-",
+               "delimiter": ""},
+              {"path": "subject.cn", "prefix": "", "delimiter": ""}],
+             self.generate_client_cert(user)[:2], user),
+            ("san.email",
+             [{"path": "san.email", "prefix": "", "delimiter": "@"}],
+             self.generate_client_cert(
+                 "ipc-i-email", email_names=[f"{user}@example.com"])[:2],
+             user),
+            ("san.dnsname",
+             [{"path": "san.dnsname", "prefix": "", "delimiter": "."}],
+             self.generate_client_cert(
+                 "ipc-i-dns", dns_names=[f"{user}.example.com"])[:2],
+             user),
+            ("san.uri",
+             [{"path": "san.uri", "prefix": "https://",
+               "delimiter": "/"}],
+             self.generate_client_cert(
+                 "ipc-i-uri", extra_extension=(
+                     x509.SubjectAlternativeName(
+                         [x509.UniformResourceIdentifier(uri)]),
+                     False))[:2],
+             user),
+            ("prefix + delimiter",
+             [{"path": "subject.cn", "prefix": "www.cb-",
+               "delimiter": "."}],
+             self.generate_client_cert(f"www.cb-{user}.local")[:2], user),
+            ("CN without the prefix",
+             [{"path": "subject.cn", "prefix": "www.cb-",
+               "delimiter": "."}],
+             (cn_cert, cn_key), None),
+        ]
+        try:
+            for label, prefixes, (cert, key), expected_user in cases:
+                self._set_client_cert_auth_http("enable", prefixes)
+                actual = self.probe_identity(cert, key)
+                expected = (expected_user, 200) if expected_user \
+                    else (None, 401)
+                self.assertEqual(actual, expected,
+                                 f"I-03/I-04 {label}: got {actual}")
+        finally:
+            self._set_client_cert_auth_http("enable")
+
+        self.log.info("Step 4: internal SAN wins over a prefix match")
+        both, both_key, _ = self.generate_client_cert(
+            user, email_names=[f"internal@{self.INTERNAL_CERT_DOMAIN}"])
+        for ipc, expected in ((False, ("@internal", 200)),
+                              (True, ("", 401))):
+            self.set_ipc_setting(ipc)
+            self.assertEqual(self.probe_identity(both, both_key), expected,
+                             f"I-05 ipc={ipc}")
+
+        self.log.info("Step 5: CN = administrator")
+        admin_cert, admin_key, _ = self.generate_client_cert(
+            master.rest_username)
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            self.assertEqual(self.probe_identity(admin_cert, admin_key),
+                             (master.rest_username, 200), f"I-06 ipc={ipc}")
+
+        self.log.info("Step 6: rule changes while IPC is on")
+        self.set_ipc_setting(True)
+        many = [{"path": "san.uri", "prefix": "a-", "delimiter": ""},
+                {"path": "san.dnsname", "prefix": "b-", "delimiter": ""},
+                {"path": "san.email", "prefix": "c-", "delimiter": ""},
+                {"path": "subject.cn", "prefix": "", "delimiter": ""}]
+        try:
+            for state, prefixes in (("enable", many),
+                                    ("hybrid", self.DEFAULT_CCA_PREFIXES)):
+                self._set_client_cert_auth_http(state, prefixes)
+                self.assertEqual(
+                    self.probe_identity(cn_cert, cn_key), (user, 200),
+                    f"I-08 state={state} rules={len(prefixes)}")
+        finally:
+            self._set_client_cert_auth_http("enable")
+
+        self.log.info("Step 7: no-narrowing matrix")
+        principals = {master.rest_username: master.rest_password}
+        for name, role in (("ipc_h_cadmin", "cluster_admin"),
+                           ("ipc_h_ro", "ro_admin"),
+                           ("ipc_h_sec", "security_admin"),
+                           ("ipc_h_bucket", "bucket_admin[*]"),
+                           ("ipc_h_app", "data_reader[*]")):
+            principals[name] = self._create_rbac_test_user(name, role)[1]
+        endpoints = ["/pools/default", "/settings/rbac/users",
+                     "/settings/audit", "/settings/clientCertAuth",
+                     "/pools/default/buckets"]
+        internal_cert, internal_key = self.generate_internal_client_cert(
+            self.ca_cert, self.ca_key)
+        own_certs = {name: self.generate_client_cert(name)[:2]
+                     for name in principals}
+
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            mismatches = []
+            for name, password in principals.items():
+                auth = (name, password)
+                conns = {
+                    "internal cert": (internal_cert, internal_key),
+                    "no cert": (None, None),
+                    "own cert": own_certs[name],
+                }
+                row = {}
+                for conn, (cert, key) in conns.items():
+                    who, _ = self.probe_identity(cert, key, auth=auth)
+                    codes = []
+                    for path in endpoints:
+                        resp = (self.mtls_request(cert, key, path=path,
+                                                  auth=auth) if cert
+                                else self.https_request(path, auth=auth))
+                        codes.append(resp.status_code)
+                    row[conn] = (who, tuple(codes))
+                self.log.info(f"H ipc={ipc} {name}: {row}")
+                if ipc:
+                    if len(set(row.values())) != 1:
+                        mismatches.append(f"{name}: {row}")
+                    if row["no cert"][0] != name:
+                        mismatches.append(f"{name} resolved as "
+                                          f"{row['no cert'][0]}")
+                elif row["internal cert"][0] != "@internal":
+                    mismatches.append(
+                        f"{name}: internal cert resolved as "
+                        f"{row['internal cert'][0]}, expected @internal")
+            self.assertFalse(
+                mismatches,
+                f"H-01..H-04 ipc={ipc} mismatches:\n" + "\n".join(mismatches))
+
+        self.log.info(
+            "Test passed: prefix-mapped certs are unaffected by IPC, and "
+            "with IPC on the internal cert neither adds nor removes access")
