@@ -83,11 +83,11 @@ class TravelSampleApp(AppBase):
                 # Create collection meta_data document
                 sdk_client = self.sdk_clients["bucket_data_writer"]
                 for tenant in self.tenants:
-                    sdk_client.select_collection(scope_name=tenant,
-                                                 collection_name="meta_data")
                     app_data = {"date": "2001-01-01"}
-                    result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                             "application", app_data)
+                    result = query_util.CommonUtil.crud(
+                        sdk_client, tenant, "meta_data",
+                        DocLoading.Bucket.DocOps.CREATE,
+                        "application", app_data)
                     self.assertTrue(result["status"],
                                     "App_meta creation failed")
                     bucket.scopes[self.tenants[0]].collections["meta_data"] \

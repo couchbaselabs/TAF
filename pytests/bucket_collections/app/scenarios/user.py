@@ -76,7 +76,6 @@ class User(Thread):
         collection = "profile"
         client = sdk_clients["user_manager"]
         collection_obj = self.bucket.scopes[self.scope].collections[collection]
-        client.select_collection(self.scope, collection)
 
         template = User.get_template()
         start = collection_obj.doc_index[1]
@@ -91,7 +90,8 @@ class User(Thread):
             User.populate_values(template, u_id, key)
             retry = 1
             while retry <= User.max_retries:
-                result = client.crud(
+                result = query_util.CommonUtil.crud(
+                    client, self.scope, collection,
                     DocLoading.Bucket.DocOps.CREATE, key, template,
                     durability=SDKConstants.DurabilityLevel.MAJORITY,
                     timeout=10)
@@ -153,7 +153,6 @@ class User(Thread):
             passenger_data.append(passenger_info)
 
         client = sdk_clients["airline_booking"]
-        client.select_collection(tenant_scope, checkout_cart_collection)
         cart_id = query_util.CommonUtil.get_next_id(tenant_scope,
                                                     checkout_cart_collection)
         cart_key = "cart_%s" % cart_id
@@ -169,14 +168,16 @@ class User(Thread):
         checkout_doc["passengers"] = passenger_data
         retry = 1
         while retry <= User.max_retries:
-            result = client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                 cart_key, checkout_doc,
-                                 durability=d_level.MAJORITY)
+            result = query_util.CommonUtil.crud(
+                client, tenant_scope, checkout_cart_collection,
+                DocLoading.Bucket.DocOps.CREATE, cart_key, checkout_doc,
+                durability=d_level.MAJORITY)
             if result["status"]:
                 break
             for t_exception in SDKException.DurabilityImpossibleException:
                 if t_exception in str(result["error"]):
                     User.log.debug("Retrying due to d_impossible")
+                    break
             else:
                 raise Exception("Flight cart add failed: %s" % result)
             retry += 1
@@ -190,8 +191,8 @@ class User(Thread):
             checkout_doc["id"] = booking_id
             retry = 1
             while retry <= User.max_retries:
-                client.select_collection(tenant_scope, c_name)
-                result = client.crud(
+                result = query_util.CommonUtil.crud(
+                    client, tenant_scope, c_name,
                     DocLoading.Bucket.DocOps.CREATE, ticket_key, checkout_doc,
                     durability=d_level.MAJORITY_AND_PERSIST_TO_ACTIVE)
                 if result["status"]:
@@ -214,19 +215,19 @@ class User(Thread):
                              "status": "active",
                              "booked_on": global_vars.app_current_date,
                              "ticket_type": ticket_type}
-            client.select_collection(tenant_scope, "flight_booking")
-            result = client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                 f_booking_key, f_booking_doc)
+            result = query_util.CommonUtil.crud(
+                client, tenant_scope, "flight_booking",
+                DocLoading.Bucket.DocOps.CREATE, f_booking_key, f_booking_doc)
             if result["status"] is False:
                 raise Exception("User flight_booking add failed: %s" % result)
 
             # Remove booked ticket from cart
             retry = 1
             while retry <= User.max_retries:
-                client.select_collection(tenant_scope,
-                                         checkout_cart_collection)
-                result = client.crud(DocLoading.Bucket.DocOps.DELETE, cart_key,
-                                     durability=d_level.MAJORITY)
+                result = query_util.CommonUtil.crud(
+                    client, tenant_scope, checkout_cart_collection,
+                    DocLoading.Bucket.DocOps.DELETE, cart_key,
+                    durability=d_level.MAJORITY)
                 if result["status"]:
                     break
 

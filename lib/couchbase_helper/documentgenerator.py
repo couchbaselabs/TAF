@@ -201,7 +201,7 @@ class KVGenerator(object):
             return
         # Validate if the given vbuckets falls within bucket's max vb range
         for vb in self.target_vbuckets:
-            if vb > self.vbuckets:
+            if vb >= self.vbuckets:
                 raise(Exception(f"Bucket has only {self.vbuckets} which is "
                                 f"less than {vb} (target_vb) to generate doc"))
 
