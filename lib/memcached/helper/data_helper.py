@@ -3,6 +3,8 @@ import zlib
 from TestInput import TestInputServer
 
 from BucketLib.BucketOperations import BucketHelper
+from cb_constants import CbServer
+from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from common_lib import sleep
 import global_vars
@@ -121,6 +123,14 @@ class VBucketAwareMemcached(object):
                     if node.ip == server_ip and node.memcached == server_port:
                         if server_str not in memcacheds:
                             server.port = node.port
+                            # vBucket map lists the plain KV port, but
+                            # MemcachedClient speaks TLS when use_https is
+                            # set, so it must dial the SSL listener
+                            if CbServer.use_https \
+                                    and not ClusterRun.is_enabled:
+                                server.memcached_port = int(
+                                    CbServer.ssl_port_map.get(
+                                        str(server_port), server_port))
                             memcacheds[server_str] = \
                                 MemcachedClientHelper.direct_client(
                                     server, bucket,
