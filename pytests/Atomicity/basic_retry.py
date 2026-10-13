@@ -7,6 +7,7 @@ import threading
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator
 from sdk_client3 import SDKClient, TransactionConfig
+from sdk_exceptions import SDKException
 from sdk_utils.transaction_util import TransactionLoader
 
 
@@ -362,6 +363,21 @@ class basic_ops(ClusterSetup):
                 self.log.warning("Transaction to create docs failed: %s"
                                  % exception)
                 self.sleep(60, "Wait for transaction cleanup to happen")
+                if SDKException.check_if_exception_exists(SDKException.DocumentExistsException, exception):
+                    # SDK close() drains in-flight ops, so the 'stopped'
+                    # txn for this chunk may have crossed its commit point.
+                    # Cleanup rolls it forward, which is valid only if the
+                    # chunk is all-or-nothing
+                    missing = [key for key, _ in doc
+                               if not self.client1.read(key)["status"]]
+                    if missing:
+                        self.fail("Txn for %s docs was partially committed. "
+                                  "%s docs missing, e.g. %s"
+                                  % (len(doc), len(missing), missing[:5]))
+                    self.log.info("Interrupted txn for %s..%s had committed"
+                                  % (doc[0][0], doc[-1][0]))
+                    exception = None
+                    break
             if self.transaction_commit and exception:
                 self.fail("Transaction to create docs failed after waiting "
                           "for the transaction cleanup: %s" % exception)

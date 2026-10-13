@@ -2,6 +2,7 @@ import json
 
 from cb_tools.cbstats import Cbstats
 from castest.cas_base import CasBaseTest
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import VBucketAwareMemcached
@@ -287,27 +288,67 @@ class OpsChangeCasTests(CasBaseTest):
         self.log.info("Introducing CAS corruption")
         # set the CAS to -2 and then mutate to increment to -1 and
         # then it should stop there
+        # The rev seqno must beat the existing one, else revid conflict
+        # resolution rejects set_with_meta with EEXISTS. Read it, since the
+        # key may already have been mutated by an earlier phase
+        rev_seqno = mcd.getMeta(key)[3]
+        mcd._set_vbucket(key)
         mcd.setWithMetaInvalid(key, json.dumps({'value': 'value2'}),
-                               0, 0, 0, -2)
+                               0, 0, rev_seqno + 1, -2)
         # print 'max cas pt1', mcd.getMeta(key)[4]
         mcd.set(key, 0, 0, json.dumps({'value': 'value3'}))
         # print 'max cas pt2', mcd.getMeta(key)[4]
         mcd.set(key, 0, 0, json.dumps({'value': 'value4'}))
         # print 'max cas pt3', mcd.getMeta(key)[4]
 
+    def _allow_invalid_hlc(self, bucket):
+        """
+        From 7.9, buckets default to invalidHlcStrategy=error, so a
+        set_with_meta carrying a CAS beyond hlcMaxFutureThreshold is rejected
+        with cas_value_invalid (seen as EEXISTS since mc_bin_client does not
+        negotiate XERROR). These tests deliberately poison max_cas
+        """
+        bucket_rest = BucketRestApi(self.cluster.master)
+        status, content = bucket_rest.edit_bucket(
+            bucket.name, {"invalidHlcStrategy": "ignore"})
+        if not status:
+            self.fail("Failed to set invalidHlcStrategy=ignore: %s" % content)
+        self.sleep(5, "Wait for invalidHlcStrategy to reach memcached")
+        _, bucket_info = bucket_rest.get_bucket_info(bucket.name)
+        self.log.info("invalidHlcStrategy for %s is now %s"
+                      % (bucket.name, bucket_info.get("invalidHlcStrategy")))
+
+    def _rebalance(self, to_add, to_remove):
+        rebalance_task = self.task.async_rebalance(self.cluster, to_add,
+                                                   to_remove)
+        self.task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result,
+                        "Rebalance failed. IN=%s, OUT=%s"
+                        % ([n.ip for n in to_add], [n.ip for n in to_remove]))
+
+    def _vb_aware_client(self, bucket):
+        # Pass the Bucket object (BucketHelper.get_vbuckets needs it, not a
+        # name) and info= explicitly - without info the helper builds a dict
+        # that BucketHelper cannot consume on every branch
+        return VBucketAwareMemcached(RestConnection(self.cluster.master),
+                                     bucket, info=self.cluster.master)
+
     # MB-17517: Verify if max CAS somehow becomes -1 we can recover from it
     def corrupt_cas_is_healed_on_rebalance_and_reboot(self):
         self.log.info('Start corrupt_cas_is_healed_on_rebalance_and_reboot')
         key_name = 'key1'
-        bucket_name = self.cluster.buckets[0].name
+        bucket = self.cluster.buckets[0]
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+        if len(kv_nodes) < 2:
+            self.fail("Test requires 2 KV nodes, found %s" % len(kv_nodes))
 
         # Phase 1: corrupt CAS, verify healing via rebalance out/in
-        client = VBucketAwareMemcached(RestConnection(self.cluster.master),
-                                       bucket_name)
+        client = self._vb_aware_client(bucket)
         client.memcached(key_name).set(key_name, 0, 0,
                                        json.dumps({'value': 'value1'}))
         mc_active = client.memcached(key_name)
         mc_replica = client.memcached(key_name, replica_index=0)
+        self._allow_invalid_hlc(bucket)
         self._corrupt_max_cas(mc_active, key_name)
 
         resp = mc_active.get(key_name)
@@ -316,58 +357,61 @@ class OpsChangeCasTests(CasBaseTest):
         # Identify active-vbucket owner to drive rebalance decision
         vb_id = client._get_vBucket_id(key_name)
         active_ip = client.vBucketMap[vb_id].split(':')[0]
-        active_node = next(s for s in self.servers[:2] if s.ip == active_ip)
-        orchestrator = next(s for s in self.servers[:2] if s.ip != active_ip)
+        active_node = next(s for s in kv_nodes if s.ip == active_ip)
         self.log.info('Active vb for {0} on {1}; rebalancing that node out'
                       .format(key_name, active_ip))
 
         self.log.info('Remove the node with -1 max cas')
-        rebalance = self.cluster.async_rebalance([orchestrator], [], [active_node])
-        rebalance.result()
+        self._rebalance([], [active_node])
         replica_cas = mc_replica.getMeta(key_name)[4]
+        client.done()
 
         self.log.info('Add the node back, the max_cas should be healed')
-        rebalance = self.cluster.async_rebalance([orchestrator], [active_node], [])
-        rebalance.result()
+        self._rebalance([active_node], [])
 
-        # recreate client — vbucket map changed after rebalance
-        client = VBucketAwareMemcached(RestConnection(self.cluster.master),
-                                       bucket_name)
+        # recreate client - vbucket map changed after rebalance
+        client = self._vb_aware_client(bucket)
         mc_active = client.memcached(key_name)
         active_cas = mc_active.getMeta(key_name)[4]
+        client.done()
         self.assertTrue(replica_cas == active_cas,
                         'cas mismatch active {0} replica {1}'
                         .format(active_cas, replica_cas))
 
         # Phase 2: rebalance out second node to go single-node for reboot test
-        non_master = next(s for s in self.servers[:2]
-                          if s.ip != self.cluster.master.ip)
-        self.log.info('Rebalance out {0} before reboot phase'.format(non_master.ip))
-        rebalance = self.cluster.async_rebalance([self.cluster.master],
-                                                 [], [non_master])
-        rebalance.result()
+        non_master = next(s for s in self.cluster_util.get_kv_nodes(
+            self.cluster) if s.ip != self.cluster.master.ip)
+        self.log.info('Rebalance out {0} before reboot phase'
+                      .format(non_master.ip))
+        self._rebalance([], [non_master])
 
         # Phase 3: corrupt CAS again, verify healing via server reboot
-        client = VBucketAwareMemcached(RestConnection(self.cluster.master),
-                                       bucket_name)
+        client = self._vb_aware_client(bucket)
         client.memcached(key_name).set(key_name, 0, 0,
                                        json.dumps({'value': 'value1'}))
         mc_active = client.memcached(key_name)
+        self._allow_invalid_hlc(bucket)
         self._corrupt_max_cas(mc_active, key_name)
+        corrupt_cas = mc_active.getMeta(key_name)[4]
+        client.done()
 
         remote = RemoteMachineShellConnection(self.cluster.master)
         remote.stop_server()
         self.sleep(30, 'Wait for server to stop')
         remote.start_server()
-        self.sleep(30, 'Wait for server to start')
+        remote.disconnect()
+        self.assertTrue(self.bucket_util._wait_warmup_completed(
+            bucket, servers=[self.cluster.master]),
+            "Bucket warmup did not complete after server restart")
 
-        # recreate client after reboot — connections are stale
-        client = VBucketAwareMemcached(RestConnection(self.cluster.master),
-                                       bucket_name)
+        # recreate client after reboot - connections are stale
+        client = self._vb_aware_client(bucket)
         mc_active = client.memcached(key_name)
-        max_cas = mc_active.getMeta(key_name)[4]
-        self.assertTrue(max_cas == 0,
-                        'max cas after reboot is {0} != 0'.format(max_cas))
+        curr_cas = mc_active.getMeta(key_name)[4]
+        client.done()
+        self.assertTrue(curr_cas == corrupt_cas,
+                        'Corrupted cas (%s) != curr_cas (%s) after reboot'
+                        % (corrupt_cas, curr_cas))
 
     """
     MB-21448 bug test

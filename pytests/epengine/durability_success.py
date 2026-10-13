@@ -462,19 +462,24 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         half_of_num_items = int(self.num_items/2)
 
         # Create required doc_generators for CRUD ops
-        read_gen = doc_generator(self.key, 0, self.num_items)
+        read_gen = doc_generator(self.key, 0, self.num_items,
+                                 key_size=self.key_size)
         if doc_ops == DocLoading.Bucket.DocOps.CREATE:
             doc_gen[0] = doc_generator(self.key, self.num_items,
-                                       self.num_items * 2)
+                                       self.num_items * 2,
+                                       key_size=self.key_size)
             doc_gen[1] = doc_generator(self.key, self.num_items * 2,
-                                       self.num_items * 3)
+                                       self.num_items * 3,
+                                       key_size=self.key_size)
             # Update expected self.num_items at the end of this op
             self.num_items *= 3
         elif doc_ops in [DocLoading.Bucket.DocOps.UPDATE,
                          DocLoading.Bucket.DocOps.DELETE]:
-            doc_gen[0] = doc_generator(self.key, 0, half_of_num_items)
+            doc_gen[0] = doc_generator(self.key, 0, half_of_num_items,
+                                       key_size=self.key_size)
             doc_gen[1] = doc_generator(self.key, half_of_num_items,
-                                       self.num_items)
+                                       self.num_items,
+                                       key_size=self.key_size)
 
             # Update expected self.num_items at the end of "delete" op
             if doc_ops == DocLoading.Bucket.DocOps.DELETE:
@@ -536,11 +541,14 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Create required doc_generators for CRUD ops
         doc_gen[DocLoading.Bucket.DocOps.CREATE] = \
-            doc_generator(self.key, self.num_items, self.num_items * 2)
+            doc_generator(self.key, self.num_items, self.num_items * 2,
+                          key_size=self.key_size)
         doc_gen[DocLoading.Bucket.DocOps.UPDATE] = \
-            doc_generator(self.key, half_of_num_items, self.num_items)
+            doc_generator(self.key, half_of_num_items, self.num_items,
+                          key_size=self.key_size)
         doc_gen[DocLoading.Bucket.DocOps.DELETE] = \
-            doc_generator(self.key, 0, half_of_num_items)
+            doc_generator(self.key, 0, half_of_num_items,
+                          key_size=self.key_size)
         doc_gen[DocLoading.Bucket.DocOps.READ] = \
             doc_gen[DocLoading.Bucket.DocOps.UPDATE]
 
@@ -591,17 +599,23 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 or self.durability_level.upper() == "NONE":
             self.fail("Test requires valid durability level for sync_writes")
 
-        doc_gen = doc_generator(self.key, self.num_items, self.num_items*3,
-                                key_size=10, doc_size=5,
-                                load_using=self.load_docs_using)
-        self.log.info("Loading %s keys into the bucket" % (self.num_items*2))
-        load_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, doc_gen,
-            DocLoading.Bucket.DocOps.UPDATE,
-            durability=self.durability_level,
-            print_ops_rate=False,
-            load_using=self.load_docs_using)
-        self.task_manager.get_task_result(load_task)
+        # Mutate the existing keys rather than create new ones. Fresh keys
+        # grow memory with num_items, and on a min_ram ephemeral bucket
+        # (no eviction) that hits the high watermark - every write then
+        # TMPFAILs until timeout instead of exercising the DCP commit path
+        self.log.info("Performing %s sync_writes" % (self.num_items*2))
+        for _ in range(2):
+            doc_gen = doc_generator(self.key, 0, self.num_items,
+                                    key_size=self.key_size, doc_size=5,
+                                    load_using=self.load_docs_using)
+            load_task = self.task.async_load_gen_docs(
+                self.cluster, self.bucket, doc_gen,
+                DocLoading.Bucket.DocOps.UPDATE,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                print_ops_rate=False,
+                load_using=self.load_docs_using)
+            self.task_manager.get_task_result(load_task)
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
