@@ -1886,24 +1886,25 @@ class UpgradeTests(UpgradeBase):
 
     def swap_rebalance_all_nodes(self, data_load=True):
         self.PrintStep("Starting Swap Rebalance of all nodes post upgrade")
-        self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
-        self.spare_nodes.append(self.spare_node)
+        self.spare_nodes = [server for server in self.cluster.servers
+                           if server not in self.cluster.nodes_in_cluster]
 
-        self.log.info("Installing the version {0} on the spare node".format(
+        self.log.info("Installing the version {0} on the spare nodes".format(
                                                         self.upgrade_version))
         self.upgrade_helper.new_install_version_on_all_nodes(
-            [self.spare_node], self.upgrade_version)
-        # Prepare data directories before initializing node
-        self._prepare_node_paths(self.spare_node)
-        # Initialize paths on the spare node
-        status, content = ClusterRestAPI(self.spare_node).initialize_node(
-            self.spare_node.rest_username,
-            self.spare_node.rest_password,
-            data_path=self.spare_node.data_path,
-            index_path=self.spare_node.index_path,
-            cbas_path=self.spare_node.cbas_path,
-            eventing_path=self.spare_node.eventing_path)
-        self.assertTrue(status, f"Init node failed: {content}")
+            self.spare_nodes, self.upgrade_version)
+        for spare_node in self.spare_nodes:
+            # Prepare data directories before initializing node
+            self._prepare_node_paths(spare_node)
+            # Initialize paths on the spare node
+            status, content = ClusterRestAPI(spare_node).initialize_node(
+                spare_node.rest_username,
+                spare_node.rest_password,
+                data_path=spare_node.data_path,
+                index_path=spare_node.index_path,
+                cbas_path=spare_node.cbas_path,
+                eventing_path=spare_node.eventing_path)
+            self.assertTrue(status, f"Init node failed: {content}")
 
         nodes_to_replace = self.cluster.nodes_in_cluster
 
