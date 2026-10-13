@@ -46,7 +46,7 @@ class APIBase(CouchbaseBaseTest):
     # one of these maps to the equivalent region on azure/gcp instead,
     # while aws (and any provider not listed here) uses it as-is.
     REGION_EQUIVALENTS = {
-        "eu-west-1": {"azure": "westus3", "gcp": "us-west2"}
+        "eu-west-1": {"azure": "westus3", "gcp": "europe-west2"}
     }
 
     def _get_region(self, default, cloud_provider="aws"):
