@@ -682,6 +682,12 @@ class IPCBase(ClusterSetup):
                 f"ns_config:delete({self.PROTECTION_SLEEP_KEY}).")
         self._rotation_restore = {}
 
+    def beam_stats(self, server=None):
+        """(Erlang process count, total memory in bytes) of ns_server."""
+        return (int(self._diag_eval("erlang:system_info(process_count).",
+                                    server)),
+                int(self._diag_eval("erlang:memory(total).", server)))
+
     def creds_rotation_pid(self, server=None):
         return self._diag_eval("whereis(cb_creds_rotation).", server)
 

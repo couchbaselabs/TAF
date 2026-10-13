@@ -1489,3 +1489,153 @@ class IPCTest(IPCBase):
         self.log.info(
             "Test passed: rotation propagates across outages and rebalances "
             "with enforcement intact")
+
+    def test_ipc_runtime_toggle_dynamics(self):
+        """
+        The setting is applied at runtime, under load, repeatedly, and
+        during a failover.
+
+        Steps:
+            1. While requests run continuously, IPC is toggled off, on, off
+               and on. Requests with credentials never fail; certificate-only
+               requests follow the setting within a short grace period after
+               each flip, with no restart.
+            2. Twenty rapid toggles leave ns_server's process count and
+               memory flat, and the setting still applied and enforced on
+               every node.
+            3. A toggle during a hard failover is applied consistently on
+               every node, the failed-over one included, and survives full
+               recovery and rebalance.
+        """
+        nodes = self.cluster.servers[:self.nodes_init]
+        self.assertGreaterEqual(len(nodes), 3, "Needs a 3-node cluster")
+        master, third = nodes[0], nodes[2]
+        admin = (master.rest_username, master.rest_password)
+        self._set_client_cert_auth_http("enable")
+        cert, key = self.generate_internal_client_cert(self.ca_cert,
+                                                       self.ca_key)
+
+        self.log.info("Step 1: toggles under continuous load")
+        self.set_ipc_setting(False)
+        # Each flip is (started, finished, value): the value takes effect
+        # somewhere inside that window, not at either end.
+        samples, flips = [], [(0, 0, False)]
+        stop = threading.Event()
+
+        def load():
+            # A request error is recorded, not raised: an exception would
+            # end this thread silently and leave too few samples to judge.
+            while not stop.is_set():
+                sent = time.time()
+                codes = []
+                for auth in (None, admin):
+                    try:
+                        codes.append(self.mtls_request(
+                            cert, key, auth=auth).status_code)
+                    except requests.exceptions.RequestException as exc:
+                        codes.append(f"error: {exc}")
+                samples.append((sent, *codes))
+                time.sleep(0.3)
+
+        worker = threading.Thread(target=load)
+        worker.start()
+        try:
+            for ipc in (True, False, True):
+                time.sleep(8)
+                started = time.time()
+                self.set_ipc_setting(ipc)
+                flips.append((started, time.time(), ipc))
+            time.sleep(8)
+        finally:
+            stop.set()
+            worker.join(60)
+
+        mismatched, credentialed, judged = [], [], set()
+        for sent, cert_only, with_creds in samples:
+            if with_creds != 200:
+                credentialed.append((sent, with_creds))
+            if any(start - 1 <= sent <= end + 2
+                   for start, end, _ in flips[1:]):
+                continue
+            state = [ipc for _, end, ipc in flips if end <= sent][-1]
+            judged.add(state)
+            if cert_only != (401 if state else 200):
+                mismatched.append((sent, state, cert_only))
+        self.log.info(f"K-01/K-02: {len(samples)} samples, flips {flips}")
+        self.assertEqual(judged, {False, True},
+                         f"K-01/K-02: too few samples outside the toggle "
+                         f"windows to judge both states: {samples}")
+        self.assertFalse(credentialed,
+                         f"K-01: credentialed requests failed: "
+                         f"{credentialed}")
+        self.assertFalse(mismatched,
+                         f"K-01/K-02: cert-only requests out of step with "
+                         f"the setting: {mismatched}")
+
+        self.log.info("Step 2: twenty rapid toggles")
+        procs_before, mem_before = self.beam_stats()
+        for i in range(20):
+            self.set_ipc_setting(i % 2 == 0)
+        self.set_ipc_setting(True)
+        procs_after, mem_after = self.beam_stats()
+        self.log.info(f"K-03 processes {procs_before} -> {procs_after}, "
+                      f"memory {mem_before} -> {mem_after}")
+        self.assertLess(procs_after - procs_before, 50,
+                        "K-03: process count grew")
+        self.assertLess(mem_after - mem_before, 50 * 1024 * 1024,
+                        "K-03: memory grew by more than 50 MiB")
+        self.wait_for_ipc_value(nodes, True)
+        self.assert_cert_enforcement(nodes, cert, key, True, "K-03")
+
+        self.log.info("Step 3: toggle during a hard failover")
+        otp = self.otp_of(third)
+        # Both calls are released together, so the toggle reaches the
+        # server while the failover (a few seconds) is still running.
+        go = threading.Barrier(2)
+        finished, toggle = {}, {}
+
+        def run(name, fn, *args, **kwargs):
+            go.wait()
+            result = fn(*args, **kwargs)
+            finished[name] = time.time()
+            if name == "toggle":
+                toggle["status"] = result.status_code
+
+        # The toggle is the bare POST: timing set_ipc_setting would include
+        # its confirming GET, which can land after the failover even when
+        # the change itself did not.
+
+        threads = [
+            threading.Thread(target=run, args=("failover",
+                                               self.rest.fail_over, otp),
+                             kwargs={"graceful": False}),
+            threading.Thread(target=run, args=(
+                "toggle", IPCUtils.post_internal_settings, master,
+                {self.IPC_SETTING: "false"})),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(300)
+        self.log.info(f"K-05 finish times: {finished}")
+        self.assertEqual(toggle.get("status"), 200,
+                         "K-05 toggle during the failover")
+        self.assertLess(finished.get("toggle", float("inf")),
+                        finished.get("failover", 0),
+                        "K-05: the toggle did not complete while the "
+                        "failover was still running")
+        self.wait_for_ipc_value(nodes, False)
+        self.assert_cert_enforcement(nodes, cert, key, False,
+                                     "K-05 after failover")
+        self.assertTrue(self.rest.set_recovery_type(otp, "full"),
+                        "K-05 set full recovery")
+        self.rebalance_cluster()
+        for server in nodes:
+            self.assert_node_active(server)
+        self.wait_for_ipc_value(nodes, False)
+        self.assert_cert_enforcement(nodes, cert, key, False,
+                                     "K-05 after recovery")
+
+        self.log.info(
+            "Test passed: the setting applies at runtime under load, "
+            "without leaks, and consistently through a failover")
