@@ -1,3 +1,4 @@
+import copy
 import json
 import shlex
 import time
@@ -5,6 +6,7 @@ import time
 import requests
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
+from cryptography.x509.oid import ExtendedKeyUsageOID
 
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -616,6 +618,151 @@ class IPCBase(ClusterSetup):
         self.assert_status(resp, 200, "C-21 extractUserFromCert")
         return resp.json()
 
+    # -- Node addition fixtures ----------------------------------------------
+
+    SPARE_PASSWORD = "SparePass@1234"
+
+    def deploy_test_node_certs(self, server, ca_cert, ca_key, crl_utils=None):
+        """
+        Give `server` a node certificate and an internal client certificate
+        issued by `ca_cert`. The client certificate is what a node presents
+        when it adds or joins another under client certificate auth.
+        """
+        utils = crl_utils or self.crl_utils
+        node_cert, node_key, _ = utils.generate_leaf_cert(
+            ca_cert, ca_key, cn=server.ip, dns_names=[server.ip],
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH,
+                                ExtendedKeyUsageOID.CLIENT_AUTH])
+        utils.deploy_node_cert(RestConnection(server), server, node_cert,
+                               node_key)
+        client_cert, client_key, _ = utils.generate_leaf_cert(
+            ca_cert, ca_key, cn=server.ip,
+            email_names=[f"{server.ip.replace('.', '-')}"
+                         f"@{self.INTERNAL_CERT_DOMAIN}"])
+        utils.deploy_client_cert(server, client_cert, client_key)
+
+    def prepare_joinee(self, server, ipc, trusted_cas, issuer=None,
+                       initialize=True, cca="mandatory"):
+        """
+        Make `server` a node that is about to be added to the cluster:
+        optionally initialised as its own single-node cluster with its own
+        admin password, trusting `trusted_cas`, with node and client certs
+        from `issuer` (default: the first CA), clientCertAuth `cca` and IPC
+        `ipc`.
+
+        An initialised joinee matters: an uninitialised node accepts any
+        caller, so it would hide what IPC does to the joining handshake.
+
+        Returns a copy of `server` carrying the joinee's own credentials.
+        """
+        joinee = copy.copy(server)
+        if initialize:
+            status, content = ClusterRestAPI(server).initialize_cluster(
+                hostname=server.ip, username=server.rest_username,
+                password=self.SPARE_PASSWORD, services="kv",
+                memory_quota=256)
+            if not status:
+                self.fail(f"Initialising {server.ip} failed: {content}")
+            joinee.rest_password = self.SPARE_PASSWORD
+        # Separate tracker: these CA ids belong to the joinee, and must not
+        # end up in the cluster's own trusted-CA cleanup list.
+        spare_utils = CRLUtils(log=self.log)
+        for ca_cert, _ in trusted_cas:
+            spare_utils.trust_ca_on_cluster(RestConnection(joinee), joinee,
+                                            ca_cert)
+        issuer = issuer or trusted_cas[0]
+        self.deploy_test_node_certs(joinee, issuer[0], issuer[1],
+                                    crl_utils=spare_utils)
+        if initialize:
+            IPCUtils.set_client_cert_auth(
+                joinee, cca, self.DEFAULT_CCA_PREFIXES,
+                auth=self._auth_of(joinee)).raise_for_status()
+            resp = IPCUtils.post_internal_settings(
+                joinee, {self.IPC_SETTING: "true" if ipc else "false"},
+                auth=self._auth_of(joinee))
+            self.assert_status(resp, 200, f"IPC={ipc} on {server.ip}")
+        return joinee
+
+    @staticmethod
+    def _auth_of(server):
+        return server.rest_username, server.rest_password
+
+    def otp_of(self, server):
+        return f"ns_1@{server.ip}"
+
+    def rebalance_cluster(self, ejected=()):
+        """Rebalance every known node in, ejecting `ejected`, and wait."""
+        known = [node.id for node in self.rest.node_statuses()]
+        self.rest.rebalance(otpNodes=known,
+                            ejectedNodes=[self.otp_of(s) for s in ejected])
+        self.assertTrue(self.rest.monitorRebalance(), "Rebalance failed")
+
+    def wait_until_uninitialized(self, server, timeout=180):
+        """A node removed from a cluster resets asynchronously; wait until
+        it reports no pool before preparing it again."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                resp = requests.get(
+                    f"http://{server.ip}:8091/pools/default",
+                    auth=self._auth_of(server), timeout=10)
+                if "unknown pool" in resp.text:
+                    return
+            except requests.exceptions.RequestException:
+                pass
+            time.sleep(3)
+        self.fail(f"{server.ip} did not return to uninitialised in "
+                  f"{timeout}s")
+
+    def assert_node_active(self, server, services=None, timeout=120):
+        """Wait until `server` is a healthy, active member of the cluster,
+        optionally with exactly `services`."""
+        deadline = time.time() + timeout
+        entry = None
+        while time.time() < deadline:
+            nodes = self.rest.cluster_status().get("nodes", [])
+            entry = next((n for n in nodes
+                          if n.get("otpNode") == self.otp_of(server)), None)
+            if entry and entry.get("status") == "healthy" and \
+                    entry.get("clusterMembership") == "active":
+                break
+            time.sleep(3)
+        else:
+            self.fail(f"{server.ip} not healthy/active: {entry}")
+        if services is not None:
+            self.assertEqual(sorted(entry.get("services", [])),
+                             sorted(services),
+                             f"{server.ip} services: {entry}")
+
+    def reset_spares(self, spares):
+        """
+        Best-effort return of spare nodes to the uninitialised state TAF
+        expects: drop any still attached to the cluster, then hard-reset
+        any that are initialised on their own.
+        """
+        attached = {node.id for node in self.rest.node_statuses()}
+        active = [s for s in spares if self.otp_of(s) in attached]
+        for server in active:
+            IPCUtils.eject_node(self.cluster.master, self.otp_of(server))
+        still = {node.id for node in self.rest.node_statuses()}
+        members = [s for s in spares if self.otp_of(s) in still]
+        if members:
+            try:
+                self.rebalance_cluster(ejected=members)
+            except Exception as exc:
+                self.log.warning(f"Rebalancing out spares failed: {exc}")
+        # Plain HTTP: a spare left at clientCertAuth 'mandatory' refuses the
+        # framework's certificate-less HTTPS.
+        for server in spares:
+            for password in (self.SPARE_PASSWORD, server.rest_password):
+                try:
+                    resp = IPCUtils.hard_reset_node(
+                        server, auth=(server.rest_username, password))
+                    if resp.status_code == 200:
+                        break
+                except requests.exceptions.RequestException:
+                    continue
+
     # -- EE gating -----------------------------------------------------------
 
     def _require_ipc_supported(self):
@@ -746,14 +893,9 @@ class IPCBase(ClusterSetup):
         'prefixes' array and would be left enforcing the previous state
         until restarted.
         """
-        server = self.cluster.master
-        requests.post(
-            f"http://{server.ip}:8091/settings/clientCertAuth",
-            auth=(server.rest_username, server.rest_password),
-            json={"state": state,
-                  "prefixes": prefixes or self.DEFAULT_CCA_PREFIXES},
-            timeout=30,
-        ).raise_for_status()
+        IPCUtils.set_client_cert_auth(
+            self.cluster.master, state,
+            prefixes or self.DEFAULT_CCA_PREFIXES).raise_for_status()
 
     @staticmethod
     def _cert_der_from_path(cert_path):

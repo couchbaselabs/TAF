@@ -1037,3 +1037,186 @@ class IPCTest(IPCBase):
         self.log.info(
             "Test passed: prefix-mapped certs are unaffected by IPC, and "
             "with IPC on the internal cert neither adds nor removes access")
+
+    def test_ipc_node_addition_credential_requirement(self):
+        """
+        Adding a node under client certificate auth: the joining node
+        decides whether the cluster's internal certificate is enough, so
+        with IPC on there the addition needs that node's admin credentials.
+
+        Steps:
+            1. Joinee with IPC off: a certificate-only addition succeeds, as
+               before. The node is then ejected.
+            2. The same node re-provisioned with IPC on and its own admin
+               password: a certificate-only addition is refused, telling
+               the caller to supply credentials.
+            3. The cluster's password, which is not the joinee's: refused,
+               telling the caller to verify the credentials -- a different
+               message from step 2.
+            4. A read-only account on the joinee: refused.
+            5. The joinee's own admin credentials via addNodeV2 with a
+               service list: added, rebalanced in, active with those
+               services.
+            6. Graceful failover with delta recovery, then hard failover
+               with full recovery: both rebalance back with no credentials.
+            7. Node-initiated join against the cluster with IPC on: without
+               credentials it is refused with the cluster-side wording;
+               with them it joins.
+        """
+        master = self.cluster.master
+        spare, joiner = self.cluster.servers[1], self.cluster.servers[2]
+        admin, admin_pw = master.rest_username, master.rest_password
+        cas = [(self.ca_cert, self.ca_key)]
+        otp = self.otp_of(spare)
+
+        self.deploy_test_node_certs(master, self.ca_cert, self.ca_key)
+        # Joinees run 'mandatory' (prepare_joinee). The master stays at
+        # 'enable' so the framework's certificate-less HTTPS (rebalance,
+        # failover) keeps working; IPC treats a presented certificate the
+        # same under both.
+        self._set_client_cert_auth_http("enable")
+        self.set_ipc_setting(True)
+        try:
+            self.log.info("Step 1: joinee IPC off, certificate only")
+            self.prepare_joinee(spare, ipc=False, trusted_cas=cas)
+            resp = IPCUtils.add_node(master, spare.ip, client_cert_auth=True)
+            self.assert_status(resp, 200, "E-01 cert-only add, IPC off")
+            self.assert_status(IPCUtils.eject_node(master, otp), 200,
+                               "eject after E-01")
+            self.wait_until_uninitialized(spare)
+
+            self.log.info("Step 2: joinee re-provisioned with IPC on")
+            joinee = self.prepare_joinee(spare, ipc=True, trusted_cas=cas)
+            resp = IPCUtils.add_node(master, spare.ip, client_cert_auth=True)
+            self.assert_status(resp, 400, "E-03 cert-only add, IPC on")
+            self.assertIn("supply a username and password as well",
+                          resp.text, "E-03 message")
+
+            self.log.info("Step 3: the cluster's password, not the joinee's")
+            resp = IPCUtils.add_node(master, spare.ip, user=admin,
+                                     password=admin_pw, client_cert_auth=True)
+            self.assert_status(resp, 400, "E-06/E-18 wrong password")
+            self.assertIn("verify username and password", resp.text,
+                          "E-06 message")
+
+            self.log.info("Step 4: a read-only account on the joinee")
+            self.assert_status(
+                IPCUtils.create_local_user(joinee, "ipc_e_ro",
+                                           "Couchbase@1234", "ro_admin",
+                                           auth=self._auth_of(joinee)),
+                200, "create ro_admin on the joinee")
+            resp = IPCUtils.add_node(master, spare.ip, user="ipc_e_ro",
+                                     password="Couchbase@1234",
+                                     client_cert_auth=True)
+            self.assert_status(resp, 400, "E-07 ro_admin")
+            self.assertIn("Got HTTP status 403 from REST call", resp.text,
+                          "E-07 message")
+            self.assertIn("engageCluster2", resp.text, "E-07 message")
+
+            self.log.info("Step 5: joinee's own admin, addNodeV2 + services")
+            self.bucket_util.create_default_bucket(self.cluster,
+                                                   ram_quota=100, replica=1)
+            resp = IPCUtils.add_node(master, spare.ip, user=admin,
+                                     password=self.SPARE_PASSWORD,
+                                     client_cert_auth=True, services="kv",
+                                     v2=True)
+            self.assert_status(resp, 200, "E-02/E-04 add with credentials")
+            self.rebalance_cluster()
+            self.assert_node_active(spare, services=["kv"])
+
+            self.log.info("Step 6: failover and recovery need no credentials")
+            for graceful, recovery in ((True, "delta"), (False, "full")):
+                self.assertTrue(self.rest.fail_over(otp, graceful=graceful),
+                                f"E-16 failover graceful={graceful}")
+                if graceful:
+                    self.assertTrue(self.rest.monitorRebalance(),
+                                    "E-16 graceful failover")
+                self.assertTrue(self.rest.set_recovery_type(otp, recovery),
+                                f"E-16 set {recovery} recovery")
+                self.rebalance_cluster()
+                self.assert_node_active(spare)
+
+            self.log.info("Step 7: node-initiated join")
+            self.prepare_joinee(joiner, ipc=True, trusted_cas=cas,
+                                initialize=False)
+            resp = IPCUtils.do_join_cluster(joiner, master.ip,
+                                            client_cert_auth=True)
+            self.assert_status(resp, 400, "E-05 join without credentials")
+            self.assertIn("If the cluster does not accept the internal "
+                          "client certificate on its own", resp.text,
+                          "E-05 message")
+            resp = IPCUtils.do_join_cluster(joiner, master.ip, user=admin,
+                                            password=admin_pw,
+                                            client_cert_auth=True)
+            self.assert_status(resp, 200, "E-05 join with credentials")
+            self.rebalance_cluster()
+            self.assert_node_active(joiner)
+        finally:
+            self.reset_spares([spare, joiner])
+            self.crl_utils.regenerate_cluster_certificate_when_healthy(
+                self.rest, log=self.log)
+
+        self.log.info(
+            "Test passed: with IPC on, adding a node needs that node's admin "
+            "credentials; failover recovery does not")
+
+    def test_ipc_node_addition_cross_ca_and_join_options(self):
+        """
+        Certificate trust and parameter handling around node addition, with
+        IPC on.
+
+        Steps:
+            1. A joinee whose node certificate comes from a CA the cluster
+               does not trust is refused, naming the cluster's CAs; once
+               the cluster trusts that CA the same addition succeeds.
+            2. newNodeHostname is rejected by addNode as an unknown
+               parameter, and accepted by a node-initiated join.
+        """
+        master = self.cluster.master
+        spare, joiner = self.cluster.servers[1], self.cluster.servers[2]
+        admin, admin_pw = master.rest_username, master.rest_password
+        ca1 = (self.ca_cert, self.ca_key)
+        ca2 = self.crl_utils.generate_ca("IPCSecondCA")
+
+        self.deploy_test_node_certs(master, self.ca_cert, self.ca_key)
+        self._set_client_cert_auth_http("enable")
+        self.set_ipc_setting(True)
+        try:
+            self.log.info("Step 1: joinee certified by an untrusted CA")
+            self.prepare_joinee(spare, ipc=True, trusted_cas=[ca1, ca2],
+                                issuer=ca2)
+            add = dict(user=admin, password=self.SPARE_PASSWORD,
+                       client_cert_auth=True)
+            resp = IPCUtils.add_node(master, spare.ip, **add)
+            self.assert_status(resp, 400, "E-12 untrusted CA")
+            self.assertIn("issued by unknown CA", resp.text, "E-12 message")
+            self.assertIn("CAs available on the cluster", resp.text,
+                          "E-12 message names the cluster side")
+            self._trust_ca_on_cluster(ca2[0])
+            resp = IPCUtils.add_node(master, spare.ip, **add)
+            self.assert_status(resp, 200, "E-12 after trusting the CA")
+            self.assert_status(
+                IPCUtils.eject_node(master, self.otp_of(spare)), 200,
+                "eject after E-12")
+
+            self.log.info("Step 2: newNodeHostname")
+            resp = IPCUtils.add_node(master, joiner.ip, user=admin,
+                                     password=admin_pw,
+                                     extra={"newNodeHostname": joiner.ip})
+            self.assert_status(resp, 400, "E-15 addNode")
+            self.assertIn("Got unknown parameters", resp.text,
+                          "E-15 addNode message")
+            self.prepare_joinee(joiner, ipc=True, trusted_cas=[ca1],
+                                initialize=False)
+            resp = IPCUtils.do_join_cluster(
+                joiner, master.ip, user=admin, password=admin_pw,
+                client_cert_auth=True, new_node_hostname=joiner.ip)
+            self.assert_status(resp, 200, "E-15 doJoinCluster")
+        finally:
+            self.reset_spares([spare, joiner])
+            self.crl_utils.regenerate_cluster_certificate_when_healthy(
+                self.rest, log=self.log)
+
+        self.log.info(
+            "Test passed: CA trust and join parameters behave as designed "
+            "with IPC on")
