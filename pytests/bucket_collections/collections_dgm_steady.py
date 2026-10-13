@@ -148,7 +148,8 @@ class CollectionsDgmSteady(CollectionBase):
                 self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
-                batch_size=self.batch_size)
+                batch_size=self.batch_size,
+                load_using=self.load_docs_using)
         self.data_validation(doc_loading_task)
 
     def test_drop_scopes_collections(self):
@@ -161,7 +162,8 @@ class CollectionsDgmSteady(CollectionBase):
                 self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
-                batch_size=self.batch_size)
+                batch_size=self.batch_size,
+                load_using=self.load_docs_using)
         self.data_validation(doc_loading_task)
 
     def test_create_scopes_collections(self):
@@ -175,7 +177,8 @@ class CollectionsDgmSteady(CollectionBase):
                 self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
-                batch_size=self.batch_size)
+                batch_size=self.batch_size,
+                load_using=self.load_docs_using)
         self.data_validation(doc_loading_task)
 
     def test_mix_crud_collections_and_docs(self):
@@ -189,5 +192,6 @@ class CollectionsDgmSteady(CollectionBase):
                 self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
-                batch_size=self.batch_size)
+                batch_size=self.batch_size,
+                load_using=self.load_docs_using)
         self.data_validation(doc_loading_task)

@@ -14,20 +14,41 @@ from cb_constants import DocLoading
 class CommonUtil(object):
     # Class-level lock for thread synchronization
     _lock = threading.Lock()
+    # sdk_clients are shared across all tenant threads and
+    # select_collection() mutates the client, so select + crud must run
+    # under the client's lock. Else one tenant's doc lands in another
+    # tenant's collection
+    _client_locks = dict()
+    _client_locks_guard = threading.Lock()
+
+    @staticmethod
+    def __get_client_lock(client):
+        with CommonUtil._client_locks_guard:
+            return CommonUtil._client_locks.setdefault(id(client),
+                                                       threading.RLock())
+
+    @staticmethod
+    def crud(client, scope, collection, op_type, key, value=None, **kwargs):
+        with CommonUtil.__get_client_lock(client):
+            client.select_collection(scope, collection)
+            return client.crud(op_type, key, value, **kwargs)
 
     @staticmethod
     def get_next_id(scope, collection):
         with CommonUtil._lock:
             doc_key = "%s.%s" % (scope, collection)
             client = sdk_clients["bucket_data_writer"]
-            client.select_collection(scope, "meta_data")
-            success, fail = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
-                                        doc_key, ["doc_counter", 1],
-                                        create_path=True,
-                                        store_semantics=StoreSemantics.UPSERT)
+            success, fail = CommonUtil.crud(
+                client, scope, "meta_data",
+                DocLoading.Bucket.SubDocOps.COUNTER,
+                doc_key, ["doc_counter", 1],
+                create_path=True,
+                store_semantics=StoreSemantics.UPSERT)
             if success:
-                success, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
-                                         doc_key, "doc_counter")
+                success, _ = CommonUtil.crud(
+                    client, scope, "meta_data",
+                    DocLoading.Bucket.SubDocOps.LOOKUP,
+                    doc_key, "doc_counter")
                 return int(success[doc_key]["value"]["doc_counter"])
             raise Exception(f"CRUD COUNTER operation failed: {fail}")
 
@@ -35,9 +56,9 @@ class CommonUtil(object):
     def get_current_date(scope_name):
         doc_key = "application"
         client = sdk_clients["bucket_data_writer"]
-        client.select_collection(scope_name, "meta_data")
-        success, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
-                                 doc_key, "date")
+        success, _ = CommonUtil.crud(client, scope_name, "meta_data",
+                                     DocLoading.Bucket.SubDocOps.LOOKUP,
+                                     doc_key, "date")
         return success[doc_key]['value']['date']
 
     @staticmethod
@@ -50,8 +71,9 @@ class CommonUtil(object):
                 'SELECT RAW DATE_ADD_STR(STR_TO_UTC("%s"), 1, "day")'
                 % tem_date)
             global_vars.app_current_date = q_result.rows[0]
-            client.crud(DocLoading.Bucket.SubDocOps.UPSERT,
-                        doc_key, ["date", global_vars.app_current_date])
+            CommonUtil.crud(client, tenant, "meta_data",
+                            DocLoading.Bucket.SubDocOps.UPSERT,
+                            doc_key, ["date", global_vars.app_current_date])
             if tem_date == CommonUtil.get_current_date(tenant):
                 raise Exception("Date not incremented")
 
