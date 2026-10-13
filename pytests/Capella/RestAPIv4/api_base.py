@@ -42,10 +42,19 @@ class APIBase(CouchbaseBaseTest):
             "server_version",
             self.input.capella.get("server_version", "7.6"))
 
-    def _get_region(self, default):
+    # Some regions aren't available on every cloud provider - requesting
+    # one of these maps to the equivalent region on azure/gcp instead,
+    # while aws (and any provider not listed here) uses it as-is.
+    REGION_EQUIVALENTS = {
+        "eu-west-1": {"azure": "westus3", "gcp": "us-west2"}
+    }
+
+    def _get_region(self, default, cloud_provider="aws"):
         # -p param wins; otherwise use the [capella] section from the ini
-        return self.input.param(
+        region = self.input.param(
             "region", self.input.capella.get("region", default))
+        return self.REGION_EQUIVALENTS.get(region, {}).get(
+            cloud_provider, region)
 
     def setUp(self, nomenclature="WRAPPER", services=[]):
         CouchbaseBaseTest.setUp(self)
@@ -310,7 +319,7 @@ class APIBase(CouchbaseBaseTest):
             "Azure_E4s_v5": {
                 "cloudProvider": {
                     "type": "azure",
-                    "region": self._get_region("eastus"),
+                    "region": self._get_region("eastus", "azure"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -347,7 +356,7 @@ class APIBase(CouchbaseBaseTest):
             "Azure_singleNode": {
                 "cloudProvider": {
                     "type": "azure",
-                    "region": self._get_region("eastus"),
+                    "region": self._get_region("eastus", "azure"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -384,7 +393,7 @@ class APIBase(CouchbaseBaseTest):
             "GCP_n2_highmem_4": {
                 "cloudProvider": {
                     "type": "gcp",
-                    "region": self._get_region("us-east1"),
+                    "region": self._get_region("us-east1", "gcp"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
@@ -421,7 +430,7 @@ class APIBase(CouchbaseBaseTest):
             "GCP_singleNode": {
                 "cloudProvider": {
                     "type": "gcp",
-                    "region": self._get_region("us-east1"),
+                    "region": self._get_region("us-east1", "gcp"),
                     "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {

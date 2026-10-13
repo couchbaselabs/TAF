@@ -278,6 +278,19 @@ class SecurityBase(CouchbaseBaseTest):
         SecurityBase.cidr = ".".join(addr)
         return SecurityBase.cidr
 
+    # Some regions aren't available on every cloud provider - requesting
+    # one of these maps to the equivalent region on azure/gcp instead,
+    # while aws (and any provider not listed here) uses it as-is.
+    REGION_EQUIVALENTS = {
+        "eu-west-1": {"azure": "westus3", "gcp": "us-west2"}
+    }
+
+    def _get_region(self, default, provider="aws"):
+        # -p param wins; otherwise use the [capella] section from the ini
+        region = self.input.param(
+            "region", self.input.capella.get("region", default))
+        return self.REGION_EQUIVALENTS.get(region, {}).get(provider, region)
+
     def get_cluster_payload(self, cloud_provider):
         cluster_payloads = {
                 "AWS": {
@@ -285,7 +298,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "description": "Security Cluster v4",
                     "cloudProvider": {
                         "type": "aws",
-                        "region": self.input.param("region", self.input.capella.get("region", "us-east-1")),
+                        "region": self._get_region("us-east-1"),
                         "cidr": "10.7.22.0/23"
                     },
                     "couchbaseServer": {
@@ -326,7 +339,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "description": "My first test azure cluster.",
                     "cloudProvider": {
                         "type": "azure",
-                        "region": self.input.param("region", self.input.capella.get("region", "eastus")),
+                        "region": self._get_region("eastus", "azure"),
                         "cidr": "10.1.35.0/23"
                     },
                     "couchbaseServer": {
@@ -383,7 +396,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "description": "My first test gcp cluster.",
                     "cloudProvider": {
                         "type": "gcp",
-                        "region": self.input.param("region", self.input.capella.get("region", "us-east1")),
+                        "region": self._get_region("us-east1", "gcp"),
                         "cidr": "10.9.82.0/23"
                     },
                     "couchbaseServer": {
