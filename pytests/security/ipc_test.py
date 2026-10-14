@@ -1639,3 +1639,95 @@ class IPCTest(IPCBase):
         self.log.info(
             "Test passed: the setting applies at runtime under load, "
             "without leaks, and consistently through a failover")
+
+    def test_ipc_audit_and_auth_metrics(self):
+        """
+        What operators can observe when IPC turns a certificate away.
+
+        Steps:
+            1. Authentication counters: with IPC off, certificate-only
+               requests count as internal-certificate successes; with it on
+               they count as anonymous, never as internal-certificate
+               successes, and each refusal counts as a REST auth failure.
+            2. Audit: a forged internal certificate refused with IPC on
+               emits an 'authentication failure' record with the request's
+               URL and real addresses; a password failure, for contrast,
+               also names the user it claimed to be.
+            3. The setting is captured in /diag, which support bundles
+               collect.
+        """
+        master = self.cluster.master
+        admin = (master.rest_username, master.rest_password)
+        self._set_client_cert_auth_http("enable")
+        cert, key = self.generate_internal_client_cert(self.ca_cert,
+                                                       self.ca_key)
+        forged, forged_key = self.generate_forged_internal_cert()
+        auths = "cm_authentications_total"
+        failures = "cm_rest_request_auth_failure_total"
+
+        self.log.info("Step 1: authentication counters")
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            before = (self.metric(auths, type="client_cert_int", res="succ"),
+                      self.metric(auths, type="anon", res="succ"),
+                      self.metric(failures))
+            for _ in range(3):
+                self.mtls_request(cert, key)
+            after = (self.metric(auths, type="client_cert_int", res="succ"),
+                     self.metric(auths, type="anon", res="succ"),
+                     self.metric(failures))
+            cert_int, anon, failed = (a - b for a, b in zip(after, before))
+            self.log.info(f"L-06 ipc={ipc}: client_cert_int +{cert_int}, "
+                          f"anon +{anon}, auth failures +{failed}")
+            if ipc:
+                self.assertEqual(cert_int, 0,
+                                 "L-06: cert-only counted as an internal-"
+                                 "certificate success with IPC on")
+                self.assertGreaterEqual(anon, 3, "L-06 anon with IPC on")
+                self.assertGreaterEqual(failed, 3,
+                                        "L-06 auth failures with IPC on")
+            else:
+                self.assertGreaterEqual(cert_int, 3,
+                                        "L-06 client_cert_int with IPC off")
+
+        self.log.info("Step 2: audit of refused requests")
+        audit_was_on = self.rest.getAuditSettings().get("auditdEnabled")
+        self.assertIs(self.rest.setAuditSettings(enabled="true"), True,
+                      "Failed to enable audit")
+        try:
+            baseline = self.latest_audit_event(self.AUTH_FAILURE_AUDIT_ID)
+            self.assert_status(self.mtls_request(forged, forged_key), 401,
+                               "L-02 forged cert")
+            event = self.wait_for_audit_event(
+                self.AUTH_FAILURE_AUDIT_ID, baseline,
+                lambda e: e.get("raw_url") == "/pools/default",
+                "forged certificate on /pools/default")
+            self.log.info(f"L-02 forged cert audit: {event}")
+            self.assertEqual(event.get("local", {}).get("ip"), master.ip,
+                             f"L-02 local address: {event}")
+            self.assertTrue(event.get("remote", {}).get("ip"),
+                            f"L-02 remote address missing: {event}")
+
+            baseline = event
+            self.assert_status(
+                self.https_request(auth=("ipcnosuchuser", "wrong")), 401,
+                "L-02 password failure")
+            event = self.wait_for_audit_event(
+                self.AUTH_FAILURE_AUDIT_ID, baseline,
+                lambda e: e.get("real_userid", {}).get("user") ==
+                "ipcnosuchuser",
+                "password failure naming the user")
+            self.log.info(f"L-02 password failure audit: {event}")
+        finally:
+            self.rest.setAuditSettings(
+                enabled="true" if audit_was_on else "false")
+
+        self.log.info("Step 3: the setting is in /diag")
+        diag = self.https_request("/diag", auth=admin, timeout=300)
+        self.assert_status(diag, 200, "L-07 GET /diag")
+        self.assertIn(self.IPC_CONFIG_KEY, diag.text,
+                      "L-07: setting missing from /diag")
+
+        self.log.info(
+            "Test passed: refusals are counted, audited and the setting is "
+            "visible to support")

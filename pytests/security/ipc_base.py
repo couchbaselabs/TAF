@@ -60,6 +60,7 @@ class IPCBase(ClusterSetup):
     MGMT_SSL_PORT = 18091
     AUDIT_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/current-audit.log"
     INTERNAL_SETTINGS_AUDIT_ID = 8228
+    AUTH_FAILURE_AUDIT_ID = 8264
     KV_SSL_PORT = 11207
 
     def setUp(self):
@@ -245,38 +246,48 @@ class IPCBase(ClusterSetup):
             if not RestConnection(server).is_ns_server_running(300):
                 self.fail(f"{server.ip} not healthy after restart")
 
-    def wait_for_internal_settings_audit(self, baseline, expected,
-                                         timeout=60):
-        """
-        Wait for a new 8228 'internal settings' audit event (one that is
-        not `baseline`) recording `expected` for this setting.
-        """
-        deadline = time.time() + timeout
+    def latest_audit_event(self, event_id):
+        """The newest `event_id` record in the master's audit log."""
         shell = RemoteMachineShellConnection(self.cluster.master)
         try:
-            while True:
-                event = get_audit_event(shell, self.AUDIT_LOG_PATH,
-                                        self.INTERNAL_SETTINGS_AUDIT_ID)
-                if event and event != baseline and \
-                        event.get("settings", {}).get(
-                            self.IPC_CONFIG_KEY) == expected:
-                    return event
-                if time.time() > deadline:
-                    self.fail(f"No new audit event "
-                              f"{self.INTERNAL_SETTINGS_AUDIT_ID} with "
-                              f"{self.IPC_CONFIG_KEY}={expected} within "
-                              f"{timeout}s. Last seen: {event}")
-                time.sleep(2)
+            return get_audit_event(shell, self.AUDIT_LOG_PATH, event_id)
         finally:
             shell.disconnect()
 
+    def wait_for_audit_event(self, event_id, baseline, match, what,
+                             timeout=60):
+        """
+        Wait for a new `event_id` audit record -- one that is not
+        `baseline` -- for which `match(event)` holds. `what` describes the
+        expected record in the failure message.
+        """
+        deadline = time.time() + timeout
+        while True:
+            event = self.latest_audit_event(event_id)
+            if event and event != baseline and match(event):
+                return event
+            if time.time() > deadline:
+                self.fail(f"No new audit event {event_id} ({what}) within "
+                          f"{timeout}s. Last seen: {event}")
+            time.sleep(2)
+
+    def wait_for_internal_settings_audit(self, baseline, expected,
+                                         timeout=60):
+        """Wait for a new 8228 'internal settings' record of `expected`."""
+        return self.wait_for_audit_event(
+            self.INTERNAL_SETTINGS_AUDIT_ID, baseline,
+            lambda e: e.get("settings", {}).get(
+                self.IPC_CONFIG_KEY) == expected,
+            f"{self.IPC_CONFIG_KEY}={expected}", timeout)
+
+    def metric(self, name, **labels):
+        """A counter from the master's /metrics; 0 if not yet emitted."""
+        value = self.crl_utils.get_metric_value(self.cluster.master, name,
+                                                labels or None)
+        return value or 0
+
     def latest_internal_settings_audit(self):
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        try:
-            return get_audit_event(shell, self.AUDIT_LOG_PATH,
-                                   self.INTERNAL_SETTINGS_AUDIT_ID)
-        finally:
-            shell.disconnect()
+        return self.latest_audit_event(self.INTERNAL_SETTINGS_AUDIT_ID)
 
     def _restore_ipc_setting(self):
         """
