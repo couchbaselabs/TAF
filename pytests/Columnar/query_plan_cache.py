@@ -157,7 +157,7 @@ class QueryPlanCache(ColumnarOnPremBase):
                 self.log.warning("cleanup of user {0} failed: {1}"
                                  .format(username, e))
         if getattr(self, "_capacity_modified", False):
-            self.log.info("Restoring queryPlanCacheCapacity to default {0}"
+            self.log.info("Restoring compilerQueryPlanCacheCapacity to default {0}"
                           .format(self.DEFAULT_CAPACITY))
             self._set_capacity(self.DEFAULT_CAPACITY)
         self._restore_topology_if_shrunk()
@@ -245,10 +245,10 @@ class QueryPlanCache(ColumnarOnPremBase):
         return self.analytics_api.clear_plan_cache(username, password)
 
     def _set_capacity(self, capacity):
-        """PUT queryPlanCacheCapacity, restart the service, wait for recovery."""
+        """PUT compilerQueryPlanCacheCapacity, restart the service, wait for recovery."""
         status, content, _ = self.analytics_api.update_service_config(
-            {"queryPlanCacheCapacity": capacity})
-        self.assertTrue(status, "Failed to PUT queryPlanCacheCapacity=%s: %s" % (capacity, content))
+            {"compilerQueryPlanCacheCapacity": capacity})
+        self.assertTrue(status, "Failed to PUT compilerQueryPlanCacheCapacity=%s: %s" % (capacity, content))
         status, content, _ = self.analytics_api.restart_analytics_service()
         self.assertTrue(status, "Failed to restart analytics service: %s" % content)
         self.assertTrue(
@@ -258,8 +258,8 @@ class QueryPlanCache(ColumnarOnPremBase):
 
     def _set_capacity_no_restart(self, capacity):
         status, content, _ = self.analytics_api.update_service_config(
-            {"queryPlanCacheCapacity": capacity})
-        self.assertTrue(status, "Failed to PUT queryPlanCacheCapacity=%s: %s" % (capacity, content))
+            {"compilerQueryPlanCacheCapacity": capacity})
+        self.assertTrue(status, "Failed to PUT compilerQueryPlanCacheCapacity=%s: %s" % (capacity, content))
 
     def _ddl(self, statement, ignore_errors=False):
         content = self._analytics_request(statement)
@@ -456,13 +456,18 @@ class QueryPlanCache(ColumnarOnPremBase):
     def test_negative_capacity_rejected(self):
         """A negative capacity is rejected."""
         status, content, response = self.analytics_api.update_service_config(
-            {"queryPlanCacheCapacity": -1})
+            {"compilerQueryPlanCacheCapacity": -1})
         rejected = (not status) or (response is not None and response.status_code == 400)
         self.assertTrue(rejected, "negative capacity should be rejected, got status=%s content=%s"
                         % (status, content))
+        codes = [e.get("code") for e in content.get("errors", [])] \
+            if isinstance(content, dict) else []
+        self.assertIn(21008, codes,
+                      "negative capacity must be rejected as an invalid value "
+                      "(21008), not for another reason: %s" % content)
 
     def test_capacity_zero_disables(self):
-        """queryPlanCacheCapacity=0 disables caching (always miss)."""
+        """compilerQueryPlanCacheCapacity=0 disables caching (always miss)."""
         self._capacity_modified = True
         self._set_capacity(0)
         self._clear_cache()
