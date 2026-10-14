@@ -1852,3 +1852,130 @@ class IPCTest(IPCBase):
         self.log.info(
             "Test passed: enforcement holds on every node across n2n "
             "levels, TLS settings, a hard kill and a full restart")
+
+    def test_ipc_cluster_boundary(self):
+        """
+        Two clusters trusting the same CA: one cluster's internal identity
+        must not authenticate against the other.
+
+        Steps:
+            1. Cluster B with IPC off accepts cluster A's internal
+               certificate on its own as an internal identity -- the
+               cross-cluster exposure the setting exists to close.
+            2. With IPC on, cluster B refuses that certificate.
+            3. Cluster A's internal identity with A's current internal
+               password is refused by B; B's own internal password is
+               accepted. Internal passwords are per cluster.
+        """
+        master, other = self.cluster.servers[0], self.cluster.servers[1]
+        a_identity = master.ip.replace(".", "-")
+        cert, key = self.generate_internal_client_cert(
+            self.ca_cert, self.ca_key, name=a_identity)
+        try:
+            cluster_b = self.prepare_joinee(
+                other, ipc=False, trusted_cas=[(self.ca_cert, self.ca_key)],
+                cca="enable")
+            b_auth = self._auth_of(cluster_b)
+
+            self.log.info("Step 1: cluster B with IPC off")
+            who = self.whoami_via_mtls(cert, key, server=cluster_b)
+            self.assertEqual(who.get("id"), f"@{a_identity}",
+                             f"S-03 baseline: B should accept A's internal "
+                             f"cert with IPC off: {who}")
+
+            self.log.info("Step 2: cluster B with IPC on")
+            self.assert_status(
+                IPCUtils.post_internal_settings(
+                    cluster_b, {self.IPC_SETTING: "true"}, auth=b_auth),
+                200, "IPC on for cluster B")
+            self.assert_no_identity_from_cert(cert, key, server=cluster_b)
+
+            self.log.info("Step 3: internal passwords are per cluster")
+            a_password = self.get_internal_password(master)
+            b_password = self.get_internal_password(cluster_b)
+            self.assertNotEqual(a_password, b_password,
+                                "S-04: clusters share an internal password")
+            self.assert_status(
+                self.mtls_request(cert, key, server=cluster_b,
+                                  auth=(f"@{a_identity}", a_password)),
+                401, "S-04 A's identity and password against B")
+            self.assert_status(
+                self.mtls_request(cert, key, server=cluster_b,
+                                  auth=("@internal", b_password)),
+                200, "S-04 B's own internal password")
+        finally:
+            self.reset_spares([other])
+
+        self.log.info(
+            "Test passed: one cluster's internal identity carries no "
+            "authority in another cluster sharing its CA")
+
+    def test_ipc_concurrent_node_addition(self):
+        """
+        Three nodes added at once, each refusing a certificate-only join, are
+        all brought in by one rebalance with the setting intact.
+
+        Steps:
+            1. Three joinees with IPC on and clientCertAuth 'mandatory' are
+               registered concurrently with their own admin credentials.
+            2. A single rebalance brings all of them in; every node is
+               active, and IPC and clientCertAuth are unchanged and enforced
+               on all four.
+        """
+        master = self.cluster.master
+        spares = self.cluster.servers[1:4]
+        self.assertEqual(len(spares), 3, "Needs four servers")
+        nodes = [master] + spares
+        cas = [(self.ca_cert, self.ca_key)]
+        self.deploy_test_node_certs(master, self.ca_cert, self.ca_key)
+        # Joinees run 'mandatory' (prepare_joinee). The master stays at
+        # 'enable' so the framework's certificate-less HTTPS keeps working.
+        self._set_client_cert_auth_http("enable")
+        self.set_ipc_setting(True)
+        cert, key = self.generate_internal_client_cert(self.ca_cert,
+                                                       self.ca_key)
+        try:
+            for spare in spares:
+                self.prepare_joinee(spare, ipc=True, trusted_cas=cas)
+
+            self.log.info("Step 1: register three nodes concurrently")
+            start = threading.Barrier(len(spares))
+            statuses = {}
+
+            def add(spare):
+                start.wait()
+                try:
+                    statuses[spare.ip] = IPCUtils.add_node(
+                        master, spare.ip, user=master.rest_username,
+                        password=self.SPARE_PASSWORD,
+                        client_cert_auth=True).status_code
+                except requests.exceptions.RequestException as exc:
+                    statuses[spare.ip] = f"error: {exc}"
+
+            threads = [threading.Thread(target=add, args=(s,))
+                       for s in spares]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(300)
+            self.log.info(f"E-10 addNode statuses: {statuses}")
+            self.assertEqual(statuses, {s.ip: 200 for s in spares},
+                             "E-10: every concurrent addition must succeed")
+
+            self.log.info("Step 2: one rebalance brings all three in")
+            self.rebalance_cluster()
+            for server in nodes:
+                self.assert_node_active(server)
+            self.wait_for_ipc_value(nodes, True)
+            self.assertEqual(
+                IPCUtils.get_client_cert_auth(master).json().get("state"),
+                "enable", "E-10 clientCertAuth changed")
+            self.assert_enforced_everywhere(nodes, cert, key, "E-10")
+        finally:
+            self.reset_spares(spares)
+            self.crl_utils.regenerate_cluster_certificate_when_healthy(
+                self.rest, log=self.log)
+
+        self.log.info(
+            "Test passed: three nodes added concurrently with credentials, "
+            "setting intact on every node")
