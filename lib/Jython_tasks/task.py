@@ -1131,10 +1131,19 @@ class GenericLoadingTask(Task):
         self.generator = None
         self.itr_count = 0
         self.__stop_loading = False
+        self.load_aborted = False
 
-    def end_task(self):
-        self.log.debug("%s - Stopping load" % self.thread_name)
+    def end_task(self, abort=False):
+        """
+        :param abort: False - stop after the current pass over the generator.
+                      True - also stop the current pass after the in-flight
+                      batch, leaving the remaining keys unloaded
+        """
+        self.log.debug("%s - Stopping load (abort=%s)"
+                       % (self.thread_name, abort))
         self.__stop_loading = True
+        if abort:
+            self.load_aborted = True
 
     def call(self):
         self.start_task()
@@ -1148,7 +1157,7 @@ class GenericLoadingTask(Task):
                            % (self.thread_name, self.itr_count))
             self.generator.reset()
             try:
-                while self.has_next():
+                while self.has_next() and not self.load_aborted:
                     self.next()
             except Exception as e:
                 self.test_log.error(e)
@@ -2610,10 +2619,15 @@ class LoadDocumentsGeneratorsTask(Task):
         self.print_ops_rate_tasks = list()
         self.__tasks = list()
 
-    def end_task(self):
-        self.log.debug("%s - Stopping load" % self.thread_name)
+    def end_task(self, abort=False):
+        """
+        :param abort: Passed to each GenericLoadingTask.end_task().
+                      True stops the sub-tasks mid-pass
+        """
+        self.log.debug("%s - Stopping load (abort=%s)"
+                       % (self.thread_name, abort))
         for task in self.__tasks:
-            task.end_task()
+            task.end_task(abort=abort)
 
     def get_total_doc_ops(self):
         total_ops = 0
@@ -2666,8 +2680,11 @@ class LoadDocumentsGeneratorsTask(Task):
                                     % (task.thread_name, task.docs_loaded,
                                        task.itr_count))
                     i = 0
-                    while task.docs_loaded < (task.generator._doc_gen.end -
-                                              task.generator._doc_gen.start) \
+                    # An aborted task never loads its full range by design
+                    while not getattr(task, "load_aborted", False) \
+                            and task.docs_loaded < (
+                                task.generator._doc_gen.end
+                                - task.generator._doc_gen.start) \
                             and i < 60:
                         sleep(1, "Bug in java futures task. "
                                  "Items loaded in task %s: %s"

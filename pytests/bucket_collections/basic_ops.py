@@ -111,6 +111,9 @@ class BasicOps(CollectionBase):
                 scope=CbServer.default_scope,
                 collection=CbServer.default_collection,
                 suppress_error_table=True,
+                # 'during_drop': keys that fail on the dropped collection
+                # must not each sleep sdk_timeout and then read back
+                skip_read_on_error=(data_load == "during_drop"),
                 load_using=self.load_docs_using)
             self.bucket.scopes[CbServer.default_scope] \
                 .collections[CbServer.default_collection] \
@@ -131,8 +134,11 @@ class BasicOps(CollectionBase):
             self.sleep(100, "Waiting for the data to get loaded")
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
-        self.bucket_util.validate_doc_count_as_per_collections(
-            self.cluster, self.bucket)
+        # With 'during_drop' the load is intentionally still in-flight here,
+        # so the collection's doc_count is not deterministic yet
+        if data_load != "during_drop":
+            self.bucket_util.validate_doc_count_as_per_collections(
+                self.cluster, self.bucket)
 
         # Drop collection phase
         self.log.info("Deleting collection '%s::%s'"
@@ -159,6 +165,12 @@ class BasicOps(CollectionBase):
 
         # Wait for doc_loading task to complete
         if data_load == "during_drop":
+            # Every key still pending targets the dropped collection and can
+            # only fail after sdk_timeout. With batch_size=1 that is one
+            # timeout per remaining key (~15k keys x 60s with durability on
+            # 4 nodes), so abort the rest instead of waiting on it
+            if self.load_docs_using == "default_loader":
+                task.end_task(abort=True)
             self.task_manager.get_task_result(task)
             if task.fail:
                 self.log.info("Doc loading failed for keys: %s" % task.fail)
