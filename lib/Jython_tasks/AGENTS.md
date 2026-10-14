@@ -81,10 +81,10 @@ Extends `concurrent.futures.Future`. All task classes in `task.py` inherit this.
 
 | Class | Extends | Purpose | Key result attrs |
 |---|---|---|---|
-| `GenericLoadingTask` | `Task` | Base for all SDK doc-load tasks; manages `SDKClient`, retries, per-key error tracking | `fail` dict, `success_count` |
+| `GenericLoadingTask` | `Task` | Base for all SDK doc-load tasks; manages `SDKClient`, retries, per-key error tracking. `end_task()` stops after the current pass; `end_task(abort=True)` also stops mid-pass after the in-flight batch (sets `load_aborted`) | `fail` dict, `success_count` |
 | `LoadDocumentsTask` | `GenericLoadingTask` | Single-op type (create/update/delete/read) doc load | `fail`, `success_count` |
 | `LoadSubDocumentsTask` | `GenericLoadingTask` | Sub-document op (insert/upsert/remove/lookup) load | `fail`, `success_count` |
-| `LoadDocumentsGeneratorsTask` | `Task` | Multi-generator, multi-collection doc load from spec; drives `GenericLoadingTask` instances internally | `result` bool |
+| `LoadDocumentsGeneratorsTask` | `Task` | Multi-generator, multi-collection doc load from spec; drives `GenericLoadingTask` instances internally. `end_task(abort=...)` forwards to its sub-tasks | `result` bool |
 | `LoadSubDocumentsGeneratorsTask` | `Task` | Same as above for sub-doc ops | `result` bool |
 | `ContinuousDocOpsTask` | `Task` | Indefinite doc ops loop; stopped via `task.stop_indefinite_doc_loading_tasks()` | `fail` dict |
 | `LoadDocumentsForDgmTask` | `LoadDocumentsGeneratorsTask` | Loads until DGM threshold is hit | `result`, `doc_index` |
