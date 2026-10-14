@@ -2530,6 +2530,24 @@ class RestConnection(newRC):
         status, json_parsed, _ = self._http_request(api, method='POST', params=url_encoded_params, headers=headers)
         return status, json_parsed
 
+    def configure_other_encryption_at_rest(self, params):
+        """
+        POST :: /settings/security/encryptionAtRest/other
+
+        Unlike config/log/audit -- which share
+        /settings/security/encryptionAtRest and prefix every field with
+        '<type>.' -- 'other' is its own sub-resource and takes the fields
+        bare: encryptionMethod, encryptionKeyId, dekLifetime,
+        dekRotationInterval.
+        """
+        api = self.baseUrl + '/settings/security/encryptionAtRest/other'
+        headers = self._create_headers()
+        url_encoded_params = '&'.join(
+            ['{}={}'.format(key, value) for key, value in params.items()])
+        status, json_parsed, _ = self._http_request(
+            api, method='POST', params=url_encoded_params, headers=headers)
+        return status, json_parsed
+
     def create_kms_secret(self,params):
         """
         POST :: /settings/encryptionKeys

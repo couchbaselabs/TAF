@@ -148,6 +148,203 @@ class OPD:
                       % (secret_id, cluster.master.ip))
         return secret_id
 
+    def _bypass_encryption_restrictions(self, cluster):
+        """
+        Lift ns_server's restrictions on changing encryption-at-rest config,
+        the same way OnPremBaseTest does before it creates any key.
+
+        Best-effort: diag/eval is only reachable on non-local hosts once it
+        has been explicitly enabled, which the volume setup path does not do.
+        A failure here is not fatal -- the encryptionAtRest call that follows
+        either works anyway or fails with ns_server's own message, which is
+        far more useful than aborting the run on the bypass itself.
+        """
+        try:
+            status, content = RestConnection(cluster.master).diag_eval(
+                "ns_config:set(test_bypass_encr_cfg_restrictions, true).")
+            self.log.info("Bypassed encryption restrictions on %s: "
+                          "status=%s, content=%s"
+                          % (cluster.master.ip, status, content))
+        except Exception as e:
+            self.log.warning("Could not bypass encryption restrictions on "
+                             "%s: %s" % (cluster.master.ip, e))
+
+    def _create_encryption_secret(self, cluster, kind, key_name,
+                                  existing_key_id):
+        """
+        Return the `<kind>-encryption` key id to use, creating a
+        cluster-managed AES-256 key only when one was not supplied already.
+
+        `existing_key_id` is the matching *_encryption_at_rest_id param. When
+        it is set the key already exists -- either passed on the command line
+        or created by OnPremBaseTest.setUp() -- so nothing is created here.
+        That is also what makes the setup_* functions safe to call twice in
+        one run.
+        """
+        if existing_key_id:
+            self.log.info("Using pre-existing %s encryption at rest key ID=%s"
+                          % (kind, existing_key_id))
+            return existing_key_id
+
+        rest = RestConnection(cluster.master)
+        params = BucketHelper(cluster.master).create_secret_params(
+            secret_type="cb-server-managed-aes-key-256",
+            name=key_name,
+            usage=["%s-encryption" % kind],
+            autoRotation=True,
+            rotationIntervalInSeconds=self.secret_rotation_interval,
+            port=None)
+        self.log.info("Creating %s encryption key with params: %s"
+                      % (kind, params))
+        status, response = rest.create_secret(params)
+        self.log.info("%s encryption key creation status=%s, response=%s"
+                      % (kind, status, response))
+        if not status:
+            self.fail("%s encryption at rest key creation failed on %s: %s"
+                      % (kind, cluster.master.ip, response))
+        key_id = json.loads(response).get("id")
+        if key_id is None:
+            self.fail("%s encryption at rest key created on %s but no id was "
+                      "returned: %s" % (kind, cluster.master.ip, response))
+        self.log.info("Created %s encryption at rest key ID=%s on %s"
+                      % (kind, key_id, cluster.master.ip))
+        return key_id
+
+    def _enable_encryption_at_rest(self, cluster, kind, key_name,
+                                   existing_key_id, dek_lifetime,
+                                   dek_rotation_interval):
+        """
+        Turn on encryption at rest for one cluster-wide `kind` -- "config",
+        "log" or "audit".
+
+        Two steps, both needed: create a cluster-managed AES-256 key scoped
+        to `<kind>-encryption`, then point
+        /settings/security/encryptionAtRest at it. Creating the key alone
+        encrypts nothing.
+
+        `existing_key_id` is the matching *_encryption_at_rest_id param. When
+        it is set the key already exists -- either passed on the command line
+        or created by OnPremBaseTest.setUp() -- so only the second step runs.
+        That also makes this safe to call twice in one run.
+
+        :returns: the key id now in use for `kind`
+        """
+        key_id = self._create_encryption_secret(cluster, kind, key_name,
+                                                existing_key_id)
+        encryption_params = {
+            "%s.encryptionMethod" % kind: "encryptionKey",
+            "%s.encryptionKeyId" % kind: key_id,
+        }
+        if dek_lifetime is not None:
+            encryption_params["%s.dekLifetime" % kind] = dek_lifetime
+        if dek_rotation_interval is not None:
+            encryption_params["%s.dekRotationInterval" % kind] = \
+                dek_rotation_interval
+
+        status, response = RestConnection(
+            cluster.master).configure_encryption_at_rest(encryption_params)
+        self.log.info("%s encryption at rest params=%s, status=%s"
+                      % (kind, encryption_params, status))
+        if not status:
+            self.fail("Failed to enable %s encryption at rest on %s: %s"
+                      % (kind, cluster.master.ip, response))
+        return key_id
+
+    def setup_config_encryption_at_rest(self, cluster):
+        """Encrypt the cluster's on-disk configuration."""
+        if not self.enable_config_encryption_at_rest:
+            return None
+
+        self.config_encryption_at_rest_id = self._enable_encryption_at_rest(
+            cluster, "config", "VolumeTestConfigEncryptionKey",
+            self.config_encryption_at_rest_id,
+            self.config_dekLifetime, self.config_dekRotationInterval)
+        return self.config_encryption_at_rest_id
+
+    def setup_log_encryption_at_rest(self, cluster):
+        """Encrypt the logs the cluster writes to disk."""
+        if not self.enable_log_encryption_at_rest:
+            return None
+
+        self.log_encryption_at_rest_id = self._enable_encryption_at_rest(
+            cluster, "log", "VolumeTestLogEncryptionKey",
+            self.log_encryption_at_rest_id,
+            self.log_dekLifetime, self.log_dekRotationInterval)
+        return self.log_encryption_at_rest_id
+
+    def setup_audit_encryption_at_rest(self, cluster):
+        """Encrypt the audit log the cluster writes to disk."""
+        if not self.enable_audit_encryption_at_rest:
+            return None
+
+        self.audit_encryption_at_rest_id = self._enable_encryption_at_rest(
+            cluster, "audit", "VolumeTestAuditEncryptionKey",
+            self.audit_encryption_at_rest_id,
+            self.audit_dekLifetime, self.audit_dekRotationInterval)
+        return self.audit_encryption_at_rest_id
+
+    def setup_other_encryption_at_rest(self, cluster):
+        """
+        Encrypt the remaining on-disk data ns_server groups as "other".
+
+        Kept apart from the three above because the REST shape differs:
+        config / log / audit share /settings/security/encryptionAtRest and
+        prefix every field with "<kind>.", while "other" has its own
+        sub-resource and takes the fields bare.
+        """
+        if not self.enable_other_encryption_at_rest:
+            return None
+
+        key_id = self._create_encryption_secret(
+            cluster, "other", "VolumeTestOtherEncryptionKey",
+            self.other_encryption_at_rest_id)
+
+        encryption_params = {
+            "encryptionMethod": "encryptionKey",
+            "encryptionKeyId": key_id,
+            "dekLifetime": self.other_dekLifetime,
+            "dekRotationInterval": self.other_dekRotationInterval,
+        }
+        status, response = RestConnection(
+            cluster.master).configure_other_encryption_at_rest(
+                encryption_params)
+        self.log.info("other encryption at rest params=%s, status=%s"
+                      % (encryption_params, status))
+        if not status:
+            self.fail("Failed to enable other encryption at rest on %s: %s"
+                      % (cluster.master.ip, response))
+
+        self.other_encryption_at_rest_id = key_id
+        return key_id
+
+    def setup_cluster_encryption_at_rest(self, cluster):
+        """
+        Enable whichever of config / log / audit / other encryption at rest
+        the run asked for, on `cluster`.
+
+        Unlike the bucket key (create_encryption_at_rest_key), these are
+        cluster-wide settings rather than per-bucket properties, so they are
+        applied once the cluster has its nodes and stay in force for every
+        node that joins later.
+        """
+        if not (self.enable_config_encryption_at_rest
+                or self.enable_log_encryption_at_rest
+                or self.enable_audit_encryption_at_rest
+                or self.enable_other_encryption_at_rest):
+            return
+
+        self.PrintStep("Enabling cluster encryption at rest: config=%s, "
+                       "log=%s, audit=%s, other=%s"
+                       % (self.enable_config_encryption_at_rest,
+                          self.enable_log_encryption_at_rest,
+                          self.enable_audit_encryption_at_rest,
+                          self.enable_other_encryption_at_rest))
+        self._bypass_encryption_restrictions(cluster)
+        self.setup_config_encryption_at_rest(cluster)
+        self.setup_log_encryption_at_rest(cluster)
+        self.setup_audit_encryption_at_rest(cluster)
+        self.setup_other_encryption_at_rest(cluster)
+
     def create_required_buckets(self, cluster, sdk_init=True):
         self.log.info("Get the available memory quota")
         rest = RestConnection(cluster.master)

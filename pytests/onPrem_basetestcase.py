@@ -165,6 +165,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
             "audit_encryption_at_rest_id", False)
         self.log_encryption_at_rest_id = self.input.param(
             "log_encryption_at_rest_id", False)
+        self.enable_other_encryption_at_rest = self.input.param(
+            "enable_other_encryption_at_rest", False)
+        self.other_encryption_at_rest_id = self.input.param(
+            "other_encryption_at_rest_id", False)
         self.secret_rotation_interval = self.input.param(
             "secret_rotation_interval", 60)
         self.config_dekLifetime = self.input.param(
@@ -181,6 +185,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
             CbServer.encryption_at_rest_dek_rotation_interval)
         self.log_dekRotationInterval = self.input.param(
             "log_dekRotationInterval", CbServer.encryption_at_rest_dek_rotation_interval)
+        self.other_dekLifetime = self.input.param("other_dekLifetime", CbServer.encryption_at_rest_dek_lifetime_interval)
+        self.other_dekRotationInterval = self.input.param(
+            "other_dekRotationInterval", CbServer.encryption_at_rest_dek_rotation_interval)
         self.secret_id = self.input.param("secret_id", None)
         self.encryptionAtRestDekRotationInterval = self.input.param(
             "encryptionAtRestDekRotationInterval", 2592000)
