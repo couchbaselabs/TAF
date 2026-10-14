@@ -135,6 +135,34 @@ class DeletePrivateEndpointService(GetCluster):
                     header)
             if self.validate_testcase(result, [202, 500], testcase, failures):
                 self.log.debug("Deletion Successful")
+                if result.status_code == 202:
+                    # Disabling isn't repeatable - without re-enabling,
+                    # every subsequent "should succeed" role would
+                    # deterministically fail with "Private endpoints
+                    # aren't enabled for this cluster", since by then it
+                    # genuinely isn't.
+                    self.update_auth_with_api_token(self.curr_owner_key)
+                    enable_res = self.capellaAPI.cluster_ops_apis.\
+                        enable_private_endpoint_service(
+                            self.organisation_id, self.project_id,
+                            self.cluster_id)
+                    if enable_res.status_code == 429:
+                        self.handle_rate_limit(
+                            int(enable_res.headers["Retry-After"]))
+                        enable_res = self.capellaAPI.cluster_ops_apis.\
+                            enable_private_endpoint_service(
+                                self.organisation_id, self.project_id,
+                                self.cluster_id)
+                    if enable_res.status_code != 202:
+                        self.log.error(
+                            "Error while re-enabling private endpoint "
+                            "service for the next role: {}".format(
+                                enable_res.content))
+                    elif not self.wait_for_deployment(pes=True):
+                        self.log.error(
+                            "Private endpoint service did not report "
+                            "enabled after re-enabling for the next "
+                            "role.")
 
         if failures:
             for fail in failures:

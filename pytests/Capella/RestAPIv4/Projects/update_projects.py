@@ -14,9 +14,27 @@ class UpdateProject(GetProject):
         GetProject.setUp(self)
         self.project_name = self.prefix + nomenclature
         self.name_iteration = 0
+        # self.project_id is the shared/reused WRAPPER project, not one
+        # created just for this test - every test method here renames it
+        # repeatedly, so its original name must be restored afterward or
+        # every other test (and future runs reusing it by name) breaks.
+        self.original_project_name = self.expected_res["name"]
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
+        result = self.capellaAPI.org_ops_apis.update_project(
+            self.organisation_id, self.project_id,
+            self.original_project_name, "", False)
+        if result.status_code == 429:
+            self.handle_rate_limit(int(result.headers["Retry-After"]))
+            result = self.capellaAPI.org_ops_apis.update_project(
+                self.organisation_id, self.project_id,
+                self.original_project_name, "", False)
+        if result.status_code != 204:
+            self.log.error(
+                "Error while restoring the shared project's original "
+                "name after renaming it during the test: {}".format(
+                    result.content))
         super(UpdateProject, self).tearDown()
 
     def test_api_path(self):
