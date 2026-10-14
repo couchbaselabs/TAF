@@ -30,6 +30,6 @@ azure-mgmt-compute
 azure-mgmt-authorization
 azure-mgmt-storage
 cryptography==46.0.3
-PyJWT==2.10.1
+PyJWT==2.13.0
 httplib2
 prettytable
