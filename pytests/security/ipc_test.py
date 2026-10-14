@@ -1731,3 +1731,124 @@ class IPCTest(IPCBase):
         self.log.info(
             "Test passed: refusals are counted, audited and the setting is "
             "visible to support")
+
+    def test_ipc_enforcement_across_tls_n2n_and_restarts(self):
+        """
+        Enforcement holds through changes to how the cluster is secured and
+        through process and cluster restarts, on every node.
+
+        Steps:
+            1. Node-to-node encryption at 'control', then 'all', then off.
+            2. Minimum TLS version 1.3, then 1.2, then a restricted cipher
+               list; the original settings are restored afterwards.
+            3. ns_server and memcached on one node killed with SIGKILL;
+               the node comes back on its own.
+            4. A full cluster restart; the setting and clientCertAuth
+               survive it.
+            5. Prometheus stats are still collected, so the '@prometheus'
+               identity still authenticates with IPC on.
+        """
+        nodes = self.cluster.servers[:self.nodes_init]
+        self.assertGreaterEqual(len(nodes), 3, "Needs a 3-node cluster")
+        master, second = nodes[0], nodes[1]
+        self._set_client_cert_auth_http("enable")
+        self.set_ipc_setting(True)
+        cert, key = self.generate_internal_client_cert(self.ca_cert,
+                                                       self.ca_key)
+        self.assert_enforced_everywhere(nodes, cert, key, "baseline")
+
+        self.log.info("Step 1: node-to-node encryption levels")
+        try:
+            for level in ("control", "all"):
+                self.set_n2n_encryption(nodes, level)
+                self.assert_enforced_everywhere(nodes, cert, key,
+                                                f"P-04 n2n {level}")
+        finally:
+            self.set_n2n_encryption(nodes, "off")
+        self.assert_enforced_everywhere(nodes, cert, key, "P-04 n2n off")
+
+        self.log.info("Step 2: TLS versions and cipher suites")
+        _, content = self.rest.get_security_settings()
+        original = json.loads(content)
+        ciphers = ["TLS_AES_256_GCM_SHA384",
+                   "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]
+        try:
+            for version in ("tlsv1.3", "tlsv1.2"):
+                self.assert_status(
+                    IPCUtils.set_security_settings(
+                        master, {"tlsMinVersion": version}),
+                    200, f"P-06 tlsMinVersion={version}")
+                self.assert_enforced_everywhere(nodes, cert, key,
+                                                f"P-06 {version}")
+            self.assert_status(
+                IPCUtils.set_security_settings(
+                    master, {"cipherSuites": json.dumps(ciphers)}),
+                200, "P-06 restricted cipher suites")
+            _, content = self.rest.get_security_settings()
+            self.assertEqual(json.loads(content).get("cipherSuites"),
+                             ciphers, "P-06 cipher list not applied")
+            self.assert_enforced_everywhere(nodes, cert, key,
+                                            "P-06 restricted ciphers")
+        finally:
+            IPCUtils.set_security_settings(master, {
+                "tlsMinVersion": original.get("tlsMinVersion", "tlsv1.2"),
+                "cipherSuites": json.dumps(original.get("cipherSuites",
+                                                        []))})
+        self.assert_enforced_everywhere(nodes, cert, key,
+                                        "P-06 settings restored")
+
+        self.log.info("Step 3: SIGKILL ns_server and memcached on one node")
+        # Not shell.kill_erlang(): it waits for no beam.smp to remain, but
+        # systemd restarts the service at once, so it reports a failure.
+        # New PIDs afterwards prove the kill instead.
+        shell = RemoteMachineShellConnection(second)
+        pids = "pgrep -x beam.smp; pgrep -x memcached"
+        try:
+            before, _ = shell.execute_command(pids)
+            shell.execute_command("pkill -9 -x beam.smp; "
+                                  "pkill -9 -x memcached")
+            self.assertTrue(
+                RestConnection(second).is_ns_server_running(300),
+                f"P-07 {second.ip} did not come back")
+            after, _ = shell.execute_command(pids)
+        finally:
+            shell.disconnect()
+        before = {p.strip() for p in before if p.strip()}
+        after = {p.strip() for p in after if p.strip()}
+        self.log.info(f"P-07 pids before {sorted(before)} after "
+                      f"{sorted(after)}")
+        self.assertTrue(before and after and not before & after,
+                        f"P-07: processes were not all restarted: "
+                        f"{before} -> {after}")
+        self.assert_node_active(second, timeout=300)
+        self.assert_enforced_everywhere(nodes, cert, key, "P-07")
+
+        self.log.info("Step 4: full cluster restart")
+        self.restart_nodes(nodes)
+        for server in nodes:
+            self.assert_node_active(server, timeout=300)
+        self.wait_for_ipc_value(nodes, True)
+        cca = IPCUtils.get_client_cert_auth(master).json()
+        self.log.info(f"P-08 clientCertAuth after restart: {cca}")
+        self.assertEqual(cca.get("state"), "enable",
+                         "P-08 clientCertAuth lost on restart")
+        self.assert_enforced_everywhere(nodes, cert, key, "P-08")
+
+        self.log.info("Step 5: Prometheus stats still collected")
+        deadline = time.time() + 120
+        fresh = False
+        while time.time() < deadline and not fresh:
+            resp = self.https_request(
+                "/pools/default/stats/range/sys_cpu_utilization_rate"
+                "?start=-60", auth=(master.rest_username,
+                                    master.rest_password))
+            if resp.status_code == 200:
+                fresh = any(series.get("values")
+                            for series in resp.json().get("data", []))
+            if not fresh:
+                time.sleep(10)
+        self.assertTrue(fresh, "G-10: no stats datapoints in the last 60s")
+
+        self.log.info(
+            "Test passed: enforcement holds on every node across n2n "
+            "levels, TLS settings, a hard kill and a full restart")

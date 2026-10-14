@@ -194,3 +194,20 @@ class IPCUtils:
             auth=cls._admin_auth(server),
             data={"intCredsRotationInterval": interval_ms}, timeout=timeout,
         )
+
+    @classmethod
+    def set_security_settings(cls, server, data, timeout=60):
+        """POST /settings/security (form-encoded). Returns the
+        requests.Response."""
+        return requests.post(
+            cls._url(server, "/settings/security"),
+            auth=cls._admin_auth(server), data=data, timeout=timeout,
+        )
+
+    @classmethod
+    def get_client_cert_auth(cls, server, timeout=30):
+        """GET /settings/clientCertAuth. Returns the requests.Response."""
+        return requests.get(
+            cls._url(server, "/settings/clientCertAuth"),
+            auth=cls._admin_auth(server), timeout=timeout,
+        )

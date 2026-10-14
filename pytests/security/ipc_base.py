@@ -13,6 +13,7 @@ from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from couchbase_utils.security_utils.crl_utils import CRLUtils, \
     get_audit_event
@@ -635,6 +636,69 @@ class IPCBase(ClusterSetup):
             self.cluster.master, self._cert_der_from_path(cert_path))
         self.assert_status(resp, 200, "C-21 extractUserFromCert")
         return resp.json()
+
+    # -- Cluster security and restart fixtures -------------------------------
+
+    def set_n2n_encryption(self, servers, level):
+        """
+        Node-to-node encryption to `level` ('control' or 'all'), or 'off'.
+        Same call order as CRLBase: auto-failover off while the inter-node
+        listeners bounce, and 'control' before disabling.
+        """
+        prior = self.rest.get_autofailover_settings()
+        self.rest.update_autofailover_settings(False, prior.timeout)
+        try:
+            for server in servers:
+                shell = RemoteMachineShellConnection(server)
+                try:
+                    cb_cli = CbCli(shell, no_ssl_verify=True)
+                    if level == "off":
+                        cb_cli.set_n2n_encryption_level(level="control")
+                        cb_cli.disable_n2n_encryption()
+                    else:
+                        cb_cli.enable_n2n_encryption()
+                        cb_cli.set_n2n_encryption_level(level=level)
+                finally:
+                    shell.disconnect()
+        finally:
+            if prior.enabled:
+                self.rest.update_autofailover_settings(
+                    True, prior.timeout, maxCount=prior.maxCount)
+
+    def wait_for_https(self, servers, cert_path, key_path, timeout=120):
+        """Wait until every node answers an authenticated mTLS request --
+        TLS and n2n changes restart the listeners."""
+        admin = (self.cluster.master.rest_username,
+                 self.cluster.master.rest_password)
+        deadline = time.time() + timeout
+        for server in servers:
+            while True:
+                try:
+                    if self.mtls_request(cert_path, key_path, server=server,
+                                         auth=admin,
+                                         timeout=10).status_code == 200:
+                        break
+                except requests.exceptions.RequestException:
+                    pass
+                if time.time() > deadline:
+                    self.fail(f"{server.ip} not answering HTTPS after "
+                              f"{timeout}s")
+                time.sleep(2)
+
+    def assert_enforced_everywhere(self, servers, cert_path, key_path,
+                                   what):
+        """IPC on, on every node: the internal cert alone is refused and the
+        cert with admin credentials accepted."""
+        self.wait_for_https(servers, cert_path, key_path)
+        self.assert_cert_enforcement(servers, cert_path, key_path, True,
+                                     what)
+        admin = (self.cluster.master.rest_username,
+                 self.cluster.master.rest_password)
+        for server in servers:
+            self.assert_status(
+                self.mtls_request(cert_path, key_path, server=server,
+                                  auth=admin),
+                200, f"{what} cert + admin on {server.ip}")
 
     # -- Internal password rotation ------------------------------------------
 
