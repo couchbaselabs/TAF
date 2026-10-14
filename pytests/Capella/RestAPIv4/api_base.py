@@ -1808,7 +1808,7 @@ class APIBase(CouchbaseBaseTest):
         self.log.error("Couldn't find CIDR within half an hour.")
 
     def wait_for_deployment(self, clus_id=None, app_svc_id=None,
-                            inst_id=None, pes=False):
+                            inst_id=None, pes=False, pes_enabled=True):
         start_time = time.time()
         while start_time + 1800 > time.time():
             self.log.info("...Waiting further...")
@@ -1871,7 +1871,7 @@ class APIBase(CouchbaseBaseTest):
                                "\nResult: {}".format(state.content))
                 return False
             if pes:
-                if state.json()["enabled"]:
+                if state.json()["enabled"] == pes_enabled:
                     return True
                 continue
 

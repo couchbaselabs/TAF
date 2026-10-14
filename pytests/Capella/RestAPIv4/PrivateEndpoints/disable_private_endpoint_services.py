@@ -142,6 +142,17 @@ class DeletePrivateEndpointService(GetCluster):
                     # aren't enabled for this cluster", since by then it
                     # genuinely isn't.
                     self.update_auth_with_api_token(self.curr_owner_key)
+                    # Disabling is itself async - calling enable right
+                    # away can race ahead of the backend's own state
+                    # transition and get rejected with "already
+                    # enabled", leaving the service disabled with no
+                    # successful re-enable to undo it.
+                    if not self.wait_for_deployment(pes=True,
+                                                    pes_enabled=False):
+                        self.log.error(
+                            "Private endpoint service did not report "
+                            "disabled before attempting to re-enable "
+                            "it for the next role.")
                     enable_res = self.capellaAPI.cluster_ops_apis.\
                         enable_private_endpoint_service(
                             self.organisation_id, self.project_id,
