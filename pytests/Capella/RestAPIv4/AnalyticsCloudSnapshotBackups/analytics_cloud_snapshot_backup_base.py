@@ -33,8 +33,9 @@ class AnalyticsCloudSnapshotBackupBase(GetAnalyticsClusters):
                     "Server error {} on attempt {}/{}, retrying in 5s..."
                     .format(result.status_code, attempt + 1, max_retries))
                 self.log.warning(
-                    "Response headers (for request ID / tracing): {}"
-                    .format(dict(result.headers)))
+                    "Request ID (for backend log lookup): {}".format(
+                        result.headers.get(
+                            "Vnd-Cloud-Couchbase-Com-Request-Id")))
                 time.sleep(5)
                 continue
             return result

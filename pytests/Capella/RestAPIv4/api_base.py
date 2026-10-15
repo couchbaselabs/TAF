@@ -1602,8 +1602,8 @@ class APIBase(CouchbaseBaseTest):
         elif result.status_code >= 500 and result.json()['message'] != "Private endpoints aren't enabled for this cluster. Please select another cluster.":
             self.log.critical(testcase[testDescriptionKey])
             self.log.warning(result.content)
-            self.log.warning("Response headers (for request ID / tracing): "
-                             "{}".format(dict(result.headers)))
+            self.log.warning("Request ID (for backend log lookup): {}".format(
+                result.headers.get("Vnd-Cloud-Couchbase-Com-Request-Id")))
             failures.append(testcase[testDescriptionKey])
         elif "expected_status_code" not in testcase:
             self.log.error("Expected NO ERRORS but got {}".format(result))
