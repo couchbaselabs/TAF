@@ -324,6 +324,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                  for server in self.servers]
         for task in tasks:
             self.task_manager.get_task_result(task)
+        # TLS is now off on every node, so drop any SSL ports a previous
+        # test left on the server objects (e.g. its tearDown failed early)
+        if not ClusterRun.is_enabled:
+            self.set_non_ssl_ports_on_all_servers()
 
         cluster_name_format = "C%s"
         default_cluster_index = counter_index = 1
@@ -744,8 +748,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.__log("started")
         except Exception as e:
             traceback.print_exc()
-            for server in self.input.servers:
-                self.set_ports_for_server(server, "non_ssl")
+            self.set_non_ssl_ports_on_all_servers()
             self.task.shutdown(force=True)
             self.fail(e)
         finally:
@@ -916,6 +919,28 @@ class OnPremBaseTest(CouchbaseBaseTest):
             server.cbas_port = CbServer.ssl_cbas_port
             server.eventing_port = CbServer.ssl_eventing_port
 
+    def set_non_ssl_ports_on_all_servers(self):
+        """
+        Reset every server object to non-SSL ports.
+        For multi-cluster ini files, input.clusters and input.servers hold
+        separate objects for the same node, and enable_tls_on_nodes moves
+        the cluster objects to SSL ports. Resetting only input.servers
+        leaves cluster.master on 18091 once TLS is disabled, so plain
+        http requests to it fail with a TLS alert.
+        """
+        servers = list(self.input.servers)
+        for nodes in self.input.clusters.values():
+            servers.extend(nodes)
+        for cluster in getattr(self, "cb_clusters", {}).values():
+            servers.extend(cluster.servers)
+            if getattr(cluster, "master", None):
+                servers.append(cluster.master)
+        reset = set()
+        for server in servers:
+            if id(server) not in reset:
+                reset.add(id(server))
+                self.set_ports_for_server(server, "non_ssl")
+
     def enforce_tls_and_set_ports(self, cluster_nodes):
         """
         Enforce TLS on the cluster (via master node) and update all
@@ -1015,8 +1040,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     server.memcached_port = \
                         ClusterRun.memcached_port + (2 * index)
             else:
-                for server in self.input.servers:
-                    self.set_ports_for_server(server, "non_ssl")
+                self.set_non_ssl_ports_on_all_servers()
 
         for _, cluster in self.cb_clusters.items():
             if self.multiple_ca:
@@ -1730,8 +1754,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         shutil.copy("couchbase_utils/nebula_utils/Dockerfile", nebula_path)
 
     def handle_setup_exception(self, exception_obj):
-        for server in self.input.servers:
-            self.set_ports_for_server(server, "non_ssl")
+        self.set_non_ssl_ports_on_all_servers()
         super(OnPremBaseTest, self).handle_setup_exception(exception_obj)
 
     def _configure_gs_credentials_on_host(self, server, gcs_credentials):
@@ -1946,8 +1969,7 @@ class ClusterSetup(OnPremBaseTest):
                     self.fetch_cb_collect_logs()
                 CbServer.use_https = False
                 CbServer.n2n_encryption = False
-                for server in self.input.servers:
-                    self.set_ports_for_server(server, "non_ssl")
+                self.set_non_ssl_ports_on_all_servers()
                 self.fail("Initial rebalance failed")
 
         if CbServer.cluster_profile == "serverless":
