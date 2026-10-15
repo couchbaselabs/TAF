@@ -802,23 +802,25 @@ class SecurityBase(CouchbaseBaseTest):
         return payload
 
     def get_cluster_status(self, cluster_id):
-        status = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.tenant_id,
+        resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.tenant_id,
                                                                      self.project_id,
                                                                      cluster_id)
-        status = status.json()["currentState"]
+        status = resp.json()["currentState"]
         while status != 'healthy':
             self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
                        .format(status))
             if status in ["deploymentFailed", "scaleFailed", "upgradeFailed", "rebalanceFailed",
                           "peeringFailed", "destroyFailed", "offline", "turningOffFailed",
                           "turningOnFailed"]:
+                self.log.error(
+                    "Cluster {} entered terminal state {}: {}".format(
+                        cluster_id, status, resp.content))
                 self.fail("FAIL. Cluster status is -{}".format(status))
-            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+            resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.tenant_id,
                 self.project_id,
                 cluster_id)
-            cluster_ready_resp = cluster_ready_resp.json()
-            status = cluster_ready_resp["currentState"]
+            status = resp.json()["currentState"]
 
         return status
 
