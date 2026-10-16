@@ -1,6 +1,8 @@
+import json
 import time
 import urllib.parse
 import uuid
+import zlib
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from random import choice, randint
 from threading import Thread
@@ -34,7 +36,8 @@ from error_simulation.cb_error import CouchbaseError
 from gsiLib.gsiHelper import GsiHelper
 
 from mc_bin_client import MemcachedClient, MemcachedError
-from memcached.helper.data_helper import VBucketAwareMemcached
+from memcached.helper.data_helper import MemcachedClientHelper, \
+    VBucketAwareMemcached
 from platform_constants.os_constants import Linux
 from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
@@ -2380,6 +2383,144 @@ class basic_ops(ClusterSetup):
             cb_stat.disconnect()
             shell.disconnect()
         self.assertTrue(result, "Stat validation failed")
+
+    def test_couch_dbdump_json_with_non_utf8_keys(self):
+        """
+        Ref: MB-73006
+        Data service does not need the doc keys to be valid UTF-8, but
+        'couch_dbdump --json' aborted with nlohmann type_error.316 on the
+        first such key. With the fix, the invalid bytes are emitted as
+        U+FFFD and the record is flagged with "id_not_utf8": true.
+        Non-JSON doc bodies get the same U+FFFD replacement.
+
+        1. Write docs with valid / non-UTF-8 keys using memcached client
+           (SDKs take str keys, which are always encoded as valid UTF-8)
+        2. Wait for the docs to get persisted
+        3. Run 'couch_dbdump --json' with / without --no-body on the
+           vbucket files holding these docs
+        4. Validate the dump completes, every line is a JSON record and
+           only the non-UTF-8 keys are flagged with id_not_utf8
+        """
+        bucket = self.cluster.buckets[0]
+        # Populates bucket.uuid, used as the bucket's data dir name
+        self.bucket_util.get_all_buckets(self.cluster)
+        if bucket.storageBackend != Bucket.StorageBackend.couchstore:
+            self.fail("couch_dbdump needs a couchstore bucket, got "
+                      f"{bucket.storageBackend}")
+        # (name, key suffix, doc body, is the key valid UTF-8)
+        doc_specs = [
+            ("ascii", b"", b"body", True),
+            ("multi_byte", b"\xc3\xa9", b"body", True),
+            ("incomplete_seq", b"\xc9", b"body", False),
+            ("invalid_bytes", b"\xff\xfe", b"body", False),
+            ("lone_continuation", b"\x80_mid", b"body", False),
+            ("overlong", b"\xc0\xaf", b"body", False),
+            ("raw_body", b"", b"raw_\xc9_body", True)]
+
+        vb_owner = {}
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
+            for vb_num in Cbstats(node).vbucket_list(bucket.name, "active"):
+                vb_owner[vb_num] = node
+        num_vbuckets = len(vb_owner)
+
+        docs_by_vb = {}
+        for name, suffix, body, valid_key in doc_specs:
+            # mc_bin_client hashes the key itself (fails for bytes keys)
+            # when vbucket=0 is passed, so pick a key outside vbucket 0
+            index = 0
+            while True:
+                stem = f"mb73006_{name}_{index}_"
+                key = stem.encode() + suffix
+                vb_num = ((zlib.crc32(key) >> 16) & 0x7fff) \
+                    & (num_vbuckets - 1)
+                if vb_num != 0:
+                    break
+                index += 1
+            docs_by_vb.setdefault(vb_num, []).append(
+                {"stem": stem, "key": key, "body": body,
+                 "valid_key": valid_key})
+
+        self.log.info("Writing docs with valid and non-UTF-8 keys")
+        clients = {}
+        try:
+            for vb_num, docs in docs_by_vb.items():
+                node = vb_owner[vb_num]
+                if node not in clients:
+                    clients[node] = MemcachedClientHelper.direct_client(
+                        node, bucket)
+                for doc in docs:
+                    self.log.info(f"vb={vb_num}, key={doc['key']}")
+                    clients[node].set(doc["key"], 0, 0, doc["body"],
+                                      vbucket=vb_num)
+        finally:
+            for client in clients.values():
+                client.close()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
+
+        for vb_num, docs in docs_by_vb.items():
+            node = vb_owner[vb_num]
+            # Bucket data dir is named by the bucket's uuid (MB-66178)
+            vb_dir = f"{MembaseRestConnection(node).get_data_path()}" \
+                     f"/{bucket.uuid}"
+            shell = RemoteMachineShellConnection(node)
+            output, error = shell.execute_command(
+                f"ls -1v {vb_dir}/{vb_num}.couch.* | tail -1")
+            if not output:
+                shell.disconnect()
+                self.fail(f"{node.ip} - No couch file for vb {vb_num} "
+                          f"in {vb_dir}: {error}")
+            couch_file = output[0].strip()
+
+            for dump_opts in ["--json --no-body", "--json"]:
+                dump_cmd = f"{Linux.COUCHBASE_BIN_PATH}couch_dbdump " \
+                           f"{dump_opts} {couch_file}"
+                self.log.info(f"{node.ip} - Running '{dump_cmd}'")
+                output, error = shell.execute_command(
+                    f"{dump_cmd}; echo EXIT_CODE=$?")
+
+                exit_code = None
+                records = []
+                for line in output:
+                    line = line.strip()
+                    if line.startswith("EXIT_CODE="):
+                        exit_code = int(line.split("=")[1])
+                    elif line:
+                        try:
+                            records.append(json.loads(line))
+                        except ValueError:
+                            self.log_failure(f"'{dump_cmd}' printed a "
+                                             f"non-JSON line: {line}")
+                if exit_code != 0:
+                    self.log_failure(f"'{dump_cmd}' failed. "
+                                     f"exit_code={exit_code}, "
+                                     f"stderr={error}")
+
+                for doc in docs:
+                    matches = [record for record in records
+                               if doc["stem"] in record.get("id", "")]
+                    if len(matches) != 1:
+                        self.log_failure(f"'{dump_cmd}' has {len(matches)} "
+                                         f"records for key {doc['key']}")
+                        continue
+                    record = matches[0]
+                    self.log.info(f"Key {doc['key']} -> {record}")
+                    if doc["valid_key"]:
+                        if not record["id"].endswith(doc["key"].decode()) \
+                                or "id_not_utf8" in record:
+                            self.log_failure(f"Valid UTF-8 key {doc['key']} "
+                                             f"dumped as {record}")
+                    elif "\ufffd" not in record["id"] \
+                            or record.get("id_not_utf8") is not True:
+                        self.log_failure(f"Non-UTF-8 key {doc['key']} not "
+                                         f"replaced / flagged: {record}")
+                    if "--no-body" not in dump_opts:
+                        exp_body = doc["body"].decode("utf-8",
+                                                      errors="replace")
+                        if record.get("body") != exp_body:
+                            self.log_failure(f"Key {doc['key']} body "
+                                             f"mismatch. Expected "
+                                             f"'{exp_body}': {record}")
+            shell.disconnect()
 
     def test_compaction_on_expiry_load(self):
         """
