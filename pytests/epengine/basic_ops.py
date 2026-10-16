@@ -1,4 +1,5 @@
 import json
+import re
 import string
 import time
 import urllib.parse
@@ -6,7 +7,7 @@ import uuid
 import zlib
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from random import choice, randint
-from threading import Thread
+from threading import Event, Thread
 
 from couchbase.durability import PersistTo
 from couchbase.options import IncrementOptions
@@ -19,6 +20,7 @@ from BucketLib.bucket import Bucket
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 from SecurityLib.rbac import RbacUtil
+from StatsLib.StatsOperations import StatsHelper
 from basetestcase import ClusterSetup
 from cb_constants import constants, CbServer, DocLoading
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
@@ -2929,6 +2931,328 @@ class basic_ops(ClusterSetup):
             thread.join(10)
 
         self.assertFalse(self.crud_failure, "Crud failure observed")
+
+    def _compaction_stats(self, client):
+        """
+        MB-73521 compaction stats (+ vbucket counts) of the bucket selected
+        on the memcached client, from one STAT call so that all of them
+        describe the same instant
+        """
+        stat_keys = ("ep_compaction_succeeded", "ep_compaction_failed",
+                     "ep_compaction_aborted", "ep_pending_compactions",
+                     "ep_running_internal_compactions",
+                     "ep_running_external_compactions",
+                     "vb_active_num", "vb_replica_num")
+        stats = client.stats()
+        missing = [key for key in stat_keys if key not in stats]
+        if missing:
+            self.fail(f"Stats {missing} not found, needs a build with the "
+                      f"MB-73521 fix")
+        return {key: int(stats[key]) for key in stat_keys}
+
+    def _sample_compaction_stats(self, clients, stop_sampling):
+        """
+        Polls _compaction_stats() of every KV node back to back, till
+        stop_sampling is set. A running gauge is > 0 only while a vbucket
+        is inside compactDB, so this polls over memcached and not cbstats
+        (SSH + process start) to keep the gaps between samples short.
+        Clients must not be used elsewhere till the sampler is joined.
+        :param clients: {node_ip: memcached client, bucket selected}
+        :return: (sampler thread, {node_ip: [stats, ...]}, errors)
+        """
+        samples = {ip: [] for ip in clients}
+        errors = []
+
+        def sample():
+            try:
+                while not stop_sampling.is_set():
+                    for ip, client in clients.items():
+                        samples[ip].append(self._compaction_stats(client))
+            except Exception as e:
+                errors.append(str(e))
+
+        sampler = Thread(target=sample)
+        sampler.start()
+        return sampler, samples, errors
+
+    def _wait_for_compactions_to_drain(self, samples, errors, timeout=300):
+        """
+        Waits till every node's latest sample has no compaction scheduled
+        or running, after having seen one scheduled
+        """
+        def drained(node_samples):
+            last = node_samples[-1]
+            return any(sample["ep_pending_compactions"]
+                       for sample in node_samples) \
+                and last["ep_pending_compactions"] == 0 \
+                and last["ep_running_internal_compactions"] == 0 \
+                and last["ep_running_external_compactions"] == 0
+
+        end_time = time.time() + timeout
+        while not errors and time.time() < end_time:
+            if all(node_samples and drained(node_samples)
+                   for node_samples in samples.values()):
+                return
+            time.sleep(1)
+        self.fail(f"Compactions not drained in {timeout}s, sampler errors: "
+                  f"{errors}")
+
+    def _disable_auto_compaction(self, bucket):
+        """
+        Fragmentation thresholds at 100%, so ns_server never compacts the
+        bucket by itself and adds to the counted compactions.
+        bucket_util.disable_compaction() passes None for them, which leaves
+        ns_server's 30% default in place
+        """
+        self.bucket_util.modify_fragmentation_config(
+            self.cluster, {"dbFragmentThresholdPercentage": 100,
+                           "viewFragmentThresholdPercentage": 100},
+            bucket.name)
+
+    def _set_compaction_concurrency_ratio(self, bucket, kv_nodes, ratio):
+        """
+        compaction_max_concurrent_ratio of the bucket on every KV node.
+        0 caps it to the minimum of one compaction at a time
+        """
+        for node in kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            Cbepctl(shell).set(bucket.name, "flush_param",
+                               "compaction_max_concurrent_ratio", ratio)
+            shell.disconnect()
+
+    def _load_and_update_docs(self, bucket, scope=CbServer.default_scope,
+                              collection=CbServer.default_collection):
+        """
+        Creates num_items docs and updates them once, so a compaction has
+        stale versions to drop, then waits for persistence
+        """
+        for op_type in [DocLoading.Bucket.DocOps.CREATE,
+                        DocLoading.Bucket.DocOps.UPDATE]:
+            load_gen = doc_generator(self.key, 0, self.num_items,
+                                     doc_size=self.doc_size)
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, load_gen, op_type,
+                batch_size=500, process_concurrency=8,
+                scope=scope, collection=collection, print_ops_rate=False,
+                load_using=self.load_docs_using)
+            self.task_manager.get_task_result(task)
+            if task.fail:
+                self.fail(f"Doc {op_type} failed for {len(task.fail)} keys")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+    def _validate_running_compactions(self, ip, node_samples, trigger):
+        """
+        With the concurrency capped to 1, the 'trigger' running gauge must
+        have been seen at 1, never above it, never above the pending count
+        it is a subset of, while the gauge of the other trigger stays 0
+        """
+        running_stat = f"ep_running_{trigger}_compactions"
+        other_stat = "ep_running_%s_compactions" \
+                     % ("internal" if trigger == "external" else "external")
+        running = [sample[running_stat] for sample in node_samples]
+        self.log.info(f"{ip} :: {len(node_samples)} samples, "
+                      f"{running_stat} seen at 1 in "
+                      f"{running.count(1)} samples")
+        if max(running) != 1:
+            self.log_failure(f"{ip}: {running_stat} peaked at "
+                             f"{max(running)}, expected 1 as compaction "
+                             f"concurrency is capped to 1")
+        over_pending = [sample for sample in node_samples
+                        if sample[running_stat]
+                        > sample["ep_pending_compactions"]]
+        if over_pending:
+            self.log_failure(f"{ip}: {running_stat} above "
+                             f"ep_pending_compactions: {over_pending[:3]}")
+        if any(sample[other_stat] for sample in node_samples):
+            self.log_failure(f"{ip}: {other_stat} went above 0 though only "
+                             f"{trigger} compactions were requested")
+
+    def _validate_compaction_outcomes(self, ip, start, end,
+                                      expected_succeeded):
+        """
+        ep_compaction_succeeded went up by expected_succeeded, one per
+        vbucket compaction, and nothing failed or aborted
+        """
+        succeeded = end["ep_compaction_succeeded"] \
+            - start["ep_compaction_succeeded"]
+        self.log.info(f"{ip} :: ep_compaction_succeeded +{succeeded}")
+        if succeeded != expected_succeeded:
+            self.log_failure(f"{ip}: ep_compaction_succeeded went up by "
+                             f"{succeeded}, expected {expected_succeeded}")
+        for stat in ["ep_compaction_failed", "ep_compaction_aborted"]:
+            if end[stat] != start[stat]:
+                self.log_failure(f"{ip}: {stat} {start[stat]} -> "
+                                 f"{end[stat]}")
+
+    def _validate_compaction_prometheus(self, node, bucket, succeeded):
+        """
+        KV Prometheus exports ep_compaction_succeeded as it is, and both
+        running gauges as the family ep_running_compactions{trigger}, which
+        must be 0 with no compaction left
+        """
+        pattern = re.compile(r"(kv_ep_compaction_succeeded"
+                             r"|kv_ep_running_compactions)\{([^}]*)\} (\S+)")
+        exported = {}
+        for line in StatsHelper(node).get_prometheus_metrics(
+                component="kv"):
+            match = pattern.match(line.strip())
+            if match and f'bucket="{bucket.name}"' in match.group(2):
+                trigger = re.search(r'trigger="(\w+)"', match.group(2))
+                metric = match.group(1)
+                if trigger:
+                    metric += f"/{trigger.group(1)}"
+                exported[metric] = float(match.group(3))
+        expected = {"kv_ep_compaction_succeeded": succeeded,
+                    "kv_ep_running_compactions/internal": 0,
+                    "kv_ep_running_compactions/external": 0}
+        self.log.info(f"{node.ip} :: Prometheus {exported}")
+        if exported != expected:
+            self.log_failure(f"{node.ip}: Prometheus exported {exported}, "
+                             f"expected {expected}")
+
+    def test_compaction_outcome_and_running_stats(self):
+        """
+        Ref: MB-73521
+        ep_running_external_compactions counts the externally requested
+        (ns_server / CompactDB) vbucket compactions only while inside
+        compactDB, unlike ep_pending_compactions which also counts the ones
+        queued behind the concurrency limit. ep_compaction_succeeded counts
+        each vbucket compaction run to completion, next to
+        ep_compaction_failed / ep_compaction_aborted.
+
+        1. Disable auto-compaction, load docs and update them once
+        2. Cap the bucket's compaction concurrency to 1 on every KV node,
+           so the CompactDB requests from ns_server queue up
+        3. Compact the bucket while sampling the stats over memcached
+        4. Validate per KV node,
+           - running_external seen at 1, never above 1 or pending,
+             running_internal stays 0
+           - pending seen above running (the queued compactions)
+           - succeeded went up by the node's vbuckets, nothing failed or
+             aborted
+           - Prometheus kv_ep_compaction_succeeded matches cbstats and
+             kv_ep_running_compactions is 0 for both triggers
+        """
+        bucket = self.cluster.buckets[0]
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+        self._disable_auto_compaction(bucket)
+        self._load_and_update_docs(bucket)
+        self._set_compaction_concurrency_ratio(bucket, kv_nodes, 0)
+
+        clients = {node.ip: MemcachedClientHelper.direct_client(node, bucket)
+                   for node in kv_nodes}
+        try:
+            start = {ip: self._compaction_stats(client)
+                     for ip, client in clients.items()}
+            stop_sampling = Event()
+            sampler, samples, errors = self._sample_compaction_stats(
+                clients, stop_sampling)
+            try:
+                self.log.info("Compacting the bucket")
+                compaction_task = self.task.async_compact_bucket(
+                    self.cluster.master, bucket)
+                self.task_manager.get_task_result(compaction_task)
+                self._wait_for_compactions_to_drain(samples, errors)
+            finally:
+                stop_sampling.set()
+                sampler.join()
+            end = {ip: self._compaction_stats(client)
+                   for ip, client in clients.items()}
+        finally:
+            for client in clients.values():
+                client.close()
+        self.assertTrue(compaction_task.result, "Bucket compaction failed")
+
+        for node in kv_nodes:
+            node_samples = samples[node.ip]
+            self._validate_running_compactions(node.ip, node_samples,
+                                               "external")
+            if not any(sample["ep_pending_compactions"]
+                       > sample["ep_running_external_compactions"] > 0
+                       for sample in node_samples):
+                self.log_failure(f"{node.ip}: ep_pending_compactions never "
+                                 f"seen above the running ones, queued "
+                                 f"compactions not told apart")
+            self._validate_compaction_outcomes(
+                node.ip, start[node.ip], end[node.ip],
+                expected_succeeded=start[node.ip]["vb_active_num"]
+                + start[node.ip]["vb_replica_num"])
+            self._validate_compaction_prometheus(
+                node, bucket, end[node.ip]["ep_compaction_succeeded"])
+        self.validate_test_failure()
+
+    def test_running_internal_compactions_on_collection_drop(self):
+        """
+        Ref: MB-73521
+        KV schedules compactions by itself to purge a dropped collection
+        (collections_drop_compaction_delay later), which must be counted
+        by ep_running_internal_compactions, never by the external one.
+        Till the delay elapses the snoozed compactions are seen only in
+        ep_pending_compactions.
+
+        1. Disable auto-compaction, load docs into a new collection and
+           update them once
+        2. Cap the bucket's compaction concurrency to 1 on every KV node
+        3. Drop the collection while sampling the stats over memcached
+        4. Once KV is done, validate per KV node,
+           - pending seen > 0 with nothing running (snoozed compactions)
+           - running_internal seen at 1, never above 1 or pending,
+             running_external stays 0
+           - succeeded went up by the node's vbuckets, nothing failed or
+             aborted
+           - Prometheus kv_ep_running_compactions is 0 for both triggers
+        """
+        bucket = self.cluster.buckets[0]
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+        scope = CbServer.default_scope
+        collection = "dropped_collection"
+        self._disable_auto_compaction(bucket)
+        self.bucket_util.create_collection(self.cluster.master, bucket, scope,
+                                           {"name": collection})
+        self._load_and_update_docs(bucket, scope, collection)
+        self._set_compaction_concurrency_ratio(bucket, kv_nodes, 0)
+
+        clients = {node.ip: MemcachedClientHelper.direct_client(node, bucket)
+                   for node in kv_nodes}
+        try:
+            start = {ip: self._compaction_stats(client)
+                     for ip, client in clients.items()}
+            stop_sampling = Event()
+            sampler, samples, errors = self._sample_compaction_stats(
+                clients, stop_sampling)
+            try:
+                self.log.info(f"Dropping collection {scope}.{collection}")
+                self.bucket_util.drop_collection(self.cluster.master, bucket,
+                                                 scope, collection)
+                self._wait_for_compactions_to_drain(samples, errors)
+            finally:
+                stop_sampling.set()
+                sampler.join()
+            end = {ip: self._compaction_stats(client)
+                   for ip, client in clients.items()}
+        finally:
+            for client in clients.values():
+                client.close()
+
+        for node in kv_nodes:
+            node_samples = samples[node.ip]
+            if not any(sample["ep_pending_compactions"] > 0
+                       and sample["ep_running_internal_compactions"] == 0
+                       for sample in node_samples):
+                self.log_failure(f"{node.ip}: Snoozed compactions not seen "
+                                 f"as pending with none running")
+            self._validate_running_compactions(node.ip, node_samples,
+                                               "internal")
+            # num_items puts docs of the collection in every vbucket, so
+            # every vbucket gets a purge compaction
+            self._validate_compaction_outcomes(
+                node.ip, start[node.ip], end[node.ip],
+                expected_succeeded=start[node.ip]["vb_active_num"]
+                + start[node.ip]["vb_replica_num"])
+            self._validate_compaction_prometheus(
+                node, bucket, end[node.ip]["ep_compaction_succeeded"])
+        self.validate_test_failure()
 
     def test_hash_table_during_compaction_expiry(self):
         """

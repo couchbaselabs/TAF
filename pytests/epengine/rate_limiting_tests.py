@@ -82,7 +82,8 @@ class KVRateLimitingTests(ClusterSetup):
 
             required_stats = [
                 "throttle_count_total", "reject_count_total",
-                "throttle_hard_limit", "throttle_reserved"
+                "throttle_hard_limit", "throttle_reserved",
+                "ru_total", "wu_total", "node_capacity"
             ]
             for stat_key in required_stats:
                 if stat_key in stats:
@@ -261,14 +262,15 @@ class KVRateLimitingTests(ClusterSetup):
         Validate ops are throttled once the offered rate crosses the
         bucket's throttle limit.
 
-        throttleHardLimit is the only value that limits a running bucket:
-        offered load saturates exactly at it (a bucket capped at 200 tops
-        out at ~199-222 ops/sec). throttleReserved and the cluster-wide
-        node_capacity are admission control - ns_server refuses a bucket
-        whose reserved sum exceeds node_capacity - but neither caps
-        throughput, so a single bucket at reserved=100 with
-        node_capacity=500 sustained ~2000 ops/sec while
-        throttle_count_total stayed 0.
+        Offered load saturates exactly at throttleHardLimit (a bucket
+        capped at 200 tops out at ~199-222 ops/sec). ns_server also refuses
+        a bucket whose reserved sum exceeds node_capacity. Before MB-73910,
+        throttleReserved and node_capacity did not cap a running bucket at
+        all: a single bucket at reserved=100 with node_capacity=500
+        sustained ~2000 ops/sec while throttle_count_total stayed 0. With
+        the fix, going over the reservation draws from the free pool
+        (node_capacity - sum of reserved), see
+        test_throttle_above_reserved_with_free_pool.
 
         The limit therefore has to sit below the rate the client can
         actually offer, which on a QE VM is a few hundred ops/sec: with a
@@ -564,3 +566,314 @@ class KVRateLimitingTests(ClusterSetup):
             f"{initial_throttle}->{final_throttle}, "
             f"reject {initial_reject}->{final_reject}, "
             f"sdk_throttle_count={sdk_throttle_count}")
+
+    def _throttle_counters(self, bucket_name):
+        """
+        (units, limited, timestamp) of the bucket from one cbstats call.
+        units: ru_total + wu_total, what the throttle gauge is charged with
+        limited: throttle_count_total + reject_count_total, as a client in
+                 non-blocking throttling mode is rejected and not delayed
+        timestamp: Midpoint of the cbstats call, which takes ~1s over SSH
+        """
+        before = time.time()
+        stats = self.get_throttle_stats(bucket_name)
+        timestamp = (before + time.time()) / 2
+        return (int(stats["ru_total"]) + int(stats["wu_total"]),
+                int(stats["throttle_count_total"])
+                + int(stats["reject_count_total"]),
+                timestamp)
+
+    def _throttle_limits(self, bucket):
+        """
+        Throttle limits as seen by memcached, so the expected caps do not
+        depend on how ns_server defaults the unset ones. memcached reports
+        node_capacity only from MB-74030, so older builds take ns_server's.
+        Returns (node_capacity, reserved, hard_limit), None for unlimited
+        """
+        unlimited = 2 ** 64 - 1
+        stats = self.get_throttle_stats(bucket.name)
+        if "node_capacity" not in stats:
+            status, content = \
+                self.cluster_rest.manage_global_memcached_setting()
+            self.assertTrue(status, f"Failed to get node_capacity: {content}")
+            stats["node_capacity"] = content["node_capacity"]
+        limits = [int(stats[key]) for key in ("node_capacity",
+                                              "throttle_reserved",
+                                              "throttle_hard_limit")]
+        self.log.info(f"{bucket.name} :: node_capacity={limits[0]}, "
+                      f"throttle_reserved={limits[1]}, "
+                      f"throttle_hard_limit={limits[2]}")
+        return tuple(None if limit == unlimited else limit
+                     for limit in limits)
+
+    def _wait_for_throttle_limits(self, bucket, expected, timeout=60):
+        """
+        ns_server pushes the REST changes to memcached asynchronously, so
+        poll till memcached reports the expected
+        (node_capacity, reserved, hard_limit)
+        """
+        end_time = time.time() + timeout
+        limits = self._throttle_limits(bucket)
+        while limits != expected and time.time() < end_time:
+            time.sleep(2)
+            limits = self._throttle_limits(bucket)
+        self.assertEqual(limits, expected,
+                         f"memcached did not pick up the throttle limits "
+                         f"in {timeout} secs")
+
+    def _measure_throttled_load(self, load_plan):
+        """
+        Runs an SDK upsert load on each bucket in load_plan and measures,
+        server side, the units consumed per sec and the requests
+        throttled / rejected within a 'load_duration' secs window.
+        Values are < write_unit_size, so every upsert is charged 1 WU.
+
+        :param load_plan: {bucket: ops_per_sec}. None saturates the bucket
+                          using 'load_clients' SDK clients. A number paces a
+                          single client to at most that rate
+        :return: {bucket_name: {"units_per_sec": float, "limited": int}}
+        """
+        duration = self.input.param("load_duration", 30)
+        num_clients = self.input.param("load_clients", 8)
+        warmup = 5
+        doc = {"data": "x" * 256}
+        stop_load = threading.Event()
+        errors = []
+        sdk_clients = []
+        workers = []
+
+        def run_load(client, key_prefix, ops_per_sec):
+            index = 0
+            while not stop_load.is_set():
+                op_start = time.time()
+                result = client.crud("update", f"{key_prefix}_{index % 1000}",
+                                     doc, timeout=10)
+                if not result.get("status") and len(errors) < 10:
+                    errors.append(result.get("error"))
+                index += 1
+                if ops_per_sec:
+                    # Pacing each op (no catch-up bursts) keeps the rate
+                    # under ops_per_sec within every second
+                    stop_load.wait(1.0 / ops_per_sec
+                                   - (time.time() - op_start))
+
+        def snapshot():
+            # Each bucket's counters carry the timestamp of their own read
+            return {bucket.name: self._throttle_counters(bucket.name)
+                    for bucket in load_plan}
+
+        try:
+            for bucket, ops_per_sec in load_plan.items():
+                for c_index in range(1 if ops_per_sec else num_clients):
+                    client = SDKClient(self.cluster, bucket)
+                    sdk_clients.append(client)
+                    workers.append(threading.Thread(
+                        target=run_load,
+                        args=(client, f"free_pool_{c_index}", ops_per_sec)))
+            for worker in workers:
+                worker.start()
+            # Let the clients bootstrap and the throttler engage
+            time.sleep(warmup)
+            start = snapshot()
+            time.sleep(duration)
+            end = snapshot()
+        finally:
+            stop_load.set()
+            for worker in workers:
+                worker.join()
+            for client in sdk_clients:
+                client.close()
+
+        if errors:
+            self.log.info(f"Sample of failed upserts: {errors}")
+        result = {}
+        for name in start:
+            units_0, limited_0, time_0 = start[name]
+            units_1, limited_1, time_1 = end[name]
+            result[name] = {
+                "units_per_sec": (units_1 - units_0) / (time_1 - time_0),
+                "limited": limited_1 - limited_0}
+            self.log.info(f"{name} :: units/sec="
+                          f"{result[name]['units_per_sec']:.1f}, "
+                          f"throttled+rejected={result[name]['limited']}")
+        return result
+
+    def _assert_throttled_at(self, bucket_name, result, cap):
+        """
+        Bucket was throttled and consumed no more than 'cap' units/sec.
+        The load offered is well over the caps used in the conf, so
+        throttle not engaging means the bucket ran past its cap.
+        Delayed requests are charged to the next second, so the rate holds
+        at the cap. 'rate_tolerance' covers the window edges
+        """
+        tolerance = self.input.param("rate_tolerance", 1.2)
+        self.assertGreater(
+            result["limited"], 0,
+            f"{bucket_name} not throttled at {result['units_per_sec']:.0f} "
+            f"units/sec, expected to be capped at {cap} units/sec")
+        self.assertLessEqual(
+            result["units_per_sec"], cap * tolerance,
+            f"{bucket_name} consumed {result['units_per_sec']:.0f} "
+            f"units/sec, over its cap of {cap} units/sec")
+
+    def test_throttle_above_reserved_with_free_pool(self):
+        """
+        Ref: MB-73910
+        A bucket over its throttleReserved, but under its
+        throttleHardLimit, may go on only with units from the node's free
+        pool (node_capacity - sum of all buckets' throttleReserved). Free
+        pool units are also charged to the bucket's own gauge, so a
+        saturated bucket is capped at
+          min(throttleHardLimit, throttleReserved + free pool)
+        Before the fix, a bucket with a hard limit set was never throttled
+        under it, and the free pool was never charged. Without a hard
+        limit the free pool was already enforced, so the conf sets
+        throttleHardLimit at or above 'large_node_capacity' to hit the bug.
+
+        Runs 3 phases on the same bucket, changing the limits in between,
+         1. node_capacity from the conf, hard limit above the load: Free
+            pool is node_capacity - reserved, so the bucket is throttled at
+            node_capacity. Before the fix it was never throttled
+         2. node_capacity raised to 'large_node_capacity', above the offered
+            load: The bucket goes over its reservation using free pool
+            units without being throttled
+         3. throttleHardLimit set to 'pool_hard_limit': The bucket is
+            throttled at the hard limit though the free pool still has
+            units, which holds only if free pool units are charged to the
+            bucket's own gauge as well
+        Phases are ordered so that the hard limit is only ever lowered
+        """
+        large_node_capacity = self.input.param("large_node_capacity", 100000)
+        pool_hard_limit = self.input.param("pool_hard_limit", 300)
+        bucket_name = self.bucket.name
+        node_capacity, reserved, hard_limit = \
+            self._throttle_limits(self.bucket)
+        if node_capacity is None or reserved is None:
+            self.fail("Needs node_capacity and throttleReserved set, "
+                      "else the bucket is never throttled")
+        # Phases 1 and 2 must run under the hard limit, never at it
+        if hard_limit is not None and hard_limit < large_node_capacity:
+            self.fail(f"throttleHardLimit={hard_limit} must be unset or at "
+                      f"least large_node_capacity={large_node_capacity}")
+        if not reserved < pool_hard_limit < large_node_capacity:
+            self.fail(f"pool_hard_limit={pool_hard_limit} must be over "
+                      f"throttleReserved={reserved} and under "
+                      f"large_node_capacity={large_node_capacity}")
+
+        self.log.info(f"Phase 1: node_capacity={node_capacity}, "
+                      f"throttleHardLimit={hard_limit}")
+        result = self._measure_throttled_load(
+            {self.bucket: None})[bucket_name]
+        self._assert_throttled_at(f"Phase 1: {bucket_name}", result,
+                                  node_capacity)
+
+        self.log.info(f"Phase 2: node_capacity={large_node_capacity}, "
+                      f"throttleHardLimit={hard_limit}")
+        status, content = self.cluster_rest.manage_global_memcached_setting(
+            node_capacity=large_node_capacity)
+        self.assertTrue(status, f"Failed to set node_capacity: {content}")
+        self._wait_for_throttle_limits(
+            self.bucket, (large_node_capacity, reserved, hard_limit))
+        result = self._measure_throttled_load(
+            {self.bucket: None})[bucket_name]
+        self.assertEqual(
+            result["limited"], 0,
+            f"Phase 2: Throttled at {result['units_per_sec']:.0f} units/sec "
+            f"though the free pool had units, "
+            f"node_capacity={large_node_capacity}")
+        # Else the bucket never left its reservation, proving nothing
+        self.assertGreater(
+            result["units_per_sec"], reserved * 1.5,
+            f"Phase 2: Load at {result['units_per_sec']:.0f} units/sec did "
+            f"not go over throttleReserved={reserved}. Raise load_clients")
+
+        self.log.info(f"Phase 3: node_capacity={large_node_capacity}, "
+                      f"throttleHardLimit={pool_hard_limit}")
+        status, content = self.bucket_rest.edit_bucket(
+            bucket_name, {Bucket.throttleHardLimit: pool_hard_limit})
+        self.assertTrue(status, f"Failed to set throttleHardLimit: {content}")
+        self._wait_for_throttle_limits(
+            self.bucket, (large_node_capacity, reserved, pool_hard_limit))
+        result = self._measure_throttled_load(
+            {self.bucket: None})[bucket_name]
+        self._assert_throttled_at(f"Phase 3: {bucket_name}", result,
+                                  pool_hard_limit)
+
+    def _create_second_throttled_bucket(self):
+        """
+        Second bucket with the same throttle limits as self.bucket.
+        Limits are applied at creation, so node_capacity must already fit
+        the sum of the reservations
+        """
+        # Without bucket_size the first bucket takes the whole RAM quota
+        if self.bucket_size is None:
+            self.fail("Needs bucket_size, else no RAM quota is left for "
+                      "the second bucket")
+        self.create_bucket(self.cluster, bucket_name="free_pool_bucket")
+        return self.cluster.buckets[-1]
+
+    def test_free_pool_shared_between_buckets(self):
+        """
+        Ref: MB-73910
+        Two saturated buckets with no hard limit share the node's free
+        pool, first come, first served. The node as a whole is capped at
+        node_capacity, every bucket is throttled and still gets at least
+        its throttleReserved.
+        Before the fix the free pool was never charged, so neither bucket
+        was throttled
+        """
+        other_bucket = self._create_second_throttled_bucket()
+        buckets = [self.bucket, other_bucket]
+        node_capacity, reserved, _ = self._throttle_limits(self.bucket)
+        if node_capacity is None or reserved is None:
+            self.fail("Needs node_capacity and throttleReserved set, "
+                      "else the buckets are never throttled")
+
+        # A bucket can at most take all of the free pool on top of its
+        # own reservation
+        bucket_cap = reserved + node_capacity - reserved * len(buckets)
+
+        results = self._measure_throttled_load(
+            dict.fromkeys(buckets))
+        total_rate = sum(result["units_per_sec"]
+                         for result in results.values())
+        self.log.info(f"Total units/sec={total_rate:.1f}")
+        for bucket in buckets:
+            result = results[bucket.name]
+            self._assert_throttled_at(bucket.name, result, bucket_cap)
+            # Reservation is honoured though the other bucket competes
+            self.assertGreaterEqual(
+                result["units_per_sec"], reserved * 0.8,
+                f"{bucket.name} got {result['units_per_sec']:.0f} "
+                f"units/sec, under throttleReserved={reserved}")
+        self.assertLessEqual(
+            total_rate, node_capacity * self.input.param("rate_tolerance",
+                                                         1.2),
+            f"Buckets together consumed {total_rate:.0f} units/sec, over "
+            f"node_capacity={node_capacity}")
+
+    def test_below_reserved_not_throttled_with_free_pool_used_up(self):
+        """
+        Ref: MB-73910
+        One saturated bucket uses up the free pool while the other runs
+        under its throttleReserved. Usage under the reservation comes from
+        the bucket's own units, so it must not be throttled though the free
+        pool is used up
+        """
+        busy_bucket = self._create_second_throttled_bucket()
+        _, reserved, _ = self._throttle_limits(self.bucket)
+        if reserved is None:
+            self.fail("Needs throttleReserved set")
+        paced_rate = self.input.param("paced_ops_per_sec", reserved // 2)
+
+        results = self._measure_throttled_load({busy_bucket: None,
+                                                self.bucket: paced_rate})
+        self.assertGreater(
+            results[busy_bucket.name]["limited"], 0,
+            f"{busy_bucket.name} not throttled, so the free pool was not "
+            "used up and this proves nothing")
+        self.assertEqual(
+            results[self.bucket.name]["limited"], 0,
+            f"{self.bucket.name} throttled while at "
+            f"{results[self.bucket.name]['units_per_sec']:.0f} units/sec, "
+            f"under throttleReserved={reserved}")
