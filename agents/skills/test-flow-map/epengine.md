@@ -245,6 +245,7 @@ Common flow: create/load → read → update → delete → `verify_stats_all_bu
 
 | Test Method | Key Params | Flow Summary |
 |---|---|---|
+| `test_couch_dbdump_json_with_non_utf8_keys` | couchstore bucket (Linux nodes) | MB-73006: map active vBuckets via `Cbstats.vbucket_list` → write 7 docs with raw-bytes keys (2 valid UTF-8, 4 invalid: incomplete `\xc9`, `\xff\xfe`, lone `\x80`, overlong `\xc0\xaf`; plus 1 non-UTF-8 raw body) via `MemcachedClientHelper.direct_client` with explicit CRC32 vbucket (keys re-picked to avoid vb 0, which `mc_bin_client` re-hashes) → `_wait_for_stats_all_buckets` → per vBucket run `couch_dbdump --json --no-body` and `--json` on latest `<data_path>/<bucket_uuid>/<vb>.couch.*` (bucket dir is the uuid, MB-66178; fails upfront if not couchstore) → assert exit code 0, every line JSON, invalid keys have `\ufffd` in `id` + `"id_not_utf8": true`, valid keys unchanged and unflagged, bodies `\ufffd`-replaced |
 | `test_kv_curr_connections_bucket_metrics` | `nodes_init=1` | For each KV node: (1) `query_prometheus(kv_curr_connections)` → assert bucket label present for every bucket, values ≥ 0, bucket sum ≤ node-level, node-level still exists; (2) `query_prometheus(kv_curr_connections_closing)` → assert bucket label present, each bucket value ≤ 1 |
 
 ---
