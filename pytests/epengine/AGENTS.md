@@ -53,7 +53,7 @@ pattern reference:
    The flow map documents invariants that must be preserved:
    - `DurabilityTestsBase.tearDown` disconnects all `vbs_in_node` shell connections — subclass tearDown must call `super().tearDown()`.
    - `BucketDurabilityBase.tearDown` disconnects per-node shell connections — do not close them earlier.
-   - Failures accumulate via `log_failure()` and raise only at `validate_test_failure()` in `BaseTestCase.tearDown` — do not call `self.fail()` mid-test for recoverable errors.
+   - Failures accumulate via `log_failure()` and raise only when the test itself calls `self.validate_test_failure()` — no base class tearDown calls it, so a test using `log_failure()` must end with it, else it passes despite logged failures. Do not call `self.fail()` mid-test for recoverable errors.
    - `init_java_clients()` must be called per bucket before any `sirius_java_sdk` load task — see [`sirius-java-sdk.md`](../../agents/skills/test-flow-map/sirius-java-sdk.md).
    - `verify_vbucket_details_stats()` requires a baseline `verification_dict` built before any mutations.
 
