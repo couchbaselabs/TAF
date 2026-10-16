@@ -1,4 +1,5 @@
 import json
+import string
 import time
 import urllib.parse
 import uuid
@@ -36,6 +37,8 @@ from error_simulation.cb_error import CouchbaseError
 from gsiLib.gsiHelper import GsiHelper
 
 from mc_bin_client import MemcachedClient, MemcachedError
+from memcacheConstants import ENGINE_PARAM_CHECKPOINT, ENGINE_PARAM_FLUSH, \
+    ERR_ETMPFAIL
 from memcached.helper.data_helper import MemcachedClientHelper, \
     VBucketAwareMemcached
 from platform_constants.os_constants import Linux
@@ -2318,11 +2321,23 @@ class basic_ops(ClusterSetup):
     def test_defragmenter_sleep_time(self):
         """
         Ref: MB-55943
+        With validate_frag_backpressure=True, also covers MB-55537
+        (see _validate_frag_backpressure). It runs first on the empty
+        bucket, so the slab layout it builds is not disturbed by the
+        MB-55943 doc loads
         """
         result = True
         bucket = self.cluster.buckets[0]
         iterations = self.input.param("iterations", 2000)
+        validate_frag_backpressure = self.input.param(
+            "validate_frag_backpressure", False)
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+
+        if validate_frag_backpressure:
+            if len(kv_nodes) != 1:
+                self.fail("Fragmentation back-pressure validation needs a "
+                          f"single KV node, found {len(kv_nodes)}")
+            self._validate_frag_backpressure(bucket, kv_nodes[0])
 
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 key_size=self.key_size, doc_size=self.doc_size)
@@ -2521,6 +2536,321 @@ class basic_ops(ClusterSetup):
                                              f"mismatch. Expected "
                                              f"'{exp_body}': {record}")
             shell.disconnect()
+
+    @staticmethod
+    def _regions_per_slab(allocator_dump, min_size):
+        """
+        Regions-per-slab of the smallest jemalloc bin that fits 'min_size',
+        read from the 'bins:' table of the server's jemalloc dump.
+        Table columns are,
+          size ind allocated nmalloc (#/sec) ndalloc (#/sec) nrequests
+          (#/sec) nshards curregs curslabs nonfull_slabs regs pgs util ..
+        so 'size' is column 0 and 'regs' is column 13.
+        Returns 0 if the table could not be parsed
+        """
+        in_bins = False
+        for line in allocator_dump.splitlines():
+            if "bins:" in line:
+                # Header line, data rows follow
+                in_bins = True
+                continue
+            if not in_bins:
+                continue
+            cols = line.split()
+            # Skip blank / '---' / section end / non-data rows
+            if len(cols) < 14 or not cols[0].isdigit():
+                continue
+            if int(cols[0]) >= min_size:
+                return int(cols[13])
+        return 0
+
+    def _validate_frag_backpressure(self, bucket, node):
+        """
+        Ref: MB-55537
+        Port of kv_engine's testapp MemTrackingBucketTest.HighFragmentation
+
+        Builds external jemalloc fragmentation till the bucket's resident
+        memory (RSS) is over its quota while allocated stays under it,
+        then validates,
+        1. Gate: With fragmentation_backpressure_enabled, mutations are
+           rejected with ETMPFAIL and each rejection is counted in both
+           ep_fragmentation_tmp_ooms and ep_tmp_oom_errors
+        2. Recovery: Defragmenter runs in aggressive mode (sleep drops to
+           defragmenter_auto_min_sleep, age threshold 0), RSS returns under
+           the quota and mutations are accepted again
+
+        Fragmentation is built using two jemalloc size classes, so the
+        holes in the first one are not refilled by the second:
+         - Load class-A docs (1KB values -> 1280 bin) up to 0.7x quota
+         - Delete all but one survivor per A slab (stride = regs of the
+           bin), so each slab stays resident while its allocated collapses
+         - Load class-B docs (4KB values -> 5120 bin) till RSS > 1.1x quota
+         - Same survivor-per-slab delete on B
+        Allocated is kept under 0.75x quota, so mem_used stays under the
+        high_wat and the item pager never ejects the pinned values.
+
+        Uses a single memcached connection with sequential mutations, so
+        consecutive docs are allocated from the same slab.
+        Expects: Single KV node (all vbuckets active locally), couchstore
+        bucket with 100MB quota and compression_mode=off
+        """
+        chunk = 1000
+        timeout = 60
+        probe_key = "frag_backpressure_probe"
+        cm_wake_key = "frag_checkpoint_recovery_wake"
+        # Random letters keep the values incompressible, so each Blob
+        # lands in the size class picked by its length
+        value_a = "".join(choice(string.ascii_letters) for _ in range(1024))
+        value_b = "".join(choice(string.ascii_letters) for _ in range(4096))
+
+        client = MemcachedClientHelper.direct_client(node, bucket)
+        stats = client.stats()
+        if "ep_fragmentation_backpressure_enabled" not in stats:
+            client.close()
+            self.fail("ep_fragmentation_backpressure_enabled not found. "
+                      "Server build does not have the MB-55537 changes")
+        quota = int(stats["ep_max_size"])
+        orig_flush_params = {
+            "defragmenter_enabled": stats["ep_defragmenter_enabled"],
+            "defragmenter_age_threshold":
+                stats["ep_defragmenter_age_threshold"],
+            "fragmentation_backpressure_enabled":
+                stats["ep_fragmentation_backpressure_enabled"]}
+        orig_checkpoint_mem_ratio = stats["ep_checkpoint_memory_ratio"]
+
+        def wait_for(predicate, poll_interval=1.0):
+            end_time = time.time() + timeout
+            while time.time() < end_time:
+                if predicate():
+                    return True
+                time.sleep(poll_interval)
+            return False
+
+        def set_flush_param(key, value):
+            client.set_param(key, str(value), ENGINE_PARAM_FLUSH)
+
+        def arena_memory():
+            # (resident, allocated) from a single stat snapshot
+            arena_stats = client.stats()
+            return (int(arena_stats["ep_arena_memory_resident"]),
+                    int(arena_stats["ep_arena_memory_allocated"]))
+
+        def tmp_oom_counters():
+            # (fragmentation, total) from a single stat snapshot
+            oom_stats = client.stats()
+            return (int(oom_stats["ep_fragmentation_tmp_ooms"]),
+                    int(oom_stats["ep_tmp_oom_errors"]))
+
+        def log_state(stage):
+            mem_stats = client.stats()
+            rss = int(mem_stats["ep_arena_memory_resident"])
+            alloc = int(mem_stats["ep_arena_memory_allocated"])
+            frag = 100.0 * (rss - alloc) / rss if rss > alloc else 0.0
+            self.log.info(
+                f"{stage} :: quota={quota}, resident={rss}, "
+                f"allocated={alloc}, frag={frag:.2f}%, "
+                f"items={mem_stats['curr_items']}, "
+                f"mem_used={mem_stats['mem_used']}, "
+                f"high_wat={mem_stats['ep_mem_high_wat']}, "
+                f"value_ejects={mem_stats['ep_num_value_ejects']}, "
+                f"tmp_ooms={mem_stats['ep_tmp_oom_errors']}, "
+                f"frag_tmp_ooms={mem_stats['ep_fragmentation_tmp_ooms']}")
+
+        def checkpoint_memory():
+            cm_stats = client.stats()
+            return (int(cm_stats["ep_checkpoint_memory"])
+                    + int(cm_stats["ep_checkpoint_memory_pending_destruction"]))
+
+        def recover_checkpoint_memory():
+            # Lowering checkpoint_memory_ratio runs checkpoint memory
+            # recovery to free the deleted Blobs still referenced from the
+            # checkpoints. Setting the ratio does not wake the recovery task,
+            # the next mutation does (and gets ETMPFAIL while checkpoint
+            # memory is over the lowered quota), so wake it with a tiny doc
+            # which stays out of the A/B size classes.
+            # Ratio is restored once the checkpoint memory settles. Left at
+            # 0.01, every later mutation gets the checkpoint-full ETMPFAIL
+            # (kv_engine's testapp hides it with auto-retry on a single vb
+            # bucket), which also cannot be told apart from the gate's
+            # ETMPFAIL in the probes
+            client.set_param("checkpoint_memory_ratio", "0.01",
+                             ENGINE_PARAM_CHECKPOINT)
+            try:
+                try:
+                    client.set(cm_wake_key, 0, 0, "x")
+                except MemcachedError as e:
+                    if e.status != ERR_ETMPFAIL:
+                        raise
+                last_seen = {"mem": None}
+
+                def settled():
+                    # First call only records, so each comparison is a
+                    # poll_interval apart and not before the task has run
+                    prev_mem = last_seen["mem"]
+                    last_seen["mem"] = checkpoint_memory()
+                    return prev_mem is not None \
+                        and last_seen["mem"] >= prev_mem
+
+                if not wait_for(settled):
+                    self.log.warning("Checkpoint memory still dropping, "
+                                     f"now at {last_seen['mem']}")
+                self.log.info("Checkpoint memory after recovery: "
+                              f"{last_seen['mem']}")
+            finally:
+                client.set_param("checkpoint_memory_ratio",
+                                 orig_checkpoint_mem_ratio,
+                                 ENGINE_PARAM_CHECKPOINT)
+
+        def delete_all_but_one_per_slab(key_prefix, num_keys, value_len):
+            # Stored Blob is value + ~9 bytes header. Both value lengths sit
+            # on a size-class boundary, so the Blob spills into the next
+            # class (1280 / 5120). +64 bumps the lookup into that class
+            nregs = self._regions_per_slab(
+                client.stats("allocator")["allocator"], value_len + 64)
+            if nregs == 0:
+                self.fail("Could not parse regions-per-slab for size "
+                          f"{value_len + 64}")
+            self.log.info(f"Deleting all but one '{key_prefix}' doc per "
+                          f"slab, regions_per_slab={nregs}")
+            for index in range(num_keys):
+                if index % nregs != 0:
+                    client.delete(f"{key_prefix}{index}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         [bucket])
+            recover_checkpoint_memory()
+
+        def probe_rejected():
+            try:
+                client.set(probe_key, 0, 0, value_a)
+            except MemcachedError as e:
+                if e.status == ERR_ETMPFAIL:
+                    return True
+                raise
+            return False
+
+        try:
+            # Defragmenter is disabled so it does not compact the
+            # fragmentation being built and the recovery cannot pull RSS
+            # under quota before the gate is observed.
+            # Gate is disabled (default=true), else the class-B load gets
+            # temp-OOMed once RSS crosses the quota, before reaching the
+            # required fragmentation
+            set_flush_param("defragmenter_enabled", "false")
+            set_flush_param("fragmentation_backpressure_enabled", "false")
+            frag_ooms_at_start, _ = tmp_oom_counters()
+            log_state("Start")
+
+            self.log.info("Loading class-A docs till allocated >= 0.7x quota")
+            a_count = 0
+            while arena_memory()[1] < quota * 7 // 10:
+                for _ in range(chunk):
+                    client.set(f"frag_a_{a_count}", 0, 0, value_a)
+                    a_count += 1
+            log_state(f"Loaded {a_count} class-A docs")
+            delete_all_but_one_per_slab("frag_a_", a_count, len(value_a))
+            log_state("After class-A deletes")
+
+            self.log.info("Loading class-B docs till resident > 1.1x quota")
+            b_count = 0
+            rss, alloc = arena_memory()
+            while rss <= quota * 11 // 10 and alloc < quota * 3 // 4:
+                for _ in range(chunk):
+                    client.set(f"frag_b_{b_count}", 0, 0, value_b)
+                    b_count += 1
+                rss, alloc = arena_memory()
+            log_state(f"Loaded {b_count} class-B docs")
+            delete_all_but_one_per_slab("frag_b_", b_count, len(value_b))
+            log_state("After class-B deletes")
+
+            rss, alloc = arena_memory()
+            if rss <= quota or alloc >= quota:
+                self.fail("Not in allocated < quota < resident state. "
+                          f"quota={quota}, resident={rss}, allocated={alloc}")
+
+            stats = client.stats()
+            defrag_moved_before = int(stats["ep_defragmenter_num_moved"])
+            min_sleep = float(stats["ep_defragmenter_auto_min_sleep"])
+            if int(stats["ep_fragmentation_tmp_ooms"]) != frag_ooms_at_start:
+                self.log_failure("ep_fragmentation_tmp_ooms moved while "
+                                 "fragmentation_backpressure_enabled=false")
+
+            # Gate: Defragmenter is still disabled, so RSS stays over quota.
+            # MonitorTask publishes RSS/fragmentation every
+            # monitor_task_interval, so poll till the probe is rejected
+            self.log.info("Enabling fragmentation_backpressure_enabled")
+            set_flush_param("fragmentation_backpressure_enabled", "true")
+            if not wait_for(probe_rejected):
+                self.fail("Mutation not rejected with ETMPFAIL though "
+                          "resident > quota with high fragmentation")
+            frag_ooms, total_ooms = tmp_oom_counters()
+            if frag_ooms <= frag_ooms_at_start:
+                self.log_failure("Mutation rejected but "
+                                 "ep_fragmentation_tmp_ooms did not move")
+            if not probe_rejected():
+                self.log_failure("Latched gate accepted a mutation")
+            new_frag_ooms, new_total_ooms = tmp_oom_counters()
+            if new_frag_ooms != frag_ooms + 1:
+                self.log_failure(f"ep_fragmentation_tmp_ooms {frag_ooms} -> "
+                                 f"{new_frag_ooms} for one rejection")
+            if new_total_ooms != total_ooms + 1:
+                self.log_failure(f"ep_tmp_oom_errors {total_ooms} -> "
+                                 f"{new_total_ooms} for one fragmentation "
+                                 "rejection")
+            log_state("Gate latched")
+
+            # Recovery: With max age threshold (255) the normal mode cannot
+            # move anything, so num_moved going up proves the aggressive
+            # mode (age threshold 0) ran
+            self.log.info("Enabling defragmenter to recover")
+            set_flush_param("defragmenter_age_threshold", 255)
+            set_flush_param("defragmenter_enabled", "true")
+            last_seen = {}
+
+            def in_aggressive_mode():
+                defrag_stats = client.stats()
+                last_seen["moved"] = \
+                    int(defrag_stats["ep_defragmenter_num_moved"])
+                last_seen["sleep"] = \
+                    float(defrag_stats["ep_defragmenter_sleep_time"])
+                return last_seen["moved"] > defrag_moved_before \
+                    and last_seen["sleep"] <= min_sleep
+
+            # Min sleep lasts only ~min_sleep secs, so poll at min_sleep/10
+            if not wait_for(in_aggressive_mode, min_sleep / 10):
+                self.fail("Defragmenter not seen in aggressive mode. "
+                          f"num_moved={last_seen.get('moved')} "
+                          f"(before={defrag_moved_before}), "
+                          f"sleep_time={last_seen.get('sleep')} "
+                          f"(min={min_sleep})")
+            if not wait_for(lambda: arena_memory()[0] <= quota):
+                self.fail("Resident did not return under quota. "
+                          f"quota={quota}, resident={arena_memory()[0]}")
+            if not wait_for(lambda: not probe_rejected()):
+                self.fail("Gate did not lift after resident < quota")
+            log_state("After recovery")
+
+            frag_ooms, total_ooms = tmp_oom_counters()
+            rejections = sum(1 for _ in range(10) if probe_rejected())
+            new_frag_ooms, new_total_ooms = tmp_oom_counters()
+            if rejections != 0:
+                self.log_failure("Gate re-latched after recovery. "
+                                 f"{rejections}/10 mutations rejected")
+            if new_frag_ooms != frag_ooms or new_total_ooms != total_ooms:
+                self.log_failure(
+                    "Temp-OOM counters moved on accepted mutations. "
+                    f"ep_fragmentation_tmp_ooms {frag_ooms} -> "
+                    f"{new_frag_ooms}, ep_tmp_oom_errors {total_ooms} -> "
+                    f"{new_total_ooms}")
+        finally:
+            try:
+                for key, value in orig_flush_params.items():
+                    set_flush_param(key, value)
+                client.set_param("checkpoint_memory_ratio",
+                                 orig_checkpoint_mem_ratio,
+                                 ENGINE_PARAM_CHECKPOINT)
+            except Exception as e:
+                self.log_failure(f"Failed to restore bucket params: {e}")
+            client.close()
 
     def test_compaction_on_expiry_load(self):
         """
