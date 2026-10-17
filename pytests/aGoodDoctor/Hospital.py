@@ -153,6 +153,18 @@ class Murphy(BaseTestCase, OPD):
         # themselves turn this off -- see
         # test_30TB_10K_collections_cont_backup.
         self.restore_in_cluster_ops = True
+        # Services ClusterOpsVolume() rebalances and fails over. None means
+        # take them from the `rebl_services` param; tests that must keep the
+        # other service nodes untouched pin it -- see
+        # test_30TB_10K_collections_cont_backup.
+        self.cluster_ops_services = None
+        # Whether ClusterOpsVolume() runs only the steps that keep the node
+        # and replica counts unchanged. None leaves the choice to the test:
+        # ClusterOpsVolume() treats it as False, while
+        # test_30TB_10K_collections_cont_backup picks it from the number of
+        # spare servers.
+        self.cluster_ops_fixed_topology = self.input.param(
+            "cluster_ops_fixed_topology", None)
         self.setup_backup_locations()
 
         #######################################################################
@@ -286,6 +298,8 @@ class Murphy(BaseTestCase, OPD):
                                 self.servers[nodes:nodes+self.backup_nodes], [],
                                 services=["backup"]*self.backup_nodes,
                                 validate_bucket_ranking=False)
+            self.available_servers = [servs for servs in self.available_servers
+                                      if servs not in self.cluster.backup_nodes]
 
         if self.index_nodes>0 and self.index_nodes > len(self.cluster.index_nodes):
             self.indexer_mem_quota = self.input.param("indexer_mem_quota", None)
@@ -1040,6 +1054,12 @@ class Murphy(BaseTestCase, OPD):
         # Take first backup
         self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
 
+        if self.cluster_ops_fixed_topology:
+            self.PrintStep("Fixed topology: running only the failover -> "
+                           "full / delta recovery steps; skipping rebalance "
+                           "in/out/swap, failover -> rebalance out and the "
+                           "replica change")
+
         while self.loop < self.iterations:
             ###################################################################
             '''
@@ -1056,229 +1076,238 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
-            self.rebl_services = self.input.param("rebl_services", "kv").split("-")
+            self.rebl_services = self.cluster_ops_services \
+                or self.input.param("rebl_services", "kv").split("-")
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
             for service in self.rebl_services:
-                self.PrintStep("Step 5: Rebalance in of {} node with Loading of docs".format(service))
+                # Set here rather than in Step 11, which a fixed topology
+                # skips but Step 13 below still reads it from. Graceful
+                # failover exists only for the data service.
+                graceful = service == "kv"
 
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
-                                                services=[service]*self.rebl_nodes)
+                # Steps 5 - 12 add or remove nodes. A fixed topology
+                # (cluster_ops_fixed_topology=True) skips them, for clusters with no
+                # spare nodes to rebalance in, or no disk headroom to shrink onto --
+                # see test_30TB_10K_collections_cont_backup.
+                if not self.cluster_ops_fixed_topology:
+                    self.PrintStep("Step 5: Rebalance in of {} node with Loading of docs".format(service))
 
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.end_step_checks()
-
-                # Take incremental backup and record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup()
-
-                ###################################################################
-                '''
-                Existing:
-                Sequential: 0 - 10M
-                Random: 0 - 10M, 20 - 30M
-
-                This Step:
-                Create Random: 30 - 40M
-                Delete Random: 20 - 30M
-                Update Random: 0 - 10M
-                Nodes In Cluster = 4 -> 3
-
-                Final Docs = 30M (Random: 0-10M, 30-40M, Sequential: 0-10M)
-                Nodes In Cluster = 3
-                '''
-
-                self.PrintStep("Step 6: Rebalance Out of {} node with Loading of docs".format(service))
-                rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes,
-                                                services=[service]*self.rebl_nodes)
-
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.end_step_checks()
-
-                # Take incremental backup and record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup()
-
-                ###################################################################
-                '''
-                Existing:
-                Sequential: 0 - 10M
-                Random: 0 - 10M, 30 - 40M
-
-                This Step:
-                Create Random: 40 - 50M
-                Delete Random: 30 - 40M
-                Update Random: 0 - 10M
-                Nodes In Cluster = 3 -> 4
-
-                Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
-                Nodes In Cluster = 4
-                '''
-
-                self.PrintStep("Step 9: Rebalance In_Out of {} nodes with Loading of docs".format(service))
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1, nodes_out=self.rebl_nodes,
-                                                services=[service]*(self.rebl_nodes+1))
-
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.end_step_checks()
-
-                # Take incremental backup and record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup()
-
-                ###################################################################
-                '''
-                Existing:
-                Sequential: 0 - 10M
-                Random: 0 - 10M, 40 - 50M
-
-                This Step:
-                Create Random: 50 - 60M
-                Delete Random: 40 - 50M
-                Update Random: 0 - 10M
-                Nodes In Cluster = 4 -> 4 (SWAP)
-
-                Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
-                Nodes In Cluster = 4
-                '''
-
-                self.PrintStep("Step 10: Swap Rebalance of {} Nodes with Loading of docs".format(service))
-
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=self.rebl_nodes,
-                                                services=[service]*(self.rebl_nodes))
-
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.end_step_checks()
-
-                # Take incremental backup and record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup()
-
-                ###################################################################
-                '''
-                Existing:
-                Sequential: 0 - 10M
-                Random: 0 - 10M, 50 - 60M
-
-                This Step:
-                Create Random: 60 - 70M
-                Delete Random: 50 - 60M
-                Update Random: 0 - 10M
-                Nodes In Cluster = 4 -> 3
-
-                Final Docs = 30M (Random: 0-10M, 60-70M, Sequential: 0-10M)
-                Nodes In Cluster = 3
-                '''
-                self.PrintStep("Step 11: Failover %s node and RebalanceOut that node \
-                with loading in parallel" % self.num_replicas)
-                graceful = False
-                failover_nodes = self.cluster.kv_nodes
-                if service == "fts":
-                    failover_nodes = self.cluster.fts_nodes
-                elif service == "cbas":
-                    failover_nodes = self.cluster.cbas_nodes
-                elif service == "index":
-                    failover_nodes = self.cluster.index_nodes
-                elif service == "query":
-                    failover_nodes = self.cluster.query_nodes
-                elif service == "eventing":
-                    failover_nodes = self.cluster.eventing_nodes
-                nodes = [node for node in failover_nodes if node.ip != self.cluster.master.ip]
-                self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-                std = self.std_vbucket_dist or 1.0
-
-                if service == "kv":
-                    graceful = True
-                    prev_failover_stats = self.bucket_util.get_failovers_logs(
-                        nodes, self.cluster.buckets)
-
-                    disk_replica_dataset, disk_active_dataset = self.bucket_util.\
-                        get_and_compare_active_replica_data_set_all(
-                            self.cluster.kv_nodes, self.cluster.buckets,
-                            path=None)
-
-                self.rest = RestConnection(self.cluster.master)
-                self.chosen = random.sample(nodes, self.num_replicas)
-
-                # Mark Node for failover
-                self.success_failed_over = True
-                for node in self.chosen:
-                    failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
-                    node.id = failover_node.id
-                    success_failed_over = self.rest.fail_over(failover_node.id,
-                                                              graceful=graceful)
-                    self.success_failed_over = self.success_failed_over and success_failed_over
-                    self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-                    self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
-                self.sleep(600, "Waiting for data to go in after failover.")
-
-                self.nodes = self.rest.node_statuses()
-                self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                                    ejectedNodes=[node.id for node in self.chosen])
-                self.assertTrue(self.rest.monitorRebalance(progress_count=500000), msg="Rebalance failed")
-                servs_out = []
-                for failed_over in self.chosen:
-                    servs_out += [node for node in self.cluster.servers
-                                  if node.ip == failed_over.ip]
-                    if service == "fts":
-                        self.cluster.fts_nodes.remove(failed_over)
-                    elif service == "cbas":
-                        self.cluster.cbas_nodes.remove(failed_over)
-                    elif service == "index":
-                        self.cluster.index_nodes.remove(failed_over)
-                    elif service == "query":
-                        self.cluster.query_nodes.remove(failed_over)
-                    elif service == "eventing":
-                        self.cluster.eventing_nodes.remove(failed_over)
-                    elif service == "kv":
-                        self.cluster.kv_nodes.remove(failed_over)
-                self.available_servers += servs_out
-                print("KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes])
-                print("CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes])
-                print("INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes])
-                print("FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes])
-                print("QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes])
-                print("EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes])
-                print("AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers])
-                self.end_step_checks()
-                if service == "kv":
-                    self.bucket_util.compare_failovers_logs(
-                        self.cluster,
-                        prev_failover_stats,
-                        nodes,
-                        self.cluster.buckets)
-
-                    self.bucket_util.data_analysis_active_replica_all(
-                        disk_active_dataset, disk_replica_dataset,
-                        self.cluster.servers[:self.nodes_in + self.nodes_init],
-                        self.cluster.buckets, path=None)
-                    nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
-                    self.bucket_util.vb_distribution_analysis(
-                        self.cluster,
-                        servers=self.cluster.kv_nodes,
-                        buckets=self.cluster.buckets,
-                        num_replicas=self.num_replicas,
-                        std=std)
-
-                # Take incremental backup and record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup()
-
-                ###################################################################
-                extra_node_gone = self.num_replicas - 1
-                if extra_node_gone > 0:
-
-                    self.PrintStep("Step 12: Rebalance in of KV Node with Loading of docs")
-
-                    rebalance_task = self.rebalance(nodes_in=extra_node_gone,
-                                                    nodes_out=0,
-                                                    services=self.rebl_services*extra_node_gone)
+                    rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
+                                                    services=[service]*self.rebl_nodes)
 
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     self.end_step_checks()
 
-                # Take an incremental backup
-                self.traditional_backup_and_record_timestamp_for_continuous_backup(
-                    order=["traditional_backup"])
+                    # Take incremental backup and record timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
+                    ###################################################################
+                    '''
+                    Existing:
+                    Sequential: 0 - 10M
+                    Random: 0 - 10M, 20 - 30M
+
+                    This Step:
+                    Create Random: 30 - 40M
+                    Delete Random: 20 - 30M
+                    Update Random: 0 - 10M
+                    Nodes In Cluster = 4 -> 3
+
+                    Final Docs = 30M (Random: 0-10M, 30-40M, Sequential: 0-10M)
+                    Nodes In Cluster = 3
+                    '''
+
+                    self.PrintStep("Step 6: Rebalance Out of {} node with Loading of docs".format(service))
+                    rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes,
+                                                    services=[service]*self.rebl_nodes)
+
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.end_step_checks()
+
+                    # Take incremental backup and record timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
+                    ###################################################################
+                    '''
+                    Existing:
+                    Sequential: 0 - 10M
+                    Random: 0 - 10M, 30 - 40M
+
+                    This Step:
+                    Create Random: 40 - 50M
+                    Delete Random: 30 - 40M
+                    Update Random: 0 - 10M
+                    Nodes In Cluster = 3 -> 4
+
+                    Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
+                    Nodes In Cluster = 4
+                    '''
+
+                    self.PrintStep("Step 9: Rebalance In_Out of {} nodes with Loading of docs".format(service))
+                    rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1, nodes_out=self.rebl_nodes,
+                                                    services=[service]*(self.rebl_nodes+1))
+
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.end_step_checks()
+
+                    # Take incremental backup and record timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
+                    ###################################################################
+                    '''
+                    Existing:
+                    Sequential: 0 - 10M
+                    Random: 0 - 10M, 40 - 50M
+
+                    This Step:
+                    Create Random: 50 - 60M
+                    Delete Random: 40 - 50M
+                    Update Random: 0 - 10M
+                    Nodes In Cluster = 4 -> 4 (SWAP)
+
+                    Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
+                    Nodes In Cluster = 4
+                    '''
+
+                    self.PrintStep("Step 10: Swap Rebalance of {} Nodes with Loading of docs".format(service))
+
+                    rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=self.rebl_nodes,
+                                                    services=[service]*(self.rebl_nodes))
+
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.end_step_checks()
+
+                    # Take incremental backup and record timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
+                    ###################################################################
+                    '''
+                    Existing:
+                    Sequential: 0 - 10M
+                    Random: 0 - 10M, 50 - 60M
+
+                    This Step:
+                    Create Random: 60 - 70M
+                    Delete Random: 50 - 60M
+                    Update Random: 0 - 10M
+                    Nodes In Cluster = 4 -> 3
+
+                    Final Docs = 30M (Random: 0-10M, 60-70M, Sequential: 0-10M)
+                    Nodes In Cluster = 3
+                    '''
+                    self.PrintStep("Step 11: Failover %s node and RebalanceOut that node \
+                    with loading in parallel" % self.num_replicas)
+                    failover_nodes = self.cluster.kv_nodes
+                    if service == "fts":
+                        failover_nodes = self.cluster.fts_nodes
+                    elif service == "cbas":
+                        failover_nodes = self.cluster.cbas_nodes
+                    elif service == "index":
+                        failover_nodes = self.cluster.index_nodes
+                    elif service == "query":
+                        failover_nodes = self.cluster.query_nodes
+                    elif service == "eventing":
+                        failover_nodes = self.cluster.eventing_nodes
+                    nodes = [node for node in failover_nodes if node.ip != self.cluster.master.ip]
+                    self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
+                    std = self.std_vbucket_dist or 1.0
+
+                    if service == "kv":
+                        prev_failover_stats = self.bucket_util.get_failovers_logs(
+                            nodes, self.cluster.buckets)
+
+                        disk_replica_dataset, disk_active_dataset = self.bucket_util.\
+                            get_and_compare_active_replica_data_set_all(
+                                self.cluster.kv_nodes, self.cluster.buckets,
+                                path=None)
+
+                    self.rest = RestConnection(self.cluster.master)
+                    self.chosen = random.sample(nodes, self.num_replicas)
+
+                    # Mark Node for failover
+                    self.success_failed_over = True
+                    for node in self.chosen:
+                        failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                        node.id = failover_node.id
+                        success_failed_over = self.rest.fail_over(failover_node.id,
+                                                                  graceful=graceful)
+                        self.success_failed_over = self.success_failed_over and success_failed_over
+                        self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                        self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
+                    self.sleep(600, "Waiting for data to go in after failover.")
+
+                    self.nodes = self.rest.node_statuses()
+                    self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
+                                        ejectedNodes=[node.id for node in self.chosen])
+                    self.assertTrue(self.rest.monitorRebalance(progress_count=500000), msg="Rebalance failed")
+                    servs_out = []
+                    for failed_over in self.chosen:
+                        servs_out += [node for node in self.cluster.servers
+                                      if node.ip == failed_over.ip]
+                        if service == "fts":
+                            self.cluster.fts_nodes.remove(failed_over)
+                        elif service == "cbas":
+                            self.cluster.cbas_nodes.remove(failed_over)
+                        elif service == "index":
+                            self.cluster.index_nodes.remove(failed_over)
+                        elif service == "query":
+                            self.cluster.query_nodes.remove(failed_over)
+                        elif service == "eventing":
+                            self.cluster.eventing_nodes.remove(failed_over)
+                        elif service == "kv":
+                            self.cluster.kv_nodes.remove(failed_over)
+                    self.available_servers += servs_out
+                    print("KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes])
+                    print("CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes])
+                    print("INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes])
+                    print("FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes])
+                    print("QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes])
+                    print("EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes])
+                    print("AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers])
+                    self.end_step_checks()
+                    if service == "kv":
+                        self.bucket_util.compare_failovers_logs(
+                            self.cluster,
+                            prev_failover_stats,
+                            nodes,
+                            self.cluster.buckets)
+
+                        self.bucket_util.data_analysis_active_replica_all(
+                            disk_active_dataset, disk_replica_dataset,
+                            self.cluster.servers[:self.nodes_in + self.nodes_init],
+                            self.cluster.buckets, path=None)
+                        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
+                        self.bucket_util.vb_distribution_analysis(
+                            self.cluster,
+                            servers=self.cluster.kv_nodes,
+                            buckets=self.cluster.buckets,
+                            num_replicas=self.num_replicas,
+                            std=std)
+
+                    # Take incremental backup and record timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
+                    ###################################################################
+                    extra_node_gone = self.num_replicas - 1
+                    if extra_node_gone > 0:
+
+                        self.PrintStep("Step 12: Rebalance in of KV Node with Loading of docs")
+
+                        rebalance_task = self.rebalance(nodes_in=extra_node_gone,
+                                                        nodes_out=0,
+                                                        services=self.rebl_services*extra_node_gone)
+
+                        self.task.jython_task_manager.get_task_result(rebalance_task)
+                        self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                        self.end_step_checks()
+
+                    # Take an incremental backup
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup(
+                        order=["traditional_backup"])
 
                 ###################################################################
                 '''
@@ -1466,70 +1495,73 @@ class Murphy(BaseTestCase, OPD):
                 # Take incremental backup and record timestamp for PITR
                 self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
-                ###################################################################
-                '''
-                Existing:
-                Sequential: 0 - 10M
-                Random: 0 - 10M, 80 - 90M
+                # Changing the replica count rebalances a node in, so a fixed
+                # topology skips this pair of steps as well.
+                if not self.cluster_ops_fixed_topology:
+                    ###################################################################
+                    '''
+                    Existing:
+                    Sequential: 0 - 10M
+                    Random: 0 - 10M, 80 - 90M
 
-                This Step:
-                Create Random: 90 - 100M
-                Delete Random: 80 - 90M
-                Update Random: 0 - 10M
-                Replica 1 - > 2
+                    This Step:
+                    Create Random: 90 - 100M
+                    Delete Random: 80 - 90M
+                    Update Random: 0 - 10M
+                    Replica 1 - > 2
 
-                Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
-                Nodes In Cluster = 3
-                '''
+                    Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
+                    Nodes In Cluster = 3
+                    '''
 
-                self.PrintStep("Step 13: Updating the bucket replica to %s" %
-                               (self.num_replicas+1))
+                    self.PrintStep("Step 13: Updating the bucket replica to %s" %
+                                   (self.num_replicas+1))
 
-                bucket_helper = BucketHelper(self.cluster.master)
-                for i in range(len(self.cluster.buckets)):
-                    bucket_helper.change_bucket_props(
-                        self.cluster.buckets[i], replicaNumber=self.num_replicas + 1)
+                    bucket_helper = BucketHelper(self.cluster.master)
+                    for i in range(len(self.cluster.buckets)):
+                        bucket_helper.change_bucket_props(
+                            self.cluster.buckets[i], replicaNumber=self.num_replicas + 1)
 
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
-                                                services=self.rebl_services*self.rebl_nodes)
+                    rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
+                                                    services=self.rebl_services*self.rebl_nodes)
 
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.end_step_checks()
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.end_step_checks()
 
-                # Take incremental backup and record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup()
+                    # Take incremental backup and record timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
-                ####################################################################
-                '''
-                Existing:
-                Sequential: 0 - 10M
-                Random: 0 - 10M, 90 - 100M
+                    ####################################################################
+                    '''
+                    Existing:
+                    Sequential: 0 - 10M
+                    Random: 0 - 10M, 90 - 100M
 
-                This Step:
-                Create Random: 100 - 110M
-                Delete Random: 90 - 100M
-                Update Random: 0 - 10M
-                Replica 2 - > 1
+                    This Step:
+                    Create Random: 100 - 110M
+                    Delete Random: 90 - 100M
+                    Update Random: 0 - 10M
+                    Replica 2 - > 1
 
-                Final Docs = 30M (Random: 0-10M, 100-110M, Sequential: 0-10M)
-                Nodes In Cluster = 3
-                '''
+                    Final Docs = 30M (Random: 0-10M, 100-110M, Sequential: 0-10M)
+                    Nodes In Cluster = 3
+                    '''
 
-                self.PrintStep("Step 14: Updating the bucket replica to %s" %
-                               self.num_replicas)
-                bucket_helper = BucketHelper(self.cluster.master)
-                for i in range(len(self.cluster.buckets)):
-                    bucket_helper.change_bucket_props(
-                        self.cluster.buckets[i], replicaNumber=self.num_replicas)
-                rebalance_task = self.rebalance([], [])
+                    self.PrintStep("Step 14: Updating the bucket replica to %s" %
+                                   self.num_replicas)
+                    bucket_helper = BucketHelper(self.cluster.master)
+                    for i in range(len(self.cluster.buckets)):
+                        bucket_helper.change_bucket_props(
+                            self.cluster.buckets[i], replicaNumber=self.num_replicas)
+                    rebalance_task = self.rebalance([], [])
 
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.end_step_checks()
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.end_step_checks()
 
-                # Record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_timestamp"])
+                    # Record timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_timestamp"])
 
                 ###################################################################
                 # Skipped when the caller owns the restore step --
@@ -2006,6 +2038,25 @@ class Murphy(BaseTestCase, OPD):
             "CRASH | CRITICAL | WARN messages found in cb_logs")
 
     def test_30TB_10K_collections_cont_backup(self):
+        # ClusterOpsVolume() needs rebl_nodes+1 spare servers, for Step 9's
+        # rebalance in. A cluster without them -- e.g. 3 KV + 1 backup node
+        # sized for one big dataset -- runs only its fixed-topology steps.
+        # Settled up front, since ClusterOpsVolume() only starts once the
+        # multi-day load below is done.
+        spares_needed = self.input.param("rebl_nodes", 1) + 1
+        spares = len(self.available_servers)
+        if self.cluster_ops_fixed_topology is None:
+            self.cluster_ops_fixed_topology = spares < spares_needed
+            self.log.info(f"cluster_ops_fixed_topology="
+                          f"{self.cluster_ops_fixed_topology}: {spares} spare "
+                          f"servers, {spares_needed} needed for the rebalance "
+                          f"steps")
+        elif not self.cluster_ops_fixed_topology and spares < spares_needed:
+            self.fail(f"cluster_ops_fixed_topology=False needs "
+                      f"{spares_needed} spare servers for ClusterOpsVolume's "
+                      f"rebalance steps, found {spares}. Add servers to the "
+                      f"ini or drop the param.")
+
         self.initial_setup()
 
         # Take first backup
@@ -2137,6 +2188,10 @@ class Murphy(BaseTestCase, OPD):
         # returned and the spec-driven load has been awaited, so ClusterOpsVolume
         # must not restore on its own.
         self.restore_in_cluster_ops = False
+        # Rebalance and fail over KV nodes only, whatever rebl_services the
+        # conf passes: the backup node -- and any other service node -- keeps
+        # its place in the cluster for the whole run.
+        self.cluster_ops_services = ["kv"]
 
         while loop_index < iterations:
             self.PrintStep(f"ClusterOpsVolume :: {loop_index+1}")
