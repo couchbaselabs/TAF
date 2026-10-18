@@ -8,18 +8,28 @@ class NfsUtil(object):
     # Defaults for the shared NFS export used by the PITR / continuous backup
     # suites. Server side setup scripts live at
     # https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
+    # -- setup_nfs_server() / setup_nfs_client() are ports of them.
     NFS_SHARE = "/data"
     MOUNT_POINT = "/mnt/nfs_data"
 
-    def __init__(self, nfs_server_node):
+    def __init__(self, nfs_server_node, setup_server=False):
+        """
+        :param setup_server: let ensure_nfs_clients() set up a server that
+                             fails validation, instead of raising. Off by
+                             default: setting up a server adds to its
+                             /etc/exports, which a run must not do to the
+                             shared PITR server unasked.
+        """
         self.log = logger.get("test")
         self.nfs_server_node = nfs_server_node
+        self.setup_server = setup_server
 
     @classmethod
     def for_pitr_tests(cls, test_input):
         """
         Build an NfsUtil for the shared PITR NFS server, letting a run point
-        at a different server or credentials via the pitr_nfs_* params.
+        at a different server or credentials via the pitr_nfs_* params, and
+        opt in to setting that server up via pitr_nfs_setup_server=True.
 
         :param test_input: TestInput instance (i.e. the test's `self.input`)
         """
@@ -30,20 +40,33 @@ class NfsUtil(object):
                                                         "root")
         nfs_server_node.ssh_password = test_input.param("pitr_nfs_password",
                                                         "couchbase")
-        return cls(nfs_server_node)
+        return cls(nfs_server_node,
+                   setup_server=test_input.param("pitr_nfs_setup_server",
+                                                 False))
 
     def ensure_nfs_clients(self, client_nodes, nfs_share=NFS_SHARE,
                            mount_point=MOUNT_POINT):
         """
         Validate the NFS server, then make sure every node in `client_nodes`
         has `nfs_share` mounted at `mount_point`, setting up the client on the
-        fly for any node that is not mounted yet.
+        fly for any node that is not mounted yet. With `setup_server`, a
+        server that fails validation is set up on the fly the same way,
+        exporting `nfs_share` to `client_nodes`.
 
-        Raises if the server is unhealthy, or if a node still fails client
-        validation after the setup attempt.
+        Raises if the server is unhealthy (after the setup attempt, with
+        `setup_server`), or if a node still fails client validation after the
+        setup attempt.
         """
         self.log.info("Validating NFS server at %s" % self.nfs_server_node.ip)
-        self.validate_nfs_server()
+        try:
+            self.validate_nfs_server()
+        except Exception as e:
+            if not self.setup_server:
+                raise
+            self.log.warning(f"NFS server validation failed: {e}. "
+                             f"Attempting to set up NFS server.")
+            self.setup_nfs_server(client_nodes, nfs_share)
+            self.validate_nfs_server()
 
         for node in client_nodes:
             self.log.info("Validating NFS client at %s connected to server %s"
@@ -232,6 +255,76 @@ class NfsUtil(object):
                           "(connected to server %s)"
                           % (client_node.ip, self.nfs_server_node.ip))
             return True
+        finally:
+            shell.disconnect()
+
+    def setup_nfs_server(self, client_nodes, nfs_share=NFS_SHARE):
+        """
+        Sets up the NFS server: installs nfs-kernel-server, makes `nfs_share`
+        world-writable and owned by couchbase, exports it with every client
+        write squashed to the couchbase user, and starts the service.
+
+        Unlike setup_nfs_server.sh, `nfs_share` is exported only to
+        `client_nodes`, not to every host. Safe to rerun: nothing under
+        `nfs_share` is touched, and an existing /etc/exports entry for it is
+        left as is.
+        """
+        server_ip = self.nfs_server_node.ip
+        shell = RemoteMachineShellConnection(self.nfs_server_node)
+        try:
+            self.log.info(f"Installing NFS server packages on {server_ip}")
+            output, error = shell.execute_command("apt-get update -qq")
+            if error:
+                self.log.warning(f"apt-get update warnings: {error}")
+            output, error = shell.execute_command(
+                "apt-get install -y nfs-kernel-server")
+            if error:
+                self.log.warning(f"nfs-kernel-server install warnings: {error}")
+
+            # Every client write lands as the couchbase user (all_squash
+            # below), which a host without Couchbase installed lacks
+            shell.execute_command(
+                "id -u couchbase || useradd -r -s /bin/false couchbase")
+            output, _ = shell.execute_command("id -u couchbase")
+            cb_uid = output[0].strip()
+            output, _ = shell.execute_command("id -g couchbase")
+            cb_gid = output[0].strip()
+
+            self.log.info(f"Preparing shared directory {nfs_share}")
+            for cmd in (f"mkdir -p {nfs_share}",
+                        f"chmod 777 {nfs_share}",
+                        f"chown couchbase:couchbase {nfs_share}"):
+                output, error = shell.execute_command(cmd)
+                if error:
+                    raise Exception(f"'{cmd}' failed on NFS server "
+                                    f"{server_ip}: {error}")
+
+            output, _ = shell.execute_command(
+                f"grep -qE '^{nfs_share}[[:space:]]' /etc/exports "
+                f"&& echo 'EXISTS' || echo 'MISSING'")
+            if output and output[0].strip() == "MISSING":
+                export_opts = (f"rw,sync,no_subtree_check,all_squash,"
+                               f"anonuid={cb_uid},anongid={cb_gid}")
+                clients = " ".join(f"{node.ip}({export_opts})"
+                                   for node in client_nodes)
+                export_line = f"{nfs_share} {clients}"
+                self.log.info(f"Adding export entry: {export_line}")
+                shell.execute_command(f"echo '{export_line}' >> /etc/exports")
+            else:
+                self.log.info(f"Entry for {nfs_share} already exists in "
+                              f"/etc/exports, skipping")
+
+            output, error = shell.execute_command("exportfs -ra")
+            if error:
+                self.log.warning(f"exportfs warnings: {error}")
+            output, error = shell.execute_command(
+                "systemctl enable --now rpcbind nfs-kernel-server")
+            if error:
+                self.log.warning(f"systemctl warnings: {error}")
+
+            output, _ = shell.execute_command("exportfs -v")
+            self.log.info(f"NFS server setup complete on {server_ip}. "
+                          f"Exports: {output}")
         finally:
             shell.disconnect()
 
