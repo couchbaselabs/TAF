@@ -8,6 +8,7 @@ import threading
 from copy import deepcopy
 
 from BucketLib.BucketOperations import BucketHelper
+from BucketLib.bucket import Bucket
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from bucket_collections.collections_base import CollectionBase
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
@@ -19,7 +20,7 @@ from sdk_client3 import SDKClientPool
 from .cbas import CBASQueryLoad
 from .cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
-from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
+from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils, ScopeUtils
 from shell_util.remote_connection import RemoteMachineShellConnection
 from .workloads import Hotel, default, nimbus, hotel_vector, siftBigANN
 from gsiLib.gsiHelper import GsiHelper
@@ -73,6 +74,9 @@ class Murphy(BaseTestCase, OPD):
 
         self.threads_calculation()
         self.loader_tasks = list()
+        # Background mutation thread; only started by initial_setup() when
+        # normal_mutation (or siftBigANN) asks for one
+        self.mutation_th = None
         # Handshake used to park/unpark the data and query workloads around
         # steps that need a quiet dataset (see restore_with_workloads_paused)
         self.init_workload_controls()
@@ -165,6 +169,13 @@ class Murphy(BaseTestCase, OPD):
         # spare servers.
         self.cluster_ops_fixed_topology = self.input.param(
             "cluster_ops_fixed_topology", None)
+        if self.skip_init and self.cont_bkp_test:
+            # Resuming on an already loaded bucket: its continuous backup is
+            # still writing into the location setup_backup_locations() is
+            # about to wipe. Stop it first; enable_continuous_backup_on_buckets()
+            # starts a fresh chain once the location is back.
+            for bucket in self.cluster.buckets:
+                self.toggle_continuous_backup(bucket, enable=False)
         self.setup_backup_locations()
 
         #######################################################################
@@ -232,6 +243,9 @@ class Murphy(BaseTestCase, OPD):
                             collection_name = self.collection_prefix + str(i)
                             collection_spec = {"name": collection_name}
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
+                # After the loadDefn collections above, whose objects come
+                # out with num_items=0
+                self._sync_bucket_from_server(bucket)
 
         coll_id = self.input.param("collection_id", False)
         if coll_id and self.val_type == "siftBigANN":
@@ -410,6 +424,46 @@ class Murphy(BaseTestCase, OPD):
         self.teardown_backup_locations()
 
         BaseTestCase.tearDown(self)
+
+    def _sync_bucket_from_server(self, bucket):
+        """
+        For a run resumed on an already loaded bucket (skip_init=True), where
+        get_all_buckets() leaves the bucket object's history retention and
+        scope/collection tree at their defaults: read both back from the
+        server, with each collection's current doc count as its num_items.
+
+        Continuous backup is then re-enabled without resetting the bucket's
+        history retention, the collection-creation and fill phases see their
+        work as already done, and the spec-driven loads address the existing
+        key ranges.
+        """
+        status, info = BucketRestApi(self.cluster.master).get_bucket_info(
+            bucket_name=bucket.name)
+        if status:
+            bucket.historyRetentionSeconds = info.get(
+                Bucket.historyRetentionSeconds, 0)
+            bucket.historyRetentionBytes = info.get(
+                Bucket.historyRetentionBytes, 0)
+
+        doc_counts = self.bucket_util.get_doc_count_per_collection(
+            self.cluster, bucket)
+        num_collections = 0
+        for scope_name, collections in doc_counts.items():
+            # Skip the "count"/"manifest_uid" entries and the system scope,
+            # whose objects every Bucket already carries
+            if not isinstance(collections, dict) \
+                    or scope_name == CbServer.system_scope:
+                continue
+            ScopeUtils.create_scope_object(bucket, {"name": scope_name})
+            for c_name, c_stats in collections.items():
+                CollectionUtils.create_collection_object(
+                    bucket, scope_name,
+                    {"name": c_name, "num_items": c_stats.get("items", 0)})
+                num_collections += 1
+        self.log.info(f"Synced {bucket.name} from the server: "
+                      f"{num_collections} collections, history retention "
+                      f"{bucket.historyRetentionSeconds}s / "
+                      f"{bucket.historyRetentionBytes} bytes")
 
     def __init_doc_params(self):
         self.create_perc = self.input.param("create_perc", 100)
@@ -1591,7 +1645,8 @@ class Murphy(BaseTestCase, OPD):
                 self.__init_doc_params()
 
         self.mutations = False
-        self.mutation_th.join()
+        if self.mutation_th is not None:
+            self.mutation_th.join()
         if self.val_type != "siftBigANN" and self.track_failures:
             tasks = list()
             self.doc_loading_tm.getAllTaskResult()
@@ -1950,7 +2005,8 @@ class Murphy(BaseTestCase, OPD):
 
                 self.loop += 1
         self.mutations = False
-        self.mutation_th.join()
+        if self.mutation_th is not None:
+            self.mutation_th.join()
 
         self.log.info("Volume Test Run Complete")
 
@@ -2037,6 +2093,43 @@ class Murphy(BaseTestCase, OPD):
             result,
             "CRASH | CRITICAL | WARN messages found in cb_logs")
 
+    @staticmethod
+    def _get_bucket_disk_size(bucket_api, bucket):
+        """
+        Average couch_docs_disk_size -- summed over all nodes, so replicas
+        included -- across the last 20 stat samples, or 0 when the stats call
+        fails.
+        """
+        status, stats = bucket_api.get_bucket_stats(bucket.name)
+        if not status:
+            return 0
+        samples = stats["op"]["samples"]["couch_docs_disk_size"][-20:]
+        return sum(samples) // len(samples)
+
+    def _items_per_new_collection(self, bucket_api, bucket, target_bytes,
+                                  start_disk, start_items, collections_left):
+        """
+        Docs to load into each of the next `collections_left` new collections
+        so the bucket reaches `target_bytes` once they are all loaded, using
+        the on-disk bytes per doc measured since `start_disk`/`start_items`.
+        Never below num_items, so every collection still gets docs.
+        """
+        disk = self._get_bucket_disk_size(bucket_api, bucket)
+        items = self.bucket_util.get_buckets_item_count(self.cluster,
+                                                        bucket.name)
+        if not isinstance(items, int) or items <= start_items \
+                or disk <= start_disk:
+            return self.num_items
+        bytes_per_doc = (disk - start_disk) / (items - start_items)
+        per_collection = int((target_bytes - disk)
+                             / bytes_per_doc / collections_left)
+        self.log.info(f"Disk {disk / 1024 ** 4:.2f} TiB of "
+                      f"{target_bytes / 1024 ** 4:.2f} TiB, "
+                      f"{bytes_per_doc:.0f} bytes/doc on disk -> "
+                      f"{per_collection} docs per collection for the next "
+                      f"{collections_left} collections")
+        return max(per_collection, self.num_items)
+
     def test_30TB_10K_collections_cont_backup(self):
         # ClusterOpsVolume() needs rebl_nodes+1 spare servers, for Step 9's
         # rebalance in. A cluster without them -- e.g. 3 KV + 1 backup node
@@ -2094,6 +2187,21 @@ class Murphy(BaseTestCase, OPD):
         max_collections += 2
         cols_to_create = min((max_collections - actual_col_count), 500)
 
+        # collections_phase_disk_perc=<P> sizes the docs loaded into each
+        # batch of new collections so this phase alone takes the bucket to P%
+        # of target_disk_usage. Bulk loading here is several times faster
+        # than the fill loop below, which is then left only the remainder.
+        # The first batch loads num_items per collection to measure the
+        # on-disk bytes per doc; each later batch re-derives it from all that
+        # has been loaded so far.
+        phase_disk_perc = self.input.param("collections_phase_disk_perc",
+                                           None)
+        bucket_api = BucketRestApi(self.cluster.master)
+        phase_start_disk = self._get_bucket_disk_size(bucket_api, bucket)
+        phase_start_items = self.bucket_util.get_buckets_item_count(
+            self.cluster, bucket.name)
+        items_per_collection = self.num_items
+
         self.PrintStep("10K collections creation + data_load")
         while cols_to_create > 0:
             self.log.info(f"Current collections in "
@@ -2102,6 +2210,9 @@ class Murphy(BaseTestCase, OPD):
             loader_spec = deepcopy(loader_spec_template)
             loader_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] \
                 = cols_to_create
+            loader_spec["doc_crud"][
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] \
+                = items_per_collection
 
             CollectionBase.over_ride_doc_loading_template_params(
                 self, loader_spec)
@@ -2119,9 +2230,10 @@ class Murphy(BaseTestCase, OPD):
             if doc_loading_task.result is False:
                 self.fail("Initial doc_loading failed")
 
-            # Collections + num_item validation
+            # Collections + num_item validation. A sized batch can be ~10x the
+            # docs of a num_items one, so allow for a longer persistence drain
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster, self.cluster.buckets, timeout=1200)
+                self.cluster, self.cluster.buckets, timeout=3600)
             self.bucket_util.print_bucket_stats(self.cluster)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster, timeout=120)
@@ -2133,14 +2245,15 @@ class Murphy(BaseTestCase, OPD):
                 for s in self.bucket_util.get_active_scopes(
                     bucket, only_names=True))
             cols_to_create = min((max_collections - actual_col_count), 500)
+            if phase_disk_perc and cols_to_create > 0:
+                items_per_collection = self._items_per_new_collection(
+                    bucket_api, bucket,
+                    target_disk_util_bytes * phase_disk_perc / 100,
+                    phase_start_disk, phase_start_items,
+                    max_collections - actual_col_count)
 
         self.PrintStep(f"Load data until the disk_utilization is {self.target_disk_util}")
-        bucket_api = BucketRestApi(self.cluster.master)
-        status, stats = bucket_api.get_bucket_stats(bucket.name)
-        current_disk = 0
-        if status:
-            _samples = stats["op"]["samples"]["couch_docs_disk_size"][-20:]
-            current_disk = sum(_samples) // len(_samples)
+        current_disk = self._get_bucket_disk_size(bucket_api, bucket)
 
         mutation_num = 0
         while current_disk < target_disk_util_bytes:
@@ -2172,10 +2285,7 @@ class Murphy(BaseTestCase, OPD):
                 self.fail("Doc_loading failed")
 
             # Fetch values for next itr comparision
-            status, stats = bucket_api.get_bucket_stats(bucket.name)
-            if status:
-                _samples = stats["op"]["samples"]["couch_docs_disk_size"][-20:]
-                current_disk = sum(_samples) // len(_samples)
+            current_disk = self._get_bucket_disk_size(bucket_api, bucket)
 
         # Driver for loop in this function
         iterations = self.iterations
@@ -2192,6 +2302,12 @@ class Murphy(BaseTestCase, OPD):
         # conf passes: the backup node -- and any other service node -- keeps
         # its place in the cluster for the whole run.
         self.cluster_ops_services = ["kv"]
+        # Each iteration creates 20% and deletes this % of the docs in the
+        # collections it touches. Matching the delete to the create keeps the
+        # data size flat across iterations, which a long run on a cluster
+        # filled close to its disk capacity needs.
+        cluster_ops_delete_perc = self.input.param("cluster_ops_delete_perc",
+                                                   10)
 
         while loop_index < iterations:
             self.PrintStep(f"ClusterOpsVolume :: {loop_index+1}")
@@ -2205,7 +2321,7 @@ class Murphy(BaseTestCase, OPD):
                 = 10
             loader_spec["doc_crud"][
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] \
-                = 10
+                = cluster_ops_delete_perc
 
             CollectionBase.over_ride_doc_loading_template_params(
                 self, loader_spec)
@@ -2234,6 +2350,11 @@ class Murphy(BaseTestCase, OPD):
             # still running, and would otherwise be querying a flushed bucket
             # for the length of the restore.
             self.restore_with_workloads_paused()
+            # A PITR restore replays every recorded timestamp onto a flushed
+            # bucket, so the next one only needs those recorded from here on.
+            # Keeping the older ones would make each iteration replay all of
+            # them again -- 2 more full restores per iteration.
+            self.continuous_backup_timestamps = []
 
             loop_index += 1
             mutation_num += 1

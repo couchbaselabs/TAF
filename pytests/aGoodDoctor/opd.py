@@ -85,7 +85,13 @@ class OPD:
         self.bucket_expiry = self.input.param("bucket_expiry", 0)
         ramQuota = self.input.param("ramQuota", kv_memory)
         buckets = ["GleamBookUsers"]*self.num_buckets
-        bucket_type = self.bucket_type.split(';')*self.num_buckets
+        # The server takes "membase" as an alias of "couchbase", but
+        # BucketHelper.create_bucket() sends the magma-only params (history
+        # retention, fragmentation, block sizes) only for Bucket.Type.MEMBASE
+        # ("couchbase"), silently dropping them for "membase"
+        bucket_type = [Bucket.Type.MEMBASE if b_type == "membase" else b_type
+                       for b_type in self.bucket_type.split(';')] \
+            * self.num_buckets
         compression_mode = self.compression_mode.split(';')*self.num_buckets
         self.bucket_eviction_policy = self.bucket_eviction_policy
 
@@ -1542,7 +1548,7 @@ class OPD:
             obj_staging_dir=self.backup_location.obj_staging_dir)
         if self.cont_bkp_test:
             self.drContBackup = ContinuousBackupUtil(
-                shell=RemoteMachineShellConnection(backup_node),
+                shell_conn=RemoteMachineShellConnection(backup_node),
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,
                 log=self.log,
