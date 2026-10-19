@@ -808,6 +808,7 @@ class IPCBase(ClusterSetup):
         """
         joinee = copy.copy(server)
         if initialize:
+            self.ensure_uninitialized(server)
             status, content = ClusterRestAPI(server).initialize_cluster(
                 hostname=server.ip, username=server.rest_username,
                 password=self.SPARE_PASSWORD, services="kv",
@@ -864,6 +865,21 @@ class IPCBase(ClusterSetup):
             time.sleep(3)
         self.fail(f"{server.ip} did not return to uninitialised in "
                   f"{timeout}s")
+
+    def ensure_uninitialized(self, server):
+        """The installer provisions every node as its own single-node
+        cluster. A spare no earlier test has added and rebalanced out is
+        still in that state and refuses initialisation; hard-reset it."""
+        try:
+            resp = requests.get(f"http://{server.ip}:8091/pools/default",
+                                auth=self._auth_of(server), timeout=10)
+            if "unknown pool" in resp.text:
+                return
+        except requests.exceptions.RequestException:
+            pass
+        self.log.info(f"{server.ip} is provisioned, hard-resetting it")
+        self.reset_spares([server])
+        self.wait_until_uninitialized(server)
 
     def assert_node_active(self, server, services=None, timeout=120):
         """Wait until `server` is a healthy, active member of the cluster,
