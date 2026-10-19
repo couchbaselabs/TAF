@@ -390,3 +390,6 @@ class Cbstats:
 
     def dcp_stats(self, bucket_name):
         return self.get_stats_memc(bucket_name, "dcp")
+
+    def workload_stats(self, bucket_name):
+        return self.get_stats_memc(bucket_name, "workload")

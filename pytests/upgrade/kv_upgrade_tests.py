@@ -10,16 +10,42 @@ from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux
 from sdk_client3 import SDKClient
 from shell_util.remote_connection import RemoteMachineShellConnection
+from TestInput import TestInputSingleton
+from upgrade.kv_upgrade_checks import KVUpgradeChecks, RebalanceStallMonitor
 from upgrade.upgrade_base import UpgradeBase
 
 
-class KVUpgradeTests(UpgradeBase):
+class KVUpgradeTests(UpgradeBase, KVUpgradeChecks):
     def setUp(self):
+        # UpgradeBase.setUp takes servers[nodes_init] as the spare node only
+        # after the initial install (~5 mins in). Fail fast instead
+        test_input = TestInputSingleton.input
+        nodes_init = test_input.param("nodes_init", 1)
+        if len(test_input.servers) <= nodes_init:
+            self.fail(f"nodes_init={nodes_init} needs at least "
+                      f"{nodes_init + 1} servers in the ini (one spare), "
+                      f"got {len(test_input.servers)}")
         super(KVUpgradeTests, self).setUp()
         self.log_setup_status("KVUpgradeTests", "started", "setup")
         self.nodes_upgrade = self.input.param("nodes_upgrade", 1)
         self.graceful = self.input.param("graceful", True)
         self.recovery_type = self.input.param("recovery_type", "delta")
+        self.init_kv_upgrade_check_params()
+        # Mixed-mode availability (default: half of the KV nodes)
+        self.mixed_mode_upgraded_nodes = \
+            self.input.param("mixed_mode_upgraded_nodes", None)
+        self.mixed_mode_hold_secs = \
+            self.input.param("mixed_mode_hold_secs", 300)
+        # Rebalance-under-DCP-stress
+        self.rebalance_stall_secs = \
+            self.input.param("rebalance_stall_secs", 600)
+        self.rebalance_step_timeout = \
+            self.input.param("rebalance_step_timeout", 3600)
+        self.dcp_drain_timeout = self.input.param("dcp_drain_timeout", 600)
+        # Set for the new-OS-image / new-kernel variant, so the run proves
+        # the incoming nodes really were on the new kernel (e.g. "6.17")
+        self.expected_kernel_prefix = \
+            self.input.param("expected_kernel_prefix", None)
         # Set by tests that leave the cluster mid-upgrade, so tearDown knows
         # to chase bucket deletes across every node
         self.delete_buckets_on_all_nodes = False
@@ -333,4 +359,259 @@ class KVUpgradeTests(UpgradeBase):
                         f"{field} mismatch post-upgrade: expected "
                         f"{expected}, got {bucket_info.get(field)}")
 
+        self.validate_test_failure()
+
+    # KV upgrade gaps for Totoro: mixed-version availability, upgrade
+    # rebalance under DCP stress, post-upgrade engine behaviour. The checks
+    # live in KVUpgradeChecks (kv_upgrade_checks.py).
+
+    def __upgrade_node(self, node):
+        """
+        online_swap runs the sub_data_spec load itself during its swap
+        rebalance. Other upgrade types get the same load around the upgrade,
+        as UpgradeTests.test_upgrade does
+        """
+        load_task = None
+        if self.upgrade_with_data_load and self.upgrade_type != "online_swap":
+            load_task = self.load_during_rebalance(self.sub_data_spec,
+                                                   async_load=True)
+        try:
+            self.upgrade_function[self.upgrade_type](node)
+        finally:
+            if load_task is not None:
+                load_task.stop_indefinite_doc_loading_tasks()
+                self.task_manager.get_task_result(load_task)
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+    def __upgrade_intermediate_hops(self):
+        """
+        Multi-hop chains: take every node through the intermediate versions
+        first, so the checks run on the final hop to upgrade_version
+        """
+        for version in self.upgrade_chain[1:-1]:
+            self.upgrade_version = version
+            node = self.fetch_node_to_upgrade()
+            while node is not None:
+                self.__upgrade_node(node)
+                node = self.fetch_node_to_upgrade()
+        self.upgrade_version = self.upgrade_chain[-1]
+
+    def __validate_spec_doc_counts(self):
+        self.apply_kv_check_doc_counts()
+        if float(self.upgrade_version[:3]) >= 7.6 \
+                > float(self.initial_version[:3]):
+            self.add_system_scope_to_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets,
+            cbstat_cmd="checkpoint", stat_name="num_items_for_persistence",
+            timeout=300)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster, timeout=1200)
+
+    def __stop_probe_on_error(self, probe):
+        probe.stop()
+        probe.close()
+
+    def test_mixed_mode_kv_availability(self):
+        """
+        KV availability, durability and data integrity while the cluster is
+        half upgraded.
+        1. Start the availability probe (plain + durable writes, reads) on
+           the source version. The pre-upgrade baseline must be error free
+        2. Upgrade mixed_mode_upgraded_nodes KV nodes (default: half). Each
+           upgrade window may lose up to max_error_pct_in_rebalance % of
+           ops to transient errors, never to DurabilityImpossible
+        3. Hold the cluster in mixed mode for mixed_mode_hold_secs. Steady
+           mixed mode must be error free. Locked-key / CAS checks run here
+        4. Finish the upgrade. Post-upgrade baseline must be error free,
+           every acked write readable at its acked version and the
+           per-collection doc counts must match
+        """
+        self.delete_buckets_on_all_nodes = True
+        self.__upgrade_intermediate_hops()
+
+        num_kv_nodes = len(self.cluster_util.get_kv_nodes(self.cluster))
+        upgrade_first = self.mixed_mode_upgraded_nodes \
+            or max(1, num_kv_nodes // 2)
+        if upgrade_first >= num_kv_nodes:
+            self.fail(f"mixed_mode_upgraded_nodes={upgrade_first} leaves no "
+                      f"old node in a {num_kv_nodes} KV node cluster")
+
+        locked_key_before = self.locked_key_signature(self.bucket, "pre")
+        probe = self.start_availability_probe(self.bucket)
+        try:
+            self.sleep(self.probe_baseline_secs, "Pre-upgrade probe baseline")
+            self.assert_probe_phase(probe, "pre_upgrade")
+
+            step = 0
+            for _ in range(upgrade_first):
+                node = self.fetch_node_to_upgrade()
+                self.assertIsNotNone(node, "No node left to upgrade")
+                step += 1
+                probe.set_phase(f"upgrade_step_{step}")
+                self.__upgrade_node(node)
+                self.assert_probe_phase(probe, f"upgrade_step_{step}",
+                                        self.max_error_pct_in_rebalance)
+
+            self.assertTrue(self.cluster_util.is_cluster_mixed(self.cluster),
+                            f"Cluster not mixed after upgrading {step} nodes")
+            probe.set_phase("mixed_mode_steady")
+            locked_key_mixed = self.locked_key_signature(self.bucket, "mixed")
+            self.sleep(self.mixed_mode_hold_secs, "Hold cluster in mixed mode")
+            self.assert_probe_phase(probe, "mixed_mode_steady")
+
+            node = self.fetch_node_to_upgrade()
+            while node is not None:
+                step += 1
+                probe.set_phase(f"upgrade_step_{step}")
+                self.__upgrade_node(node)
+                self.assert_probe_phase(probe, f"upgrade_step_{step}",
+                                        self.max_error_pct_in_rebalance)
+                node = self.fetch_node_to_upgrade()
+        except BaseException:
+            self.__stop_probe_on_error(probe)
+            raise
+
+        self.finish_availability_probe(probe)
+        self.compare_locked_key_signatures(
+            locked_key_before, locked_key_mixed,
+            self.locked_key_signature(self.bucket, "post"))
+        self.__validate_spec_doc_counts()
+        self.validate_test_failure()
+
+    def __kernel_info(self, node):
+        shell = RemoteMachineShellConnection(node)
+        try:
+            output, _ = shell.execute_command(
+                "uname -r; sysctl -n net.ipv4.tcp_rmem net.core.rmem_max")
+        finally:
+            shell.disconnect()
+        output = [line.strip() for line in output]
+        return (output[0] if output else "unknown"), " | ".join(output[1:])
+
+    def __upgrade_step_under_stress(self, node, step):
+        # The node that joins the cluster: the spare for a swap rebalance,
+        # the node itself (reinstalled) otherwise
+        incoming = self.spare_node if self.upgrade_type == "online_swap" \
+            else node
+        kernel, rmem = self.__kernel_info(incoming)
+        self.log.info(f"Step {step}: upgrading {node.ip}, incoming node "
+                      f"{incoming.ip} kernel={kernel}, rmem={rmem}")
+        if self.expected_kernel_prefix \
+                and not kernel.startswith(self.expected_kernel_prefix):
+            self.fail(f"Incoming node {incoming.ip} runs kernel {kernel}, "
+                      f"the new-kernel variant needs "
+                      f"{self.expected_kernel_prefix}*")
+
+        monitor = RebalanceStallMonitor(
+            self.cluster, self.cluster_util, self.bucket.name, [incoming],
+            self.log, stall_secs=self.rebalance_stall_secs)
+        monitor.start()
+        start_time = time.time()
+        try:
+            self.__upgrade_node(node)
+        except AssertionError:
+            if monitor.stall_reason:
+                self.fail(f"Upgrade step {step} ({node.ip}): "
+                          f"{monitor.stall_reason}")
+            raise
+        finally:
+            monitor.stop()
+        duration = time.time() - start_time
+        self.log.info(f"Step {step} took {duration:.0f}s, max warmup STAT "
+                      f"latency: {monitor.max_stat_latency}")
+        if monitor.stall_reason:
+            self.log_failure(f"Upgrade step {step} ({node.ip}) stalled: "
+                             f"{monitor.stall_reason}")
+        if duration > self.rebalance_step_timeout:
+            self.log_failure(f"Upgrade step {step} ({node.ip}) took "
+                             f"{duration:.0f}s, limit "
+                             f"{self.rebalance_step_timeout}s")
+
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+        for bucket in self.cluster.buckets:
+            if not self.bucket_util._wait_warmup_completed(
+                    bucket, servers=kv_nodes, wait_time=300):
+                self.log_failure(f"{bucket.name} warmup not complete after "
+                                 f"upgrade step {step}")
+            pending = self.wait_for_dcp_drain(bucket, self.dcp_drain_timeout)
+            if pending:
+                self.log_failure(f"{bucket.name} DCP not drained "
+                                 f"{self.dcp_drain_timeout}s after upgrade "
+                                 f"step {step}: {pending}")
+
+    def test_upgrade_rebalance_under_dcp_stress(self):
+        """
+        Upgrade rebalances under heavy mutation / DCP replication load
+        (CBSE-22926 / MB-70640: DCP stall on new kernel, CBSE-22272:
+        warmup STAT blocked -> rebalance timeout).
+        Variants come from the conf: upgrade_type=online_swap for the swap
+        rebalance, spare nodes on the new OS image plus
+        expected_kernel_prefix for the new-kernel variant, a high ops_rate
+        and replicas=2 for DCP pressure.
+        Per upgraded node:
+        - RebalanceStallMonitor fails the step if rebalance progress stops
+          moving or a warmup STAT call blocks, and stops that rebalance
+        - the step must finish within rebalance_step_timeout
+        - warmup complete and DCP drained on every KV node afterwards
+        Throughout: the availability probe. At the end: no data loss and
+        matching per-collection doc counts
+        """
+        self.delete_buckets_on_all_nodes = True
+        self.__upgrade_intermediate_hops()
+
+        probe = self.start_availability_probe(self.bucket)
+        try:
+            self.sleep(self.probe_baseline_secs, "Pre-upgrade probe baseline")
+            self.assert_probe_phase(probe, "pre_upgrade")
+
+            step = 0
+            node = self.fetch_node_to_upgrade()
+            while node is not None:
+                step += 1
+                probe.set_phase(f"upgrade_step_{step}")
+                self.__upgrade_step_under_stress(node, step)
+                self.assert_probe_phase(probe, f"upgrade_step_{step}",
+                                        self.max_error_pct_in_rebalance)
+                if self.test_failure:
+                    break
+                node = self.fetch_node_to_upgrade()
+        except BaseException:
+            self.__stop_probe_on_error(probe)
+            raise
+
+        if self.test_failure:
+            self.__stop_probe_on_error(probe)
+            self.validate_test_failure()
+        self.finish_availability_probe(probe)
+        self.__validate_spec_doc_counts()
+        self.validate_test_failure()
+
+    def test_post_upgrade_kv_engine_sanity(self):
+        """
+        Post-upgrade KV behaviour signals - stats / behaviour checks, not
+        perf timing:
+        - engine defaults (executor pool sizes incl. NonIO threads, pager
+          and getl config, memcached global thread settings) compared
+          before vs after. Changes not in allowed_engine_changes are
+          flagged, expected_engine_values pinned (CBSE-23155)
+        - TTL tombstones created on the source version, and after the
+          upgrade, are purged once purgeInterval elapses (CBSE-22954)
+        - getAndLock / CAS behaviour identical before, in mixed mode and
+          after the upgrade, plus post-upgrade invariants (CBSE-22160)
+        """
+        self.delete_buckets_on_all_nodes = True
+        self.__upgrade_intermediate_hops()
+
+        state = self.kv_sanity_pre_upgrade(self.bucket)
+        node = self.fetch_node_to_upgrade()
+        while node is not None:
+            self.__upgrade_node(node)
+            node = self.fetch_node_to_upgrade()
+            if node is not None and state["locked_key_mixed"] is None:
+                state["locked_key_mixed"] = self.locked_key_signature(
+                    self.bucket, "mixed")
+
+        self.kv_sanity_post_upgrade(self.bucket, state)
+        self.__validate_spec_doc_counts()
         self.validate_test_failure()

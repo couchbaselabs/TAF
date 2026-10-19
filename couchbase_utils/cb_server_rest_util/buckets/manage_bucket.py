@@ -136,7 +136,8 @@ class BucketManageAPI(CBRestConnection):
                             allowed_time_period_from_min=None,
                             allowed_time_period_to_hour=None,
                             allowed_time_period_to_min=None,
-                            allowed_time_period_abort=None):
+                            allowed_time_period_abort=None,
+                            purge_interval=None):
         """
         POST /pools/default/buckets/<bucket_name>
         docs.couchbase.com/server/current/rest-api/rest-bucket-create.html#auto-compaction-parameters
@@ -177,6 +178,9 @@ class BucketManageAPI(CBRestConnection):
         if allowed_time_period_abort is not None:
             params[
                 "allowedTimePeriod[abortOutside]"] = allowed_time_period_abort
+        # Metadata purge interval in days (tombstone purge age)
+        if purge_interval is not None:
+            params["purgeInterval"] = purge_interval
 
         status, content, _ = self.request(api, self.POST, params)
         return status, content

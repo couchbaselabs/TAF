@@ -21,6 +21,7 @@ unittest.TestCase
                           ├── UpgradeTests         (durability_upgrade.py) ← primary/richest test class
                           ├── UpgradeTests         (cbas_upgrade.py)
                           ├── KVUpgradeTests       (kv_upgrade_tests.py)
+                          │     └── (also inherits KVUpgradeChecks mixin, kv_upgrade_checks.py)
                           ├── LuksUpgrade          (luks_upgrade.py)
                           ├── MemCompressionUpgradeTests (mem_compression_upgrade.py)
                           ├── SystemEventLogs      (system_event_logs.py)
@@ -231,6 +232,41 @@ validate_test_failure()
 | `test_multiple_sample_bucket_failover_upgrade` | Loads Travel/Beer/Gamesim sample buckets, then failover-upgrades nodes (MB-53493) |
 | `test_db_dump_with_empty_body_and_empty_xattr` | Creates tombstone with sys-xattr, evicts it, then upgrades; tests XDCR replication (MB-51373) |
 | `test_rate_limit_across_upgrade` | One timeline, two phases: upgrades a single node and records (via `log_failure`) that a throttle-limit edit is rejected in mixed mode, finishes the upgrade, then asserts the same edit succeeds and both values read back over REST. Ends with `validate_test_failure()` so a mixed-mode regression does not hide the post-upgrade result |
+| `test_mixed_mode_kv_availability` | Runs `KVAvailabilityProbe` (plain + durable writes, reads) from the source version through the upgrade. Upgrades `mixed_mode_upgraded_nodes` (default half the KV nodes), holds mixed mode for `mixed_mode_hold_secs`, then finishes. Steady phases (pre, mixed, post) must be error free; each upgrade step may lose `max_error_pct_in_rebalance` %. Ends with no-data-loss check of every acked write, locked-key signature comparison and per-collection doc counts |
+| `test_upgrade_rebalance_under_dcp_stress` | Per upgraded node: logs the incoming node's kernel / `tcp_rmem` (asserts `expected_kernel_prefix` for the new-OS-image variant), runs `RebalanceStallMonitor` during the upgrade rebalance, enforces `rebalance_step_timeout`, then requires warmup complete and `ep_dcp_items_remaining == 0` on every KV node. Probe throughout; no data loss and doc counts at the end. Load pressure comes from conf (`ops_rate`, `replicas=2`) |
+| `test_post_upgrade_kv_engine_sanity` | `kv_sanity_pre_upgrade` (engine snapshot, locked-key signature, TTL tombstones on the source version), upgrade (locked-key signature again after the first node), `kv_sanity_post_upgrade` (engine diff, locked-key diff + invariants, tombstones purged once `purgeInterval` elapsed) |
+
+`KVUpgradeTests.setUp` fails fast when the ini has no spare server (`len(servers) <= nodes_init`) instead of hitting `IndexError` on `cluster.servers[nodes_init]` after the initial install — with the 4-node template ini use `nodes_init=3`.
+
+All three new tests first run `__upgrade_intermediate_hops()` for multi-hop chains, so their checks cover the final hop only, and set `delete_buckets_on_all_nodes`.
+
+---
+
+### `kv_upgrade_checks.py` — `KVUpgradeChecks` mixin + helpers
+
+Built on framework helpers: `SDKClient` result dicts and `cluster.sdk_client_pool`, the doc
+loader, the `Cbstats` factory, `ClusterUtils.get_rebalance_status_and_progress` /
+`RebalanceUtil.stop_rebalance`, `CollectionUtils.create_collection`, `BucketRestApi`, and
+`DocLoaderUtils.get_exception_name` / `SDKException` for error names. Only the versioned probe,
+the warmup STAT timing and raw getAndLock / unlock (no `SDKClient` wrapper) are hand-written.
+Call `init_kv_upgrade_check_params()` in setUp.
+
+| Item | Purpose |
+|---|---|
+| `KVAvailabilityProbe` (thread) | Round-robin `SDKClient.upsert` over `probe_durability_levels` + `read` on a fixed key pool. Counts outcomes per phase (`set_phase`), keeps a ledger of the highest acked version per key. `verify_no_data_loss()` re-reads every acked key. A read below the acked version is `StaleRead`. First/last timestamp of every failure kind per phase (`failure_times`, test-host local time) is logged and included in hard failures. Not `ContinuousDocOpsTask` (single durability level, no version ledger, `.fail` collected before its sub-tasks run); holds its own client, not a pool client |
+| `RebalanceStallMonitor(cluster, cluster_util, bucket_name, watch_nodes, log)` (thread) | Polls `cluster_util.get_rebalance_status_and_progress()`; stall = progress unchanged for `stall_secs`, or a raw memcached `warmup` STAT on a watched node taking ~`stat_timeout` (only probed while a rebalance runs). On stall calls `RebalanceUtil.stop_rebalance()` and exposes `stall_reason` |
+| `kv_check_collection(bucket)` | `_default.kv_upgrade_checks`, created once per bucket via `bucket_util.create_collection` (so it is in the bucket object). Holds probe, locked-key, TTL and seqno-bump docs |
+| `apply_kv_check_doc_counts()` | Adds the live check docs to the check collection's `num_items`. Call right before doc-count validation, not earlier: spec loads size deletes from `num_items` (`KVUpgradeTests.__validate_spec_doc_counts` does this) |
+| `assert_probe_phase(probe, phase, allowed_error_pct=0)` | Fails on any `SDKException.DurabilityImpossibleException` / `StaleRead`, or error % above the allowance |
+| `finish_availability_probe(probe)` | Post-upgrade baseline, stop, assert, no-data-loss |
+| `wait_for_dcp_drain(bucket, timeout)` | `Cbstats(node).dcp_stats()` poll; returns `{node: ep_dcp_items_remaining}` still pending (use instead of `_wait_for_stats_all_buckets`, which never fails on timeout) |
+| `snapshot_engine_settings` / `compare_engine_settings` | `Cbstats.all_stats` + `Cbstats.workload_stats` per KV node for `engine_watch_stats`, plus `*thread*` keys of `/pools/default/settings/memcached/global`. Values compare as strings or numerically within 1e-6 (`same_engine_values`) |
+| `locked_key_signature` / `compare_locked_key_signatures` | Per-check outcome sets for getAndLock / CAS on `locked_key_docs` keys (pool client); before == after (unless allowed), mixed ⊆ before ∪ after, post-upgrade invariants |
+| `set_bucket_purge_interval(bucket, days)` | `BucketRestApi.set_auto_compaction(bucket, purge_interval=)`; ephemeral via `edit_bucket` |
+| `create_ttl_tombstones` / `verify_tombstones_purged` | TTL docs loaded with `doc_generator` + `async_load_gen_docs(exp=)`, `get_multi` after expiry turns them into tombstones (`$document.deleted` via `sub_doc_read_multi(access_deleted=True)`); after `purgeInterval` + compaction (result asserted) they must be `DocumentNotFound`. Not `_expiry_pager()`: it changes `ep_exp_pager_stime`, which the engine check watches |
+| `bump_vbucket_high_seqnos(bucket)` | `upsert_multi` of one doc into every vBucket after the last tombstone is created, so no tombstone holds a vBucket's highest seqno (KV never purges that item). vBucket count from `BucketHelper.get_vbucket_map_and_server_list` (bucket object's `numVBuckets` can differ for buckets created on 7.6.x) |
+| `log_tombstone_placement(bucket, states)` | On a purge failure: tombstone states per active node (from the REST vBucket map), vBuckets still holding tombstones, each node's `ep_persistent_metadata_purge_age` |
+| `kv_sanity_pre_upgrade` / `kv_sanity_post_upgrade` | The pre/post bundle used by `test_post_upgrade_kv_engine_sanity` |
 
 ---
 
@@ -391,6 +427,31 @@ End-to-end upgrade with multi-service cluster (KV + Views + 2i + Eventing + N1QL
 | `range_scan_timeout` | `None` | Range scan operation timeout |
 | `range_scan_runs_per_collection` | `1` | Range scan iterations per collection |
 
+### KV Upgrade Check Params (`KVUpgradeChecks`, `KVUpgradeTests`)
+
+| Param | Default | Description |
+|---|---|---|
+| `probe_num_keys` | `1000` | Key pool of the availability probe |
+| `probe_durability_levels` | `NONE;MAJORITY;PERSIST_TO_MAJORITY` | Round-robin durability per probe write (drop PERSIST_TO_MAJORITY for ephemeral) |
+| `probe_op_timeout` | `10` | SDK timeout (s) per probe op |
+| `probe_baseline_secs` | `60` | Pre / post-upgrade steady probe window |
+| `max_error_pct_in_rebalance` | `1` | % of probe ops allowed to fail during an upgrade step |
+| `mixed_mode_upgraded_nodes` | half of KV nodes | Nodes upgraded before the mixed-mode hold |
+| `mixed_mode_hold_secs` | `300` | Steady mixed-mode window |
+| `rebalance_stall_secs` | `600` | Progress-unchanged window that counts as a stall |
+| `rebalance_step_timeout` | `3600` | Max seconds per upgrade step |
+| `dcp_drain_timeout` | `600` | Wait for `ep_dcp_items_remaining == 0` after each step |
+| `expected_kernel_prefix` | `None` | New-OS-image variant: incoming nodes must run this kernel |
+| `engine_watch_stats` | executor pools, pager, getl, watermark % | `;`-separated stats compared before vs after |
+| `allowed_engine_changes` | `""` | Stats allowed to change across the upgrade |
+| `expected_engine_values` | `""` | `stat=value;...` pinned on every KV node post-upgrade |
+| `locked_key_docs` | `16` | Keys used for the locked-key signature |
+| `allowed_locked_key_changes` | `""` | Locked-key checks allowed to change across the upgrade |
+| `validate_tombstone_purge` | `True` | Run the tombstone purge check |
+| `tombstone_purge_interval` | `0.04` | Bucket `purgeInterval` (days) set before creating tombstones |
+| `tombstone_phases` | `pre;post` | Create tombstones on the source version and/or after the upgrade |
+| `tombstone_docs` / `tombstone_ttl` / `tombstone_purge_timeout` | `200` / `10` / `1800` | Tombstone count, TTL (s), purge wait after the interval |
+
 ### Rebalance / Retry Params
 
 | Param | Default | Description |
@@ -494,4 +555,9 @@ While upgrading from 6.5→7.2, `cluster_features` does **not** include `"collec
 | `attempt_10k_collection_creation()` wrong result | Returns `True` only on 8.5+ clusters. Asserted `False` during upgrade, `True` after. Failure = cluster not fully at 8.5+ when checked. |
 | FBR check fails | `verify_and_configure_fbr()` only called when `float(upgrade_version[:3]) >= 8.5`. Checks `internalSettings.dataServiceFileBasedRebalanceEnabled == True`. On older versions the key is absent — guarded by `if 'dataServiceFileBasedRebalanceEnabled' in content`. |
 | `if "feature" in self.cluster_features` check seems redundant but must not be removed | `cluster_features` reflects the **current** cluster version at each step of the loop, not the final target. If `upgrade_chain` starts from a base version that predates the feature (e.g. chain `["6.5", "7.2", "8.0"] + "8.5"`), the guard is necessary during the 6.5→7.2 phase even though the target supports the feature. See "WARNING" block in Upgrade Chain Configuration for the full guard table. |
+| Upgrade rebalance hangs but the test never fails | `RebalanceTask.check()` doubles `retry_get_process_num` on every poll while `is_cluster_mixed()` (`lib/Jython_tasks/task.py`), so its hang detection effectively never trips during an upgrade. Use `RebalanceStallMonitor` (`kv_upgrade_checks.py`) around the upgrade step. |
+| DCP / persistence wait "passes" although queues never drained | `bucket_util._wait_for_stats_all_buckets()` collects `StatsWaitTask` results through `get_task_result()`, which logs and returns instead of raising. Assert on `KVUpgradeChecks.wait_for_dcp_drain()` (returns what is still pending). |
+| Tombstone purge leaves exactly one tombstone per vBucket (eg: 72 purged / 128 kept for 200 keys on 128 vBuckets) | KV does not purge the item holding a vBucket's highest seqno. A tombstone written last in its vBucket stays until a newer write lands there. `kv_sanity_post_upgrade` calls `bump_vbucket_high_seqnos()` for this; any other check creating tombstones must do the same before asserting purge. |
+| Engine setting "changed" `0.8499999977648258 -> 0.85` | Float config printed at float precision by older releases (7.6.x). Same value; `same_engine_values` compares numerically. |
+| `test_post_upgrade_kv_engine_sanity` flags an engine / locked-key change | Expected signal, not necessarily a bug: compare against the target release notes, file an MB if unintended, otherwise add the stat / check to `allowed_engine_changes` / `allowed_locked_key_changes` on that conf line. Executor pool sizes follow the core count, so mismatched spare-node shapes also show up here. |
 | CRL REST calls (`GET/POST /settings/crl*`) fail on an already-upgraded node during a mixed-version window | Not a bug — confirmed live (`crl_upgrade.py`). ns_server gates the entire CRL REST API **cluster-wide** until every node is upgraded; an upgraded node still 404s with `"CRL feature not yet enabled in this cluster"` while any node remains pre-CRL. `CRLUtils.node_supports_crl()` will report `False` for **every** node throughout the whole mixed-version window for this reason — it cannot be used to detect which specific node is upgraded. Use `ClusterRestAPI(server).node_details()["version"]` instead to check a node's own build. |
