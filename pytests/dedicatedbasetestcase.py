@@ -567,12 +567,13 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         return [z for z in str(self.input.param("zones", "")).split(":") if z]
 
     def generate_cluster_config(self):
-        if self.get_cluster_zones():
+        # setUp also calls this after a custom-image deploy, so only warn.
+        if self.get_cluster_zones() and not self.input.capella.get("image"):
             # The /clusters endpoint this config is sent to has no zones
             # field; only /clusters/deploy (custom image) honours it.
-            raise Exception("zones param is only supported with a custom "
-                            "image (capella image=...), which deploys via "
-                            "/clusters/deploy")
+            self.log.warning("zones param is ignored without a custom image "
+                             "(capella image=...); only /clusters/deploy "
+                             "supports it")
         provider = self.input.param("provider", AWS.__str__).lower()
         if provider == "aws":
             self.provider = "aws"
