@@ -559,7 +559,20 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             bucket_obj.stats.memUsed = bucket["stats"]["memoryUsedInMib"]
             cluster.buckets.append(bucket_obj)
 
+    def get_cluster_zones(self):
+        """AWS availability zone IDs from the zones param, ':'-separated
+        (e.g. zones=use1-az4, or zones=use1-az1:use1-az2:use1-az4 for multi-AZ).
+        Zone IDs, not names: us-east-1c maps to a different ID per account.
+        The CP allows 1 zone with singleAZ=True and exactly 3 without it."""
+        return [z for z in str(self.input.param("zones", "")).split(":") if z]
+
     def generate_cluster_config(self):
+        if self.get_cluster_zones():
+            # The /clusters endpoint this config is sent to has no zones
+            # field; only /clusters/deploy (custom image) honours it.
+            raise Exception("zones param is only supported with a custom "
+                            "image (capella image=...), which deploys via "
+                            "/clusters/deploy")
         provider = self.input.param("provider", AWS.__str__).lower()
         if provider == "aws":
             self.provider = "aws"
@@ -661,6 +674,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             "projectId": None,
             "description": "",
         }
+        zones = self.get_cluster_zones()
+        if zones:
+            self.capella_cluster_config["zones"] = zones
 
         if self.input.capella.get("image"):
             server_version = self.input.capella.get("server_version", None) or os.environ.get("cbs_version")
