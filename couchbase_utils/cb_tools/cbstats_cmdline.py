@@ -790,6 +790,24 @@ class Cbstats(CbCmdBase):
 
         return stats
 
+    def workload_stats(self, bucket_name):
+        """
+        Fetches 'cbstats workload' (executor pool sizes) for the bucket.
+        all_stats() cannot parse its 'ep_workload:<key>' names.
+        :param bucket_name: Name of the bucket to fetch the stats
+        :return stats: Dict of stat_name: value (eg: 'ep_workload:num_nonio')
+        """
+        stats = dict()
+        output, error = self.get_stats(bucket_name, "workload")
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        for line in output:
+            stat, _, val = line.strip().rpartition(":")
+            if stat:
+                stats[stat] = val.strip()
+        return stats
+
     def warmup_stats(self, bucket_name):
         """
         Fetches warmup stats for the requested bucket.
