@@ -209,10 +209,18 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
                 f"duration with the 'PT' designator, e.g. 'PT15M', 'PT1H10M'"
             )
 
-        # self.PrintStep(f"Loading data for fusion rebalance on cluster {cluster.id}")
-        # self.generate_docs(cluster, num_items=5_000_000, doc_size=1024)
-        # self.data_load_till_given_num(num_items=5_000_000)
-        # self.sleep(60, "Allow data to sync past fusion threshold")
+        # Without a bucket holding synced data the CP runs a plain rebalance
+        # with no accelerators, so the fallback path is never reached.
+        # skip_init=True reuses the buckets and data already on the cluster.
+        if self.input.param("skip_init", False):
+            self.assertTrue(cluster.buckets,
+                            f"skip_init=True but cluster {cluster.id} has no buckets")
+        else:
+            create_end = int(self.input.param("num_items", 5000000))
+            self.PrintStep(f"Loading {create_end} items for fusion rebalance on cluster {cluster.id}")
+            self._load_data(cluster, create_start=0, create_end=create_end)
+        self._wait_for_s3_uri(cluster)
+        self._wait_for_s3_data_synced(cluster, timeout=self.sync_wait_timeout)
 
         fis_template_id = None
         fis_experiment_id = None
@@ -228,12 +236,21 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
 
             # Poll aggressively so we catch the ASGs before the first RunInstances call
             self.PrintStep("Waiting for fusion ASGs to appear")
+            # RebalanceTaskCapella never sets .completed; its future does.
+            rebalance_future = self.task.jython_task_manager.futures[
+                rebalance_task.thread_name]
             deadline = time.time() + 1800
             while time.time() < deadline:
                 asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster.id)
                 if asgs:
                     self.log.info(f"Detected {len(asgs)} fusion ASGs for cluster {cluster.id}")
                     break
+                if rebalance_future.done():
+                    self.fail(
+                        f"Rebalance on cluster {cluster.id} finished (result="
+                        f"{rebalance_task.result}) without creating fusion ASGs; "
+                        f"it was not a fusion rebalance (no bucket data?)")
+                time.sleep(1)
             else:
                 self.fail("Fusion ASGs not created within 1800s of triggering rebalance")
 
