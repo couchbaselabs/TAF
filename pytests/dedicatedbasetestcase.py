@@ -385,7 +385,12 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             #      with AttributeError on print_cluster_stats(self.cluster)
             # CAME FROM: found on first sbx-28 run of basic_ops
             # DOES: same as on-prem: self.cluster = first (non-XDCR) cluster
-            self.cluster = self.tenants[0].clusters[0]
+            # Columnar-only runs use num_clusters=0, so there may be no
+            # provisioned cluster to point self.cluster at.
+            if self.tenants[0].clusters:
+                self.cluster = self.tenants[0].clusters[0]
+            else:
+                self.cluster = None
 
             self.cluster_util = ClusterUtils(self.task_manager)
             self.bucket_util = BucketUtils(self.cluster_util, self.task)

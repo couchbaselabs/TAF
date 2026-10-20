@@ -19,7 +19,7 @@ class ColumnarDeployments(ColumnarBaseTest):
                                    'ap-southeast-1', 'ap-southeast-2']
         self.deployment_regions_gcp = ['us-east1', 'us-east4', 'us-central1', 'europe-west1',
                                        'europe-west4', 'europe-west3', 'asia-southeast1']
-        self.deployment_regions_azure = ['swedencentral'] # , 'eastus2', 'westus2', 'germanywestcentral'
+        self.deployment_regions_azure = ['eastus2', 'westus2']  # swedencentral, germanywestcentral
         self.deployment_nodes = [1, 16]  # [1, 2, 4, 8, 16, 32]
         self.instance_types = [
             {'vcpus': '4vCPUs', 'memory': '32GB'},
@@ -177,6 +177,9 @@ class ColumnarDeployments(ColumnarBaseTest):
                 self.log.info(f"Invalid combination: {comb}")
                 continue
             if nodes != 1 and (plan == "developerPro" or az == "single"):
+                self.log.info(f"Invalid combination: {comb}")
+                continue
+            if region == "westus2" and az == "multi":  # single AZ only
                 self.log.info(f"Invalid combination: {comb}")
                 continue
 
