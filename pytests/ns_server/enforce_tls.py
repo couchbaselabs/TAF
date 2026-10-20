@@ -181,7 +181,7 @@ class EnforceTls(CollectionBase):
                     status, content = False, str(e)
                 if status or time.time() > end_time:
                     break
-                self.sleep(10, f"Waiting for {api} to be reachable")
+                self.sleep(10, "Waiting for {0} to be reachable".format(api))
             if not status:
                 self.fail("{0} api failed with content {1}".format(api, content))
 
