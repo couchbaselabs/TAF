@@ -552,6 +552,23 @@ def manual_rerun(args):
 
 if __name__ == '__main__':
     args = parse_args()
+    # The rerun DB lives on-prem and is NOT reachable from AWS on-demand slaves.
+    # find_rerun_job opens it with the Couchbase SDK; under Jython that surfaces as a Java
+    # UnambiguousTimeoutException after ~14 retries and fails the whole `:rerun_job` gradle
+    # task, which fails the build. Probe first and skip the rerun logic when it's unreachable.
+    # Probe the host find_rerun_job ACTUALLY connects to, not this module's own `host`
+    # (greenboard...), so on-prem runs -- where the DB IS reachable -- are never wrongly
+    # skipped and behave exactly as before.
+    # NB Jython 2.7: socket.error is IOError, not OSError, so catch both.
+    import socket
+    import sys
+    _rerun_db_host = getattr(find_rerun_job, 'host', host)
+    try:
+        socket.create_connection((_rerun_db_host, 8091), timeout=5).close()
+    except (OSError, IOError) as _e:
+        print("rerun_jobs: rerun DB {0} unreachable ({1}); skipping rerun logic "
+              "(expected on AWS on-demand runs).".format(_rerun_db_host, _e))
+        sys.exit(0)
     if args['manual_run']:
         manual_rerun(args)
     else:
