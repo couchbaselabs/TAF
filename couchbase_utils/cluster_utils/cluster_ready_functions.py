@@ -1699,6 +1699,19 @@ class ClusterUtils:
             table.add_row(row)
         table.display("Cluster statistics")
 
+    def set_kv_memory_quota(self, master, kv_quota_mb):
+        """
+        Override the cluster's KV memory quota with an absolute MB value.
+
+        Needed on nodes running multiple memory-consuming services (e.g.
+        kv+index+cbas), where NodeInitializeTask's auto-computed quota
+        silently floors KV down to its 256MB minimum (see
+        docs/agent-context/ns-server/memory-quota-tuning.md).
+        """
+        self.log.info("Setting KV Memory quota to {0} MB".format(kv_quota_mb))
+        RestConnection(master).set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: kv_quota_mb})
+
     def verify_replica_distribution_in_zones(self, cluster, nodes, bucket="default"):
         """
         Verify the replica distribution in nodes in different zones.

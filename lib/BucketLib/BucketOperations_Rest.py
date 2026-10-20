@@ -21,6 +21,17 @@ class BucketHelper(RestConnection):
     def __init__(self, server):
         super(BucketHelper, self).__init__(server)
 
+    @staticmethod
+    def _status_code(header):
+        """
+        _http_request's 3rd return value is a dict-like httplib2 response
+        over plain HTTP, but a 'requests' Response object (no __getitem__)
+        over HTTPS. Normalize access to the status code across both.
+        """
+        if "status" in header:
+            return int(header['status'])
+        return int(header.status_code)
+
     def bucket_exists(self, bucket):
         try:
             buckets = self.get_buckets_json()
@@ -327,11 +338,7 @@ class BucketHelper(RestConnection):
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                           urllib.quote_plus("{0}".format(bucket)))
         status, _, header = self._http_request(api, 'DELETE')
-        if "status" in header:
-            status_code = header['status']
-        else:
-            status_code = header.status_code
-        if int(status_code) == 500:
+        if self._status_code(header) == 500:
             # According to http://docs.couchbase.com/couchbase-manual-2.5/cb-rest-api/#deleting-buckets
             # the cluster will return with 500 if it failed to nuke
             # the bucket on all of the nodes within 30 secs
@@ -443,8 +450,8 @@ class BucketHelper(RestConnection):
                                .format(round(create_time, 2),
                                        bucket_params.get('name')))
                 break
-            elif (int(header['status']) == 503 and
-                    '{"_":"Bucket with given name still exists"}' in content):
+            elif self._status_code(header) == 503 and \
+                    '{"_":"Bucket with given name still exists"}' in content:
                 sleep(1, "Bucket still exists, will retry..")
             else:
                 return False

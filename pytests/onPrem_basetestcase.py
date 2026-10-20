@@ -1116,6 +1116,12 @@ class ClusterSetup(OnPremBaseTest):
             self.cluster_util.print_cluster_stats(self.cluster)
             return
 
+        self.set_kv_quota = self.input.param("set_kv_quota", False)
+        if self.set_kv_quota:
+            self.kv_quota_mem = self.input.param("kv_quota_mem", None)
+            self.cluster_util.set_kv_memory_quota(
+                self.cluster.master, self.kv_quota_mem)
+
         self.log_setup_status("ClusterSetup", "started", "setup")
         self.__initial_rebalance()
         # Add basic RBAC users

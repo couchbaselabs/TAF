@@ -15,6 +15,7 @@ from couchbase_helper.tuq_helper import N1QLHelper
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
+from sdk_exceptions import SDKException
 from error_simulation.cb_error import CouchbaseError
 from constants.sdk_constants.java_client import SDKConstants
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
@@ -183,11 +184,23 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             MetaCrudParams.DOC_TTL: doc_ttl,
             MetaCrudParams.DURABILITY_LEVEL: d_level,
             MetaCrudParams.SKIP_READ_ON_ERROR: True,
-            MetaCrudParams.SUPPRESS_ERROR_TABLE: False,
+            # Suppress the per-doc error table: with thousands of docs in
+            # flight during a live failover, a transient durability dip
+            # (retried below) can otherwise dump tens of thousands of lines
+            # and bury the real failure, if any.
+            MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
             # The below is to skip populating success dictionary for reads
             MetaCrudParams.SKIP_READ_SUCCESS_RESULTS: True,
 
-            MetaCrudParams.RETRY_EXCEPTIONS: [],
+            # DurabilityImpossible/Ambiguous are expected to transiently
+            # fire while a failover is actively changing replica topology
+            # (same rationale as FailoverBaseTest.loadgen_docs()) - retry
+            # instead of recording them as permanent doc failures.
+            MetaCrudParams.RETRY_EXCEPTIONS: [
+                SDKException.DurabilityImpossibleException,
+                SDKException.DurabilityAmbiguousException,
+                SDKException.TimeoutException,
+                SDKException.RequestCanceledException],
             MetaCrudParams.IGNORE_EXCEPTIONS: [],
             MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
             MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",

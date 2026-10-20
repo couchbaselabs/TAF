@@ -6,6 +6,7 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from constants.sdk_constants.java_client import SDKConstants
+from sdk_exceptions import SDKException
 
 class ClusterManagement(CollectionBase):
     def setUp(self):
@@ -50,6 +51,17 @@ class ClusterManagement(CollectionBase):
             MetaCrudParams.SKIP_READ_ON_ERROR: True,
             MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
             MetaCrudParams.SKIP_READ_SUCCESS_RESULTS: True,
+
+            # DurabilityImpossible/Ambiguous are expected to transiently
+            # fire while a node is actively being failed over/rebalanced
+            # out mid-write - retry instead of recording them as permanent
+            # doc failures (same rationale as FailoverBaseTest.loadgen_docs()
+            # and the identical fix in failover/concurrent_failovers.py).
+            MetaCrudParams.RETRY_EXCEPTIONS: [
+                SDKException.DurabilityImpossibleException,
+                SDKException.DurabilityAmbiguousException,
+                SDKException.TimeoutException,
+                SDKException.RequestCanceledException],
 
             MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
             MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
@@ -101,6 +113,11 @@ class ClusterManagement(CollectionBase):
         self.log.info("Initializing rebalance task")
         reb_result = self.task.rebalance(
             self.cluster, add_nodes, out_nodes, services=self.services_in)
+        if reb_result:
+            # Let replication topology settle so the single doc-op retry
+            # doesn't hit transient durability failures.
+            self.sleep(10, "Wait for durability topology to settle "
+                          "after rebalance before validating doc ops")
 
         self.log.info("Wait for doc_loading to complete")
         self.bucket_util.validate_doc_loading_results(load_task)
