@@ -1318,9 +1318,12 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
                 self.log.critical(f"Failed to create doc load task for cluster {cluster.id}")
                 raise Exception(f"Failed to create doc load task for cluster {cluster.id}")
             if wait_for_completion:
-                for task in self.loader_tasks:
+                # Iterate a copy: removing while iterating skips tasks, and
+                # _stop_workload may clear self.loader_tasks concurrently.
+                for task in list(self.loader_tasks):
                     self.task_manager.get_task_result(task)
-                    self.loader_tasks.remove(task)
+                    if task in self.loader_tasks:
+                        self.loader_tasks.remove(task)
 
     def data_validation(self, cluster, skip_default=True):
         for bucket in cluster.buckets:
