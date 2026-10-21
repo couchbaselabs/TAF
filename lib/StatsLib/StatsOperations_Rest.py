@@ -490,7 +490,7 @@ class StatsHelper(RestConnection):
         return map
 
     @staticmethod
-    def _validate_metrics(content):
+    def _validate_metrics(content, allowed_prefixes=None, fail_on_unknown_prefix=False):
         """
         Method to validate exposition of metrics in /_getPrometheusMetrics, /_getPrometheusMetricsHigh, /metrics endpoints
             1. Check for duplicate entries (for component other than ns-server
@@ -498,23 +498,26 @@ class StatsHelper(RestConnection):
         :content: content response from the above endpoints, in the form of list
         Raises Exception if:
             1. Duplicate metrics are seen
-            2. If a metric is not prefixed appropriately
+            2. If a metric is not prefixed appropriately and fail_on_unknown_prefix is True
         #TODo Not sure how it will behave for very large content - may result in stack overflow while checking duplicity ...
         #TODo...for example 20 metrics per index translates to a max of 200,000 metrics and hence should do not be ...
         #ToDo...called when cluster is heavy
         """
 
-        def check_prefixes(line_to_check):
-            allowed_prefixes = ["audit", "sysproc", "sys", "couch",
-                                "exposer", "cm", "kv",
-                                "index", "n1ql", "fts", "eventing", "xdcr"
-                                ]
-            for prefix in allowed_prefixes:
+        def check_prefixes(line_to_check, prefixes):
+            for prefix in prefixes:
                 if line_to_check.startswith(prefix):
                     return True
             return False
 
         log = logger.get("test")
+        default_allowed_prefixes = [
+            "audit", "sysproc", "sys", "couch",
+            "exposer", "cm", "kv", "index", "n1ql",
+            "fts", "eventing", "xdcr"
+        ]
+        if allowed_prefixes is None:
+            allowed_prefixes = default_allowed_prefixes
         log.info("Validating metrics")
         # Validate duplicates at the "series" level (metric name + labels).
         # Allow exact duplicate samples for the same series (same value + same ts),
@@ -534,6 +537,7 @@ class StatsHelper(RestConnection):
             r'(?:\s+(?P<ts>[0-9]+))?\s*$'
         , re.IGNORECASE)
         seen_series = {}
+        unknown_prefix_metrics = set()
         for idx, line in enumerate(content):
             if not line or line.startswith("#"):
                 continue
@@ -548,9 +552,8 @@ class StatsHelper(RestConnection):
             value = m.group("value")
             ts = m.group("ts") or ""
 
-            if not check_prefixes(name):
-                raise Exception(
-                    "Invalid prefix for metric (idx={0}) {1}".format(idx, line))
+            if not check_prefixes(name, allowed_prefixes):
+                unknown_prefix_metrics.add(name)
 
             series_key = name + labels
             prev = seen_series.get(series_key)
@@ -568,6 +571,18 @@ class StatsHelper(RestConnection):
                 "(series={0}, first_idx={1}, dup_idx={2}) first={3} dup={4}"
                 .format(series_key, prev_idx, idx, prev_line, line)
             )
+        if unknown_prefix_metrics:
+            max_log_metrics = 40
+            unknown_sorted = sorted(unknown_prefix_metrics)
+            display = unknown_sorted[:max_log_metrics]
+            unknown_list = ", ".join(display)
+            if len(unknown_sorted) > max_log_metrics:
+                unknown_list += " ... ({0} more)".format(
+                    len(unknown_sorted) - max_log_metrics
+                )
+            if fail_on_unknown_prefix:
+                raise Exception("Unknown metric prefixes seen: {0}".format(unknown_list))
+            log.warning("Unknown metric prefixes seen (warning-only): {0}".format(unknown_list))
         if len(content) == 0:
             log.error("No metrics are present to validate")
 
