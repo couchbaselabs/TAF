@@ -1197,6 +1197,168 @@ class FusionAWSUtil:
                     break
         return result
 
+    # ------------------------------------------------------------------
+    # Single-ASG / worker-pool capacity control
+    # ------------------------------------------------------------------
+    # On the single-ASG control plane (couchbase-cloud
+    # feature/AV-142561_single_asg) there is one fusion ASG per plan/AZ, created
+    # once with MinSize=0, MaxSize=DesiredCapacity=<shards in that AZ>
+    # (infra/aws/autoscalinggroups.go:186-188). The CP never calls
+    # UpdateAutoScalingGroup / SetDesiredCapacity on it afterwards; the only
+    # later change comes from each accelerator's own shutdown, which calls
+    # TerminateInstanceInAutoScalingGroup with ShouldDecrementDesiredCapacity
+    # (autoscalinggroups.go:401). Tests change only DesiredCapacity, never
+    # MaxSize (CP-owned); the CP does not revert a DesiredCapacity change.
+
+    _ASG_LIVE_STATES = ("Pending", "Pending:Wait", "Pending:Proceed", "InService")
+
+    def get_fusion_asg_capacity_snapshot(self, cluster_id: str) -> dict:
+        """
+        Return the current capacity picture of every fusion ASG of a cluster.
+
+        :param cluster_id: Cluster identifier
+        :return: {asg_name: {"min": int, "max": int, "desired": int,
+                             "in_service": [instance_id, ...],
+                             "pending": [instance_id, ...],
+                             "other": [instance_id, ...]}}
+        """
+        snapshot = {}
+        for asg in self.list_cluster_fusion_asg(cluster_id):
+            entry = {
+                "min": asg.get("MinSize"),
+                "max": asg.get("MaxSize"),
+                "desired": asg.get("DesiredCapacity"),
+                "in_service": [],
+                "pending": [],
+                "other": [],
+            }
+            for inst in asg.get("Instances", []):
+                state = inst.get("LifecycleState", "")
+                if state == "InService":
+                    entry["in_service"].append(inst.get("InstanceId"))
+                elif state.startswith("Pending"):
+                    entry["pending"].append(inst.get("InstanceId"))
+                else:
+                    entry["other"].append(inst.get("InstanceId"))
+            snapshot[asg["AutoScalingGroupName"]] = entry
+        return snapshot
+
+    def cap_fusion_asgs(self, asgs: list, cap) -> dict:
+        """
+        Cap each given fusion ASG at *cap* instances by lowering only
+        DesiredCapacity to min(cap, current desired). MaxSize is left alone: it
+        is owned by the CP, while DesiredCapacity is CP-set but DP-driven (each
+        accelerator decrements it on self-shutdown), so the CP does not fix up a
+        test-side change to it.
+
+        Must be called as soon as the ASG is detected: the CP creates it with
+        DesiredCapacity=N, so Auto Scaling launches all N at once. Any instance
+        launched beyond the cap is terminated by Auto Scaling when
+        DesiredCapacity drops.
+
+        :param asgs: ASG dicts as returned by list_cluster_fusion_asg()
+        :param cap: Maximum number of instances per ASG: an int for every ASG,
+            or {asg_name: int} per ASG
+        :return: {asg_name: {"MinSize", "MaxSize", "DesiredCapacity", "capped_to",
+                             "ok"}} -- the original sizes, for restore_fusion_asgs()
+        """
+        originals = {}
+        for asg in asgs:
+            name = asg["AutoScalingGroupName"]
+            desired = int(asg.get("DesiredCapacity") or 0)
+            limit = cap.get(name, desired) if isinstance(cap, dict) else cap
+            capped = min(int(limit), desired)
+            ok = self.ec2.update_asg_capacity(name, desired_capacity=capped)
+            originals[name] = {
+                "MinSize": asg.get("MinSize"),
+                "MaxSize": asg.get("MaxSize"),
+                "DesiredCapacity": desired,
+                "capped_to": capped,
+                "ok": ok,
+            }
+        table = PrettyTable()
+        table.field_names = ["ASG", "Min", "Max", "Desired (orig)", "Capped To", "Update OK"]
+        for name, o in originals.items():
+            table.add_row([name, o["MinSize"], o["MaxSize"], o["DesiredCapacity"],
+                           o["capped_to"], o["ok"]])
+        self.log.info(f"Capped fusion ASG DesiredCapacity:\n{table}")
+        return originals
+
+    def restore_fusion_asgs(self, originals: dict, desired_override: dict = None) -> dict:
+        """
+        Give back the DesiredCapacity taken away by cap_fusion_asgs(). Only
+        DesiredCapacity is changed, never MaxSize.
+
+        Workers decrement DesiredCapacity when they shut down, so the original
+        value is not written back blindly: the restored value is the current
+        desired plus the (original - capped_to) instances removed by the cap,
+        bounded by the ASG's MaxSize. ASGs that the CP has already deleted are
+        skipped (reported as False) without raising.
+
+        :param originals: Return value of cap_fusion_asgs()
+        :param desired_override: Optional {asg_name: desired} to set instead
+            (still bounded by MaxSize)
+        :return: {asg_name: bool} whether the update succeeded
+        """
+        desired_override = desired_override or {}
+        current = {a["AutoScalingGroupName"]: a
+                   for a in self.ec2.describe_asgs_by_name(list(originals))}
+        result = {}
+        for name, o in originals.items():
+            asg = current.get(name)
+            if asg is None:
+                self.log.info(f"ASG {name} no longer exists -- nothing to restore")
+                result[name] = False
+                continue
+            removed = int(o["DesiredCapacity"]) - int(o["capped_to"])
+            desired = desired_override.get(
+                name, int(asg.get("DesiredCapacity") or 0) + removed)
+            desired = min(int(desired), int(asg.get("MaxSize") or 0))
+            result[name] = self.ec2.update_asg_capacity(name, desired_capacity=desired)
+        self.log.info(f"Restored fusion ASG DesiredCapacity: {result}")
+        return result
+
+    def wait_for_fusion_asg_in_service(self, cluster_id: str, expected: dict,
+                                       timeout: int = 900, poll_interval: int = 5,
+                                       exact: bool = False, abort_fn=None) -> dict:
+        """
+        Wait until every ASG in *expected* has at least expected[asg] InService
+        instances (exactly that many, and none Pending, when *exact* is True --
+        use it right after cap_fusion_asgs(), while Auto Scaling is still
+        terminating the surplus).
+
+        :param cluster_id: Cluster identifier
+        :param expected: {asg_name: min InService count}
+        :param timeout: Seconds to wait
+        :param poll_interval: Seconds between polls
+        :param abort_fn: Optional zero-arg callable; when it returns True the
+            wait stops early (e.g. the rebalance future finished)
+        :return: {asg_name: [in-service instance ids]} on success, None on
+            timeout or abort
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            snapshot = self.get_fusion_asg_capacity_snapshot(cluster_id)
+            current = {name: snapshot.get(name, {}).get("in_service", [])
+                       for name in expected}
+            pending = {name: snapshot.get(name, {}).get("pending", []) for name in expected}
+            self.log.info(
+                "InService per fusion ASG: " + ", ".join(
+                    f"{name}={len(ids)}/{expected[name]}" for name, ids in current.items()))
+            if exact:
+                done = all(len(current[name]) == want and not pending[name]
+                           for name, want in expected.items())
+            else:
+                done = all(len(current[name]) >= want for name, want in expected.items())
+            if done:
+                return current
+            if abort_fn is not None and abort_fn():
+                self.log.error("Stopped waiting for InService instances: abort condition met")
+                return None
+            time.sleep(poll_interval)
+        self.log.error(f"Fusion ASGs did not reach {expected} InService within {timeout}s")
+        return None
+
     def corrupt_fusion_log_store(self, s3_bucket_name: str, bucket_uuid: str,
                                  num_folders: int = 3, num_files: int = 5) -> dict:
         """

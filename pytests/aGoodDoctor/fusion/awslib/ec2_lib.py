@@ -1081,6 +1081,39 @@ class EC2Lib(AWSBase):
                 asgs.extend(page.get("AutoScalingGroups", []))
         return asgs
 
+    def update_asg_capacity(self, asg_name: str, min_size: Optional[int] = None,
+                            max_size: Optional[int] = None,
+                            desired_capacity: Optional[int] = None) -> bool:
+        """
+        Change MinSize / MaxSize / DesiredCapacity of an Auto Scaling Group in a
+        single UpdateAutoScalingGroup call. Only the arguments that are not None
+        are sent.
+
+        Lowering DesiredCapacity below the current instance count makes Auto
+        Scaling terminate the surplus instances (Pending ones included).
+
+        :param asg_name: ASG name
+        :param min_size: New MinSize (optional)
+        :param max_size: New MaxSize (optional)
+        :param desired_capacity: New DesiredCapacity (optional)
+        :return: True on success, False if the call failed (e.g. ASG deleted)
+        """
+        kwargs = {"AutoScalingGroupName": asg_name}
+        if min_size is not None:
+            kwargs["MinSize"] = int(min_size)
+        if max_size is not None:
+            kwargs["MaxSize"] = int(max_size)
+        if desired_capacity is not None:
+            kwargs["DesiredCapacity"] = int(desired_capacity)
+        asg_client = self.create_service_client(service_name="autoscaling", region=self.region)
+        self.logger.info(f"UpdateAutoScalingGroup {kwargs}")
+        try:
+            asg_client.update_auto_scaling_group(**kwargs)
+            return True
+        except Exception as e:
+            self.logger.error(f"Could not update capacity of ASG {asg_name} ({kwargs}): {e}")
+            return False
+
     def list_asgs(self, filters: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         List Auto Scaling Groups (ASGs) filtered by tags.

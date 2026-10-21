@@ -26,6 +26,7 @@ Test classes
   FusionFallbackInstanceTypeTests — end-to-end fallback validation
 """
 
+import re
 import time
 import datetime
 
@@ -36,7 +37,8 @@ from pytests.basetestcase import BaseTestCase
 from aGoodDoctor.hostedOPD import hostedOPD
 from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 
-from .fusion_aws_util import FusionAWSUtil
+from .fusion_aws_util import FusionAWSUtil, FUSION_ASSUME_ROLE_NAME
+from .kubectl_cp_db_util import KubectlCPDBUtil
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
 from .fusion_test_base import _FusionTestBase
@@ -209,18 +211,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
                 f"duration with the 'PT' designator, e.g. 'PT15M', 'PT1H10M'"
             )
 
-        # Without a bucket holding synced data the CP runs a plain rebalance
-        # with no accelerators, so the fallback path is never reached.
-        # skip_init=True reuses the buckets and data already on the cluster.
-        if self.input.param("skip_init", False):
-            self.assertTrue(cluster.buckets,
-                            f"skip_init=True but cluster {cluster.id} has no buckets")
-        else:
-            create_end = int(self.input.param("num_items", 5000000))
-            self.PrintStep(f"Loading {create_end} items for fusion rebalance on cluster {cluster.id}")
-            self._load_data(cluster, create_start=0, create_end=create_end)
-        self._wait_for_s3_uri(cluster)
-        self._wait_for_s3_data_synced(cluster, timeout=self.sync_wait_timeout)
+        self._load_and_sync_for_fusion_rebalance(cluster)
 
         fis_template_id = None
         fis_experiment_id = None
@@ -228,6 +219,8 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
 
         try:
             self.PrintStep(f"Triggering fusion rebalance on cluster {cluster.id}")
+            # rebalance_config() counts from kv_nodes; a reused cluster may differ.
+            self._resync_kv_node_count(cluster)
             config = self.rebalance_config("data", +1)
             rebalance_task = self.task.async_rebalance_capella(
                 self.pod, tenant, cluster, config, timeout=1800)
@@ -235,24 +228,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
             experiment_start = datetime.datetime.now(datetime.timezone.utc)
 
             # Poll aggressively so we catch the ASGs before the first RunInstances call
-            self.PrintStep("Waiting for fusion ASGs to appear")
-            # RebalanceTaskCapella never sets .completed; its future does.
-            rebalance_future = self.task.jython_task_manager.futures[
-                rebalance_task.thread_name]
-            deadline = time.time() + 1800
-            while time.time() < deadline:
-                asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster.id)
-                if asgs:
-                    self.log.info(f"Detected {len(asgs)} fusion ASGs for cluster {cluster.id}")
-                    break
-                if rebalance_future.done():
-                    self.fail(
-                        f"Rebalance on cluster {cluster.id} finished (result="
-                        f"{rebalance_task.result}) without creating fusion ASGs; "
-                        f"it was not a fusion rebalance (no bucket data?)")
-                time.sleep(1)
-            else:
-                self.fail("Fusion ASGs not created within 1800s of triggering rebalance")
+            asgs = self._wait_for_fusion_asgs(cluster, rebalance_task)
 
             # Suspend Launch immediately to prevent any RunInstances calls until
             # FIS is active. Any in-flight launch that already started before
@@ -376,17 +352,65 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
                     self.fusion_aws_util.resume_asg_launch_process(suspended_asg_names)
                 except Exception as e:
                     self.log.warning(f"Could not resume ASG launch processes: {e}")
-            # Best-effort cleanup of FIS resources
-            if fis_experiment_id:
-                try:
-                    self.fusion_aws_util.fis.stop_experiment(fis_experiment_id)
-                except Exception as e:
-                    self.log.warning(f"Could not stop FIS experiment {fis_experiment_id}: {e}")
-            if fis_template_id:
-                try:
-                    self.fusion_aws_util.fis.delete_experiment_template(fis_template_id)
-                except Exception as e:
-                    self.log.warning(f"Could not delete FIS template {fis_template_id}: {e}")
+            self._cleanup_fis_experiment(fis_template_id, fis_experiment_id)
+
+    def _load_and_sync_for_fusion_rebalance(self, cluster):
+        """
+        Load num_items into the cluster buckets (creating them if needed) and
+        wait for the data to reach S3.
+
+        Without a bucket holding synced data the CP runs a plain rebalance with
+        no accelerators, so no fusion ASG is ever created. skip_init=True reuses
+        the buckets and data already on the cluster.
+        """
+        if self.input.param("skip_init", False):
+            self.assertTrue(cluster.buckets,
+                            f"skip_init=True but cluster {cluster.id} has no buckets")
+        else:
+            create_end = int(self.input.param("num_items", 5000000))
+            self.PrintStep(f"Loading {create_end} items for fusion rebalance on cluster {cluster.id}")
+            self._load_data(cluster, create_start=0, create_end=create_end)
+        self._wait_for_s3_uri(cluster)
+        self._wait_for_s3_data_synced(cluster, timeout=self.sync_wait_timeout)
+
+    def _rebalance_future(self, rebalance_task):
+        """RebalanceTaskCapella never sets .completed; its future does."""
+        return self.task.jython_task_manager.futures[rebalance_task.thread_name]
+
+    def _wait_for_fusion_asgs(self, cluster, rebalance_task, timeout=1800):
+        """
+        Poll every second until the cluster's fusion ASGs exist and return them.
+        Fails at once if the rebalance finishes first (it was not a fusion
+        rebalance), or after *timeout* seconds.
+        """
+        self.PrintStep("Waiting for fusion ASGs to appear")
+        rebalance_future = self._rebalance_future(rebalance_task)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster.id)
+            if asgs:
+                self.log.info(f"Detected {len(asgs)} fusion ASGs for cluster {cluster.id}")
+                return asgs
+            if rebalance_future.done():
+                self.fail(
+                    f"Rebalance on cluster {cluster.id} finished (result="
+                    f"{rebalance_task.result}) without creating fusion ASGs; "
+                    f"it was not a fusion rebalance (no bucket data?)")
+            time.sleep(1)
+        self.fail(f"Fusion ASGs not created within {timeout}s of triggering rebalance")
+
+    def _cleanup_fis_experiment(self, template_id=None, experiment_id=None):
+        """Best-effort stop of a FIS experiment and delete of its template."""
+        if experiment_id:
+            try:
+                self.fusion_aws_util.fis.stop_experiment(experiment_id)
+            except Exception as e:
+                self.log.warning(f"Could not stop FIS experiment {experiment_id}: {e}")
+        if template_id:
+            try:
+                self.fusion_aws_util.fis.delete_experiment_template(template_id)
+            except Exception as e:
+                self.log.warning(f"Could not delete FIS template {template_id}: {e}")
 
     def _start_fis_capacity_experiment(self, cluster, duration: str, fis_role_arn=None):
         """
@@ -443,3 +467,479 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
             f"Not all fusion ASGs for cluster {cluster_id} reached InService "
             f"within {timeout}s after FIS stopped"
         )
+
+
+# CP database (and its EKS cluster) always lives in us-east-1, whatever region
+# the data cluster under test is in.
+CP_EKS_REGION = "us-east-1"
+_SANDBOX_SLUG_RE = re.compile(r"(qe|sbx|dev)-\d+")
+
+
+class FusionWorkerPoolShortfallTests(FusionFallbackInstanceTypeTests):
+    """
+    Single-ASG / worker-pool control plane (couchbase-cloud
+    feature/AV-142561_single_asg): a persistent accelerator capacity shortfall.
+
+    Why the per-node instance-type fallback flow is not enough here
+    -------------------------------------------------------------
+    The CP now creates ONE ASG per plan/AZ, in a single CreateAutoScalingGroup
+    call with MinSize=0 and MaxSize=DesiredCapacity=N, where N is the number of
+    shards (= guest volumes = CP DB accelerator node docs) in that AZ. One
+    scaling activity launches all N together, so sleeping for a while before
+    injecting a fault gives either 0 or N instances, never 0 < k < N; and a
+    plain Launch suspend/resume only delays all N together.
+
+    Accelerators no longer own a volume each. They pull work from a pool: each
+    instance loops acquire (CAS a 'pending' node doc in its own AZ to
+    'registered' with config.compute.id = its instance id) -> attach, download,
+    detach -> complete, until acquire returns 410 Gone, then shuts itself down
+    with TerminateInstanceInAutoScalingGroup(ShouldDecrementDesiredCapacity).
+    The CP waits on node docs reaching 'complete' with no minimum-accelerator
+    threshold, no ASG health check and no DCP fallback, bounded only by the
+    deploy job's ~24h retry budget. So k < N accelerators per AZ must be able
+    to finish all N volumes.
+
+    Fault injection
+    ---------------
+    1. As soon as the ASG appears: UpdateAutoScalingGroup(DesiredCapacity=k).
+       MaxSize is left alone as the CP owns it. DesiredCapacity is CP-set but
+       DP-driven (accelerators decrement it on self-shutdown) and the CP never
+       resets it, so the cap sticks. Surplus instances already launching are terminated by Auto
+       Scaling before they can boot the agent.
+    2. Wait for k InService instances per ASG: these are the workers.
+    3. ice_mode=fis (default): start FIS aws:ec2:asg-insufficient-instance-
+       capacity-error on the cluster's fusion ASGs (100%, all AZs, so every
+       instance-type override fails too), wait for the action to be running,
+       then give back the N-k DesiredCapacity. The ASG keeps trying to launch
+       the missing N-k and keeps getting InsufficientInstanceCapacity: a real
+       persistent ICE shortfall while the k workers keep pulling work.
+       ice_mode=cap: keep DesiredCapacity=k and inject nothing. Use this where
+       FIS cannot run (the FIS execution role's trust policy only allows
+       us-east-1 experiments).
+    4. The fault is removed in finally: FIS stopped and its template deleted,
+       and the ASG uncapped if it was still capped, so a failed run leaves the
+       CP able to finish.
+    """
+
+    def setUp(self):
+        FusionFallbackInstanceTypeTests.setUp(self)
+        self.cp_db_util = None
+        self._worker_pool_threads = []
+        self._worker_pool_stop = threading.Event()
+        self._prior_fusion_config = None
+        self._fusion_config_modified = False
+
+    def tearDown(self):
+        self._worker_pool_stop.set()
+        for th in self._worker_pool_threads:
+            th.join(timeout=120)
+        self._restore_split_config()
+        if self.cp_db_util is not None:
+            try:
+                self.cp_db_util.disconnect()
+            except Exception as e:
+                self.log.warning(f"CP DB disconnect failed: {e}")
+        FusionFallbackInstanceTypeTests.tearDown(self)
+
+    def test_worker_pool_finishes_with_partial_fleet_under_ice(self):
+        """
+        Let only k accelerators per AZ launch, keep the rest blocked by ICE,
+        and verify the k workers download every guest volume and the rebalance
+        completes through fusion.
+
+        Parameters (via test config):
+          accelerator_cap        k, accelerators allowed per fusion ASG: 'half'
+                                 (default, MaxSize // 2 of each ASG, at least 1)
+                                 or a fixed number
+          ice_mode               'fis' (default) or 'cap' (no FIS, cap only)
+          fis_duration           ISO 8601 duration of the ICE fault; must outlast
+                                 the whole download phase (default PT2H)
+          fis_role_arn           FIS execution role (optional)
+          verify_cp_nodes        read CP DB accelerator node docs for compute.id
+                                 attribution (default True)
+          cp_eks_cluster_name    CP EKS cluster (default derived from the pod URL)
+          cp_role_arn            role to reach the CP EKS cluster (default
+                                 arn:aws:iam::<account>:role/jenkins-cp-cli)
+          cp_external_id         external id for cp_role_arn (falls back to
+                                 jenkins_cpcli_role_external_id)
+          asg_settle_secs        how long to keep capping ASGs that appear after
+                                 the first one (one per AZ; default 60)
+          num_items / skip_init  data load, see _load_and_sync_for_fusion_rebalance
+          fusion_min_split_size_gb / fusion_max_slots
+                                 split the data into more shards so N > k per AZ
+        """
+        k = self.input.param("accelerator_cap", "half")
+        if str(k).lower() == "half":
+            k = None    # per ASG: MaxSize // 2, see _accelerator_caps()
+        ice_mode = str(self.input.param("ice_mode", "fis")).lower()
+        fis_duration = self.input.param("fis_duration", "PT2H")
+        fis_role_arn = self.input.param("fis_role_arn", None)
+        verify_cp_nodes = self.input.param("verify_cp_nodes", True)
+
+        if k is not None:
+            self.assertTrue(isinstance(k, int) and k >= 1,
+                            f"accelerator_cap must be 'half' or an integer >= 1, got {k!r}")
+        self.assertIn(ice_mode, ("fis", "cap"),
+                      f"ice_mode must be 'fis' or 'cap', got {ice_mode!r}")
+        if ice_mode == "fis":
+            try:
+                iso8601_duration_to_seconds(fis_duration)
+            except ValueError:
+                self.fail(f"Invalid fis_duration {fis_duration!r}: use an ISO 8601 "
+                          f"duration with the 'PT' designator, e.g. 'PT2H'")
+            if self.aws_region != "us-east-1" and not fis_role_arn:
+                self.fail(
+                    f"ice_mode=fis in region {self.aws_region}: the default FIS "
+                    f"execution role only trusts us-east-1 experiments, so "
+                    f"StartExperiment would fail. Run in us-east-1, pass a "
+                    f"fis_role_arn that trusts this region, or use ice_mode=cap.")
+        if verify_cp_nodes:
+            self._connect_cp_db_for_worker_pool()
+        self._apply_split_config()
+
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                self._run_partial_fleet_test(
+                    tenant, cluster, k=k, ice_mode=ice_mode,
+                    fis_duration=fis_duration, fis_role_arn=fis_role_arn)
+
+    # ------------------------------------------------------------------
+    # Worker-pool helpers
+    # ------------------------------------------------------------------
+
+    def _apply_split_config(self):
+        """
+        Optionally lower manifest.minSplitSize / maxSlots so the same data
+        becomes more shards (= more guest volumes = larger N per AZ ASG). The CP
+        creates min(ceil(hostData / minSplitSize), maxSlots) shards per host.
+        Params: fusion_min_split_size_gb, fusion_max_slots. Restored in tearDown.
+        """
+        split = self.input.param("fusion_min_split_size_gb", None)
+        slots = self.input.param("fusion_max_slots", None)
+        if not split and not slots:
+            return
+        try:
+            self._prior_fusion_config = CapellaAPI.get_fusion_config(
+                self.pod, self.tenant, self.cluster.id)
+        except Exception as e:
+            self.log.warning(f"Could not read the existing fusion config: {e}")
+        CapellaAPI.set_fusion_config(
+            self.pod, self.tenant, self.cluster.id,
+            min_split_size=int(float(split) * (1024 ** 3)) if split else None,
+            max_slots=int(slots) if slots else None)
+        self._fusion_config_modified = True
+        self.log.info(f"Fusion config set: minSplitSize={split} GB, maxSlots={slots}")
+
+    def _restore_split_config(self):
+        """Put back the fusion config replaced by _apply_split_config(); never raises."""
+        if not self._fusion_config_modified:
+            return
+        try:
+            prior = self._prior_fusion_config or {}
+            manifest = prior.get("manifest") or {}
+            accelerator = prior.get("accelerator") or {}
+            guest_volumes = accelerator.get("guestVolumes") or {}
+            download = accelerator.get("download") or {}
+            if manifest or guest_volumes or download:
+                CapellaAPI.set_fusion_config(
+                    self.pod, self.tenant, self.cluster.id,
+                    min_split_size=manifest.get("minSplitSize"),
+                    max_slots=manifest.get("maxSlots"),
+                    iops=guest_volumes.get("iops"),
+                    throughput=guest_volumes.get("throughput"),
+                    download_rate_limit=download.get("rateLimit"))
+            else:
+                CapellaAPI.delete_fusion_config(self.pod, self.tenant, self.cluster.id)
+            self._fusion_config_modified = False
+        except Exception as e:
+            self.log.error(f"Could not restore the fusion config: {e}")
+
+    def _connect_cp_db_for_worker_pool(self):
+        """
+        Connect to the CP DB through the CP EKS cluster (same derivation as
+        fusion_billing_volume.FusionBillingVolumeTest). The base credentials
+        that assume cp_role_arn are cp_aws_access_key/cp_aws_secret_key if
+        given, else the AWS_*_004 env vars (KubectlCPDBUtil default). The
+        aws_access_key/aws_secret_key params are not used: on Jenkins they are
+        the tenant-account taf_aws_user, which may not assume jenkins-cp-cli.
+        Fails the test if the connection cannot be made: set
+        verify_cp_nodes=False to run on EC2 evidence alone.
+        """
+        cp_eks = self.input.param("cp_eks_cluster_name", None)
+        if not cp_eks:
+            match = _SANDBOX_SLUG_RE.search(getattr(self.pod, "url_public", "") or "")
+            cp_eks = f"{match.group(0)}-cp-eks" if match else None
+        role_arn = self.input.param("cp_role_arn", None)
+        if not role_arn:
+            account_id = getattr(self.tenant, "account_id", None) \
+                or self.input.capella.get("account_id")
+            role_arn = f"arn:aws:iam::{account_id}:role/{FUSION_ASSUME_ROLE_NAME}" \
+                if account_id else None
+        external_id = self.input.param(
+            "cp_external_id", self.input.param("jenkins_cpcli_role_external_id", None))
+        if not cp_eks or not role_arn:
+            self.fail("verify_cp_nodes=True but cp_eks_cluster_name/cp_role_arn could not "
+                      "be derived; pass them, or set verify_cp_nodes=False")
+        self.cp_db_util = KubectlCPDBUtil(
+            self.input.param("cp_aws_access_key", None),
+            self.input.param("cp_aws_secret_key", None),
+            self.input.param("cp_aws_session_token", None),
+            region=CP_EKS_REGION)
+        if not self.cp_db_util.connect(cp_eks, role_arn, external_id):
+            self.fail(f"Could not connect to CP EKS cluster {cp_eks} for the CP DB node-doc "
+                      f"checks: {self.cp_db_util.kubectl.last_error}; set "
+                      f"verify_cp_nodes=False to run on EC2 evidence alone")
+        self.cp_namespace = self.input.param("cp_namespace", None)
+        self.log.info(f"Connected to CP DB via {cp_eks}")
+
+    def _wait_for_capacity_failures(self, asg_names, since_time, timeout=300,
+                                    poll_interval=15):
+        """Poll fis.get_asg_capacity_failure_count until every ASG has at least
+        one ICE launch failure since since_time; returns the last counts."""
+        deadline = time.time() + timeout
+        while True:
+            counts = {n: self.fusion_aws_util.fis.get_asg_capacity_failure_count(n, since_time)
+                      for n in asg_names}
+            self.log.info(f"Capacity launch failures since {since_time}: {counts}")
+            if (counts and all(counts.values())) or time.time() >= deadline:
+                return counts
+            time.sleep(poll_interval)
+
+    @staticmethod
+    def _accelerator_caps(asgs, k):
+        """{asg_name: cap}: k for every ASG, or MaxSize // 2 (at least 1) of each
+        ASG when k is None (accelerator_cap=half). The CP creates the ASG with
+        MaxSize=DesiredCapacity=N, so this is half of the shards in that AZ."""
+        return {a["AutoScalingGroupName"]:
+                k if k is not None else max(1, int(a.get("MaxSize") or 0) // 2)
+                for a in asgs}
+
+    def _run_partial_fleet_test(self, tenant, cluster, k, ice_mode, fis_duration,
+                                fis_role_arn=None):
+        self._load_and_sync_for_fusion_rebalance(cluster)
+
+        record = self.cp_monitor.new_worker_pool_record()
+        tracker = threading.Thread(
+            target=self.cp_monitor.track_worker_pool_fleet,
+            kwargs={"cluster": cluster, "stop_run_event": self._worker_pool_stop,
+                    "record": record, "cp_db_util": self.cp_db_util,
+                    "cp_namespace": getattr(self, "cp_namespace", None)},
+            name=f"worker-pool-tracker-{cluster.id[:8]}", daemon=True)
+        tracker.start()
+        self._worker_pool_threads.append(tracker)
+
+        fis_template_id = None
+        fis_experiment_id = None
+        capped = None            # cap_fusion_asgs() result while the cap is in force
+        originals = {}
+        workers_by_asg = {}
+        launch_failures = {}
+        ice_since = None
+        failures = []
+
+        try:
+            self.PrintStep(f"Triggering fusion rebalance on cluster {cluster.id}")
+            self._resync_kv_node_count(cluster)
+            rebalance_task = self.task.async_rebalance_capella(
+                self.pod, tenant, cluster, self.rebalance_config("data", +1),
+                timeout=self.rebalance_timeout)
+            rebalance_future = self._rebalance_future(rebalance_task)
+
+            asgs = self._wait_for_fusion_asgs(cluster, rebalance_task)
+            # ASG name: cc-fusion-asg-<cluster id>-<plan uuid>-<zone>. Count only
+            # this plan's guest volumes / node docs: an earlier rebalance's stay
+            # until its background migration ends.
+            prefix = f"cc-fusion-asg-{cluster.id}-"
+            record["plan_uuids"] = {a["AutoScalingGroupName"][len(prefix):].split("-")[0]
+                                    for a in asgs
+                                    if a["AutoScalingGroupName"].startswith(prefix)}
+            self.log.info(f"Fusion rebalance plan(s) under test: {record['plan_uuids']}")
+
+            # 1. Cap at k immediately: the single creation activity is already
+            #    launching all N, so every second counts.
+            caps = self._accelerator_caps(asgs, k)
+            self.PrintStep(f"Capping {len(asgs)} fusion ASG(s) at {caps} instance(s)")
+            capped = self.fusion_aws_util.cap_fusion_asgs(asgs, caps)
+            originals = capped
+            # deployZonalASGs creates one ASG per AZ in turn; cap any that
+            # appear after the first one was seen.
+            settle_deadline = time.time() + int(self.input.param("asg_settle_secs", 60))
+            while time.time() < settle_deadline:
+                late_asgs = [a for a in self.fusion_aws_util.list_cluster_fusion_asg(cluster.id)
+                             if a["AutoScalingGroupName"] not in capped]
+                if late_asgs:
+                    capped.update(self.fusion_aws_util.cap_fusion_asgs(
+                        late_asgs, self._accelerator_caps(late_asgs, k)))
+                time.sleep(1)
+            not_capped = [n for n, o in capped.items() if not o["ok"]]
+            self.assertFalse(not_capped, f"Could not cap fusion ASG(s) {not_capped}")
+            shortfall_asgs = [n for n, o in capped.items()
+                              if o["DesiredCapacity"] > o["capped_to"]]
+            if not shortfall_asgs:
+                self.fail(
+                    f"No fusion ASG wants more accelerators than its cap "
+                    f"({ {n: (o['DesiredCapacity'], o['capped_to']) for n, o in capped.items()} }"
+                    f" as (desired, cap)), so there is no shortfall. Load more data (num_items), "
+                    f"lower accelerator_cap, or lower the fusion split size so there "
+                    f"are more shards per AZ.")
+
+            # 2. The k workers per ASG.
+            self.PrintStep("Waiting for the capped fleet to come InService")
+            expected = {n: o["capped_to"] for n, o in capped.items()}
+            in_service = self.fusion_aws_util.wait_for_fusion_asg_in_service(
+                cluster.id, expected, timeout=self.gv_launch_timeout, exact=True,
+                abort_fn=rebalance_future.done)
+            self.assertIsNotNone(
+                in_service,
+                f"Capped fusion ASGs did not reach {expected} InService instances "
+                f"(or the rebalance ended first, result={rebalance_task.result})")
+            workers_by_asg = {n: set(ids) for n, ids in in_service.items()}
+            record["cap_applied_at"] = time.time()
+            self.log.info(f"Workers per ASG: { {n: sorted(v) for n, v in workers_by_asg.items()} }")
+
+            # 3. Persistent ICE for the missing N-k.
+            if ice_mode == "fis":
+                self.PrintStep(f"Starting FIS ASG capacity-error fault ({fis_duration})")
+                fis_template_id, fis_experiment_id = self._start_fis_capacity_experiment(
+                    cluster=cluster, duration=fis_duration, fis_role_arn=fis_role_arn)
+                self.sleep(10)
+                status = self.fusion_aws_util.fis.get_experiment_status(
+                    fis_experiment_id)["status"]
+                self.assertEqual(
+                    str(status).lower(), "running",
+                    f"FIS experiment {fis_experiment_id} is '{status}', not running; "
+                    f"restoring capacity would just launch N")
+                ice_since = datetime.datetime.now(datetime.timezone.utc)
+                self.PrintStep("Restoring ASG DesiredCapacity to N under ICE")
+                restored = self.fusion_aws_util.restore_fusion_asgs(originals)
+                capped = None
+                self.assertTrue(all(restored.get(n) for n in shortfall_asgs),
+                                f"Could not restore capacity on {restored}")
+                launch_failures = self._wait_for_capacity_failures(
+                    shortfall_asgs, ice_since, timeout=300)
+                if not all(launch_failures.get(n) for n in shortfall_asgs):
+                    failures.append(
+                        f"No InsufficientInstanceCapacity launch failure on some "
+                        f"shortfall ASG within 300s of restoring N: {launch_failures}. "
+                        f"The shortfall was not driven by ICE.")
+            else:
+                self.log.info(f"ice_mode=cap: keeping DesiredCapacity at "
+                              f"{ {n: o['capped_to'] for n, o in originals.items()} } "
+                              f"for the whole download phase")
+
+            # 4. Let the k workers drain the pool.
+            self.PrintStep("Waiting for the rebalance to finish on the partial fleet")
+            self.wait_for_rebalances([rebalance_task], timeout=self.rebalance_timeout)
+            if ice_mode == "fis":
+                status = self.fusion_aws_util.fis.get_experiment_status(
+                    fis_experiment_id)["status"]
+                if str(status).lower() != "running":
+                    failures.append(
+                        f"FIS experiment {fis_experiment_id} was '{status}' when the "
+                        f"rebalance finished: the ICE window did not cover the whole "
+                        f"download phase; raise fis_duration")
+                launch_failures = {
+                    n: self.fusion_aws_util.fis.get_asg_capacity_failure_count(n, ice_since)
+                    for n in shortfall_asgs}
+        finally:
+            self._cleanup_fis_experiment(fis_template_id, fis_experiment_id)
+            if capped:
+                try:
+                    self.fusion_aws_util.restore_fusion_asgs(capped)
+                except Exception as e:
+                    self.log.warning(f"Could not uncap fusion ASGs: {e}")
+            self._worker_pool_stop.set()
+            tracker.join(timeout=300)
+
+        # ---------------- verification ----------------
+        self.PrintStep("Verifying the partial fleet did all the work")
+        # FIS reports running before the ICE fault is enforced (~60s in
+        # fusion_volume #1037), so a few instances may launch after the cap.
+        # They are part of the partial fleet: count them as workers. Instances
+        # Auto Scaling terminated when the cap lowered DesiredCapacity were
+        # already launching when the ASG was first seen.
+        worker_ids = set().union(*workers_by_asg.values()) if workers_by_asg else set()
+        cull_grace = record["cap_applied_at"] or 0
+        culled_ids = {iid for iid, info in record["instances"].items()
+                      if iid not in worker_ids and info["first_seen"] <= cull_grace}
+        late_ids = set(record["instances"]) - worker_ids - culled_ids
+        if late_ids:
+            self.log.warning(f"{len(late_ids)} accelerator(s) launched after the cap, "
+                             f"before ICE was enforced; counted as workers: {sorted(late_ids)}")
+            for iid in late_ids:
+                asg = record["instances"][iid].get("asg")
+                if asg in workers_by_asg:
+                    workers_by_asg[asg].add(iid)
+        summary = self.cp_monitor.summarize_worker_pool_fleet(cluster, record, workers_by_asg)
+
+        for name, o in originals.items():
+            workers = workers_by_asg.get(name, set())
+            if o["DesiredCapacity"] > o["capped_to"] and len(workers) >= o["DesiredCapacity"]:
+                failures.append(
+                    f"ASG {name}: {len(workers)} workers for {o['DesiredCapacity']} nodes; "
+                    f"ICE never held a shortfall")
+            covered = summary["covered_nodes_by_asg"].get(name, set())
+            if len(covered) != o["DesiredCapacity"]:
+                failures.append(
+                    f"ASG {name}: its {len(workers)} worker(s) were seen "
+                    f"handling {len(covered)} of {o['DesiredCapacity']} accelerator nodes")
+            if o["DesiredCapacity"] > o["capped_to"]:
+                per_worker = {iid: len(summary["nodes_by_instance"].get(iid, ()))
+                              for iid in workers}
+                if not any(n > 1 for n in per_worker.values()):
+                    failures.append(
+                        f"ASG {name}: no worker handled more than one node {per_worker}; "
+                        f"the pool was not drained by fewer instances than volumes")
+
+        expected_nodes = sum(o["DesiredCapacity"] for o in originals.values())
+        if len(summary["all_node_ids"]) != expected_nodes:
+            failures.append(
+                f"Saw {len(summary['all_node_ids'])} accelerator nodes/guest volumes, the "
+                f"ASGs were sized for {expected_nodes}")
+        culled_work = {nid: iids & culled_ids
+                       for nid, iids in summary["nodes_by_non_worker"].items()
+                       if iids & culled_ids}
+        if culled_work:
+            self.log.warning(f"Instances culled by the cap had touched nodes before "
+                             f"termination (claims are released lazily): {culled_work}")
+        if summary["unattributed_nodes"]:
+            failures.append(
+                f"No accelerator was seen handling nodes {summary['unattributed_nodes']} "
+                f"(neither a guest-volume attachment nor a CP DB compute.id)")
+        if self.cp_db_util is not None and not record["nodes"]:
+            failures.append("CP DB returned no fusion accelerator node docs during the run")
+        if summary["nodes_not_complete"]:
+            self.log.warning(f"Node docs whose last sampled status was not complete: "
+                             f"{summary['nodes_not_complete']}")
+
+        transfer = self.fusion_monitor.get_rebalance_transfer_summary(cluster)
+        if not transfer:
+            failures.append("No rebalance report: cannot tell fusion from DCP")
+        for bucket, t in (transfer or {}).items():
+            if t["rebalance_method"] != "fusion" or not t["mounted_volume_count"]:
+                failures.append(
+                    f"Bucket {bucket}: rebalance_method={t['rebalance_method']}, "
+                    f"mounted guest volumes={t['mounted_volume_count']} -- not a fusion move")
+
+        # Guest volumes are deleted only after background migration, which can
+        # take hours: wait for the accelerators and ASGs only.
+        self.PrintStep("Verifying fusion accelerators and ASGs are torn down")
+        torn_down, left = self.cp_monitor.wait_for_fusion_infra_teardown(
+            cluster, include_guest_volumes=False)
+        if not torn_down:
+            failures.append(f"Fusion infrastructure left after the rebalance: {left}")
+        if not self._is_cluster_healthy():
+            failures.append(f"Cluster {cluster.id} is not healthy after the rebalance")
+
+        result = PrettyTable()
+        result.field_names = ["Check", "Value"]
+        result.add_row(["accelerator cap (k)",
+                        {n: o["capped_to"] for n, o in originals.items()} or k])
+        result.add_row(["ICE mode", ice_mode])
+        result.add_row(["nodes expected / seen", f"{expected_nodes} / {len(summary['all_node_ids'])}"])
+        result.add_row(["workers", sum(len(v) for v in workers_by_asg.values())])
+        result.add_row(["capacity launch failures", launch_failures or "-"])
+        result.add_row(["failures", len(failures)])
+        self.log.info(f"Partial-fleet result for cluster {cluster.id}:\n{result}")
+        if failures:
+            self.fail("Partial accelerator fleet test failed:\n  - " + "\n  - ".join(failures))

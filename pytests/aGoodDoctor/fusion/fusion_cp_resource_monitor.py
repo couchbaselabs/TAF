@@ -1150,6 +1150,316 @@ class FusionCPResourceMonitor:
                 self.log.warning(f"track_peak_guest_volumes_per_instance polling error for cluster {cluster.id}: {e}")
             stop_run_event.wait(poll_interval)
 
+    # ------------------------------------------------------------------
+    # Single-ASG worker pool observation
+    # ------------------------------------------------------------------
+    # couchbase-cloud feature/AV-142561_single_asg: one ASG per plan/AZ, one CP
+    # DB "fusion accelerator node" document per guest volume (shard). Each
+    # accelerator loops acquire -> attach/download/detach -> complete until the
+    # CP answers 410 Gone, then shuts itself down (decrementing the ASG's
+    # DesiredCapacity). Work is zone-scoped. The node documents are deleted at
+    # teardown, so they have to be sampled while the rebalance is running.
+
+    FUSION_NODE_DOC_TYPE = "dataplane.fusion_accelerator_nodes"
+    CP_DB_BUCKET = "default"
+
+    @staticmethod
+    def new_worker_pool_record():
+        """Return an empty record for track_worker_pool_fleet() to fill in."""
+        return {
+            # instance_id -> {"asg", "type", "first_seen", "last_state"}
+            "instances": {},
+            # asg_name -> highest InService count seen after "cap_applied_at"
+            "max_in_service": {},
+            # asg_name -> highest Pending+InService count seen after "cap_applied_at"
+            "max_live": {},
+            # asg_name -> list of distinct DesiredCapacity values, in order
+            "desired_history": {},
+            # guest volume id -> {"node_id", "zone", "attached_to": set(instance ids)}
+            "guest_volumes": {},
+            # CP DB node doc id -> latest doc seen (status, config.compute.id, ...)
+            "nodes": {},
+            # epoch seconds after which the per-ASG maxima are recorded; set by
+            # the test once it has capped the ASGs
+            "cap_applied_at": None,
+            # rebalance plan UUIDs under test; set by the test once the ASGs
+            # appear. Guest volumes and node docs of other plans (e.g. an
+            # earlier rebalance still in background migration) are ignored.
+            "plan_uuids": set(),
+            "cp_db_errors": 0,
+        }
+
+    def get_fusion_accelerator_node_docs(self, cp_db_util, cluster_id, plan_uuid=None,
+                                         namespace=None):
+        """
+        Read the CP DB fusion accelerator node documents (one per guest volume)
+        for a cluster, optionally for a single plan.
+
+        :param cp_db_util: Connected KubectlCPDBUtil
+        :param cluster_id: Cluster id
+        :param plan_uuid: Optional rebalance plan UUID
+        :param namespace: Optional k8s namespace of the CP DB
+        :return: List of {"docId", "status", "computeId", "computeType", "zone",
+                 "host", "shardNo", "planUUID", "diskId", "registeredAt",
+                 "downloadCompletedAt"}
+        """
+        statement = (
+            f"SELECT META(n).id AS docId, n.status, n.config.compute.id AS computeId, "
+            f"n.config.compute.type AS computeType, n.config.zone AS zone, n.host, "
+            f"n.shardNo, n.planUUID, n.config.disk.id AS diskId, n.registeredAt, "
+            f"n.downloadCompletedAt "
+            f"FROM `{self.CP_DB_BUCKET}` n "
+            f"WHERE n.`_type` = '{self.FUSION_NODE_DOC_TYPE}' "
+            f"AND n.clusterId = '{cluster_id}'")
+        if plan_uuid:
+            statement += f" AND n.planUUID = '{plan_uuid}'"
+        return cp_db_util.run_n1ql_query(statement, namespace=namespace)
+
+    def _sample_worker_pool_fleet(self, cluster, record, cp_db_util=None,
+                                  cp_namespace=None):
+        """One sample of ASGs, accelerator instances, guest volumes and node docs."""
+        now = time.time()
+        capped = record["cap_applied_at"] is not None and now >= record["cap_applied_at"]
+        for asg in self.fusion_aws_util.list_cluster_fusion_asg(cluster.id):
+            name = asg["AutoScalingGroupName"]
+            history = record["desired_history"].setdefault(name, [])
+            desired = asg.get("DesiredCapacity")
+            if not history or history[-1] != desired:
+                history.append(desired)
+            in_service = 0
+            live = 0
+            for inst in asg.get("Instances", []):
+                iid = inst.get("InstanceId")
+                state = inst.get("LifecycleState", "")
+                entry = record["instances"].setdefault(iid, {
+                    "asg": name, "type": inst.get("InstanceType"),
+                    "first_seen": now, "last_state": state})
+                entry["last_state"] = state
+                if state == "InService":
+                    in_service += 1
+                if state.startswith("Pending") or state == "InService":
+                    live += 1
+            if capped:
+                record["max_in_service"][name] = max(
+                    record["max_in_service"].get(name, 0), in_service)
+                record["max_live"][name] = max(record["max_live"].get(name, 0), live)
+
+        volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+            "couchbase-cloud-cluster-id": cluster.id,
+            "couchbase-cloud-function": "fusion-accelerator",
+            "couchbase-cloud-fusion-guest-volume": "true",
+        })
+        for vol in volumes:
+            vid = vol.get("VolumeId")
+            tags = {t.get("Key"): t.get("Value") for t in vol.get("Tags", [])}
+            entry = record["guest_volumes"].setdefault(vid, {
+                "node_id": tags.get("couchbase-cloud-node-id"),
+                "zone": vol.get("AvailabilityZone"),
+                "attached_to": set()})
+            for att in vol.get("Attachments") or []:
+                if att.get("InstanceId"):
+                    entry["attached_to"].add(att["InstanceId"])
+
+        if cp_db_util is not None:
+            try:
+                for doc in self.get_fusion_accelerator_node_docs(
+                        cp_db_util, cluster.id, namespace=cp_namespace):
+                    record["nodes"][doc.get("docId")] = doc
+            except Exception as e:
+                record["cp_db_errors"] += 1
+                self.log.warning(f"CP DB node-doc sample failed for cluster {cluster.id}: {e}")
+
+    def track_worker_pool_fleet(self, cluster, stop_run_event, record, cp_db_util=None,
+                                cp_namespace=None, poll_interval=5, cp_db_every=6):
+        """
+        Background poller for the single-ASG worker pool. Fills *record* (from
+        new_worker_pool_record()) until *stop_run_event* is set:
+
+        * every instance ever seen in a fusion ASG, with its ASG and type
+        * per ASG, the highest InService / Pending+InService counts seen after
+          record["cap_applied_at"], and the DesiredCapacity history
+        * every guest volume seen and every instance it was ever attached to
+          (EC2 keeps no attachment history, so this is the AWS-side proof of
+          which accelerator downloaded which volume)
+        * if *cp_db_util* is given, every CP DB accelerator node document every
+          *cp_db_every* polls (the documents are deleted at teardown)
+
+        :param cluster: Cluster object
+        :param stop_run_event: threading.Event that ends the loop
+        :param record: dict from new_worker_pool_record(), mutated in place
+        :param cp_db_util: Optional connected KubectlCPDBUtil
+        :param cp_namespace: Optional CP DB namespace
+        :param poll_interval: Seconds between AWS samples
+        :param cp_db_every: Sample the CP DB every N AWS samples
+        """
+        iteration = 0
+        while not stop_run_event.is_set():
+            try:
+                self._sample_worker_pool_fleet(
+                    cluster, record,
+                    cp_db_util=cp_db_util if iteration % cp_db_every == 0 else None,
+                    cp_namespace=cp_namespace)
+            except (ClientError, ConnectionError) as e:
+                self.log.warning(f"track_worker_pool_fleet polling error for cluster {cluster.id}: {e}")
+            except Exception as e:
+                self.log.warning(f"track_worker_pool_fleet unexpected error for cluster {cluster.id}: {e}")
+            iteration += 1
+            stop_run_event.wait(poll_interval)
+        # Final sample so the last node-doc state is captured if still present
+        try:
+            self._sample_worker_pool_fleet(cluster, record, cp_db_util=cp_db_util,
+                                           cp_namespace=cp_namespace)
+        except Exception as e:
+            self.log.warning(f"Final worker-pool sample failed for cluster {cluster.id}: {e}")
+
+    def summarize_worker_pool_fleet(self, cluster, record, workers_by_asg):
+        """
+        Log the worker-pool record and derive the facts the test asserts on.
+
+        A volume is attributed to an instance either because EC2 showed it
+        attached to that accelerator (guest volume tag couchbase-cloud-node-id
+        is the CP DB node doc id) or because the CP DB node doc carried that
+        instance as config.compute.id. The two sources are joined on the node
+        doc id, so a short attachment the poller missed is still covered by the
+        CP DB and vice versa.
+
+        :param cluster: Cluster object
+        :param record: dict filled by track_worker_pool_fleet()
+        :param workers_by_asg: {asg_name: set(instance ids)} -- the k workers
+            per ASG that were InService when the cap took effect
+        :return: {
+            "nodes_by_instance": {iid: set(node ids)},
+            "covered_nodes_by_asg": {asg: set(node ids handled by its workers)},
+            "nodes_by_non_worker": {node_id: set(iids)} (non-worker accelerators
+                that attached the volume or claimed the node),
+            "unattributed_nodes": [node ids no accelerator was seen handling],
+            "all_node_ids": set(node ids from guest volumes and CP DB),
+            "nodes_not_complete": {doc_id: last status seen},
+          }
+        """
+        worker_to_asg = {iid: asg for asg, ids in workers_by_asg.items() for iid in ids}
+        accelerator_ids = set(record["instances"])
+        plans = record.get("plan_uuids") or set()
+
+        def in_plan(node_id):
+            # node doc id: <cluster>:<operational node>:<plan uuid>:<shard>
+            parts = (node_id or "").split(":")
+            return not plans or (len(parts) == 4 and parts[2] in plans)
+
+        nodes_by_instance = {}
+        all_node_ids = set()
+
+        vol_table = PrettyTable()
+        vol_table.field_names = ["Guest Volume", "Zone", "Node ID", "Accelerator(s)"]
+        for vid, info in sorted(record["guest_volumes"].items()):
+            node_id = info["node_id"] or vid
+            if not in_plan(info["node_id"]):
+                continue
+            all_node_ids.add(node_id)
+            accels = sorted(i for i in info["attached_to"] if i in accelerator_ids)
+            vol_table.add_row([vid, info["zone"], node_id, ", ".join(accels) or "-"])
+            for iid in accels:
+                nodes_by_instance.setdefault(iid, set()).add(node_id)
+
+        not_complete = {}
+        node_table = PrettyTable()
+        node_table.field_names = ["Node Doc", "Zone", "Status", "Compute ID", "Compute Type"]
+        for doc_id, doc in sorted(record["nodes"].items()):
+            if not in_plan(doc_id):
+                continue
+            all_node_ids.add(doc_id)
+            compute_id = doc.get("computeId") or ""
+            node_table.add_row([doc_id, doc.get("zone"), doc.get("status"), compute_id,
+                                doc.get("computeType")])
+            if compute_id:
+                nodes_by_instance.setdefault(compute_id, set()).add(doc_id)
+            if doc.get("status") not in ("complete", "tearingDown"):
+                not_complete[doc_id] = doc.get("status")
+
+        covered_by_asg = {asg: set() for asg in workers_by_asg}
+        by_non_worker = {}
+        for iid, node_ids in nodes_by_instance.items():
+            asg = worker_to_asg.get(iid)
+            if asg:
+                covered_by_asg[asg] |= node_ids
+            else:
+                for node_id in node_ids:
+                    by_non_worker.setdefault(node_id, set()).add(iid)
+        handled = set().union(*nodes_by_instance.values()) if nodes_by_instance else set()
+        unattributed = sorted(all_node_ids - handled)
+
+        inst_table = PrettyTable()
+        inst_table.field_names = ["Instance", "ASG", "Type", "Worker", "Last State",
+                                  "Nodes handled"]
+        for iid, info in sorted(record["instances"].items()):
+            inst_table.add_row([iid, info["asg"], info["type"], iid in worker_to_asg,
+                                info["last_state"], len(nodes_by_instance.get(iid, ()))])
+
+        asg_table = PrettyTable()
+        asg_table.field_names = ["ASG", "Desired history", "Max InService (capped)",
+                                 "Max Pending+InService (capped)", "Workers",
+                                 "Nodes covered by workers"]
+        for name, hist in record["desired_history"].items():
+            asg_table.add_row([name, hist, record["max_in_service"].get(name, "-"),
+                               record["max_live"].get(name, "-"),
+                               len(workers_by_asg.get(name, ())),
+                               len(covered_by_asg.get(name, ()))])
+
+        self.log.info(
+            f"Worker-pool summary for cluster {cluster.id}\n"
+            f"ASGs:\n{asg_table}\nAccelerator instances:\n{inst_table}\n"
+            f"Guest volumes:\n{vol_table}\nCP DB accelerator nodes "
+            f"({len(record['nodes'])} seen, {record['cp_db_errors']} sample errors):\n"
+            f"{node_table}")
+        return {
+            "nodes_by_instance": nodes_by_instance,
+            "covered_nodes_by_asg": covered_by_asg,
+            "nodes_by_non_worker": by_non_worker,
+            "unattributed_nodes": unattributed,
+            "all_node_ids": all_node_ids,
+            "nodes_not_complete": not_complete,
+        }
+
+    def wait_for_fusion_infra_teardown(self, cluster, timeout=None, poll_interval=15,
+                                       include_guest_volumes=True):
+        """
+        Wait until a cluster has no fusion accelerator instances (by tag, any
+        IOPS), no fusion ASGs and, unless include_guest_volumes=False, no guest
+        volumes.
+
+        :param cluster: Cluster object
+        :param timeout: Seconds (default EBS_CLEANUP_TIMEOUT)
+        :param poll_interval: Seconds between polls
+        :param include_guest_volumes: Also wait for the guest volumes to go.
+            Their deletion follows background migration and can take hours;
+            when False they are only counted (reported, not waited for)
+        :return: (bool, {"accelerators": n, "asgs": n, "guest_volumes": n})
+        """
+        timeout = timeout or self.EBS_CLEANUP_TIMEOUT
+        deadline = time.time() + timeout
+        counts = {}
+        while True:
+            instances = self.fusion_aws_util.list_instances(
+                self.fusion_aws_util._cluster_filter(
+                    cluster.id,
+                    [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}]),
+                log="Fusion Accelerator", suppress_log=True)
+            instances = [i for i in instances
+                         if i.get('State', {}).get('Name') not in ('terminated', 'shutting-down')]
+            counts = {
+                "accelerators": len(instances),
+                "asgs": len(self.fusion_aws_util.list_cluster_fusion_asg(cluster.id)),
+                "guest_volumes": len(self.get_current_guest_volume_ids(cluster)),
+            }
+            self.log.info(f"Fusion infra left on cluster {cluster.id}: {counts}")
+            waited_for = {k: v for k, v in counts.items()
+                          if include_guest_volumes or k != "guest_volumes"}
+            if not any(waited_for.values()):
+                return True, counts
+            if time.time() >= deadline:
+                return False, counts
+            time.sleep(poll_interval)
+
     def verify_old_guest_volumes_deleted(
         self, cluster, pre_restore_volume_ids: list, timeout: int = 600
     ) -> bool:

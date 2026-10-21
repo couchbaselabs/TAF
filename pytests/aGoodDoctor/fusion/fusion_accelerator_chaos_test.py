@@ -238,34 +238,6 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
                 ("status", "errorMessage", "lastReportURI", "rebalanceId", "statusId")
                 if task.get(k) is not None}
 
-    def _resync_kv_node_count(self):
-        """Set self.num_nodes["data"] to the KV count ns_server actually reports; return it.
-
-        rebalance_config() increments num_nodes when a rebalance is REQUESTED, so after an
-        aborted one the framework records the topology that was asked for rather than the one
-        that exists. Triggering the next rebalance off that stale number can produce a spec
-        identical to the current topology — a no-op with nothing for the CP to move, which
-        then looks like "fusion did not launch accelerators".
-        """
-        self.fusion_monitor.set_admin_credentials(self.cluster)
-        self.find_master(self.tenant, self.cluster)
-        status, content = ClusterRestAPI(self.cluster.master).cluster_details()
-        if not status or not isinstance(content, dict):
-            raise Exception(f"GET /pools/default failed: {content}")
-        kv_nodes = [n for n in (content.get("nodes") or [])
-                    if "kv" in (n.get("services") or [])]
-        actual = len(kv_nodes)
-        booked = self.num_nodes["data"]
-        if actual != booked:
-            self.log.warning(
-                f"KV node count: ns_server reports {actual}, the framework had {booked} "
-                f"booked — resyncing to {actual} so the next rebalance spec is a real "
-                f"topology change")
-        else:
-            self.log.info(f"KV node count agrees at {actual}")
-        self.num_nodes["data"] = actual
-        return actual
-
     def _run_recovery_rebalance(self, s3_bucket_name, label):
         """Run one normal fusion rebalance and assert it behaves, after a fault.
 

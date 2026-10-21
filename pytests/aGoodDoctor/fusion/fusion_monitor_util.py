@@ -1048,6 +1048,66 @@ class FusionMonitorUtil():
 
             self.log.info("\n".join(summary_lines) + f"\n{table}")
 
+    def get_rebalance_transfer_summary(self, cluster, report=None):
+        """
+        Summarise how the last rebalance moved data: through fusion guest
+        volumes, or by streaming documents over DCP.
+
+        A fusion rebalance can mount guest volumes successfully and still copy
+        everything over DCP when the mounted volume is empty (AV-147753 on the
+        single-ASG branch: the accelerator writes to /data/<nodeId>/, FusionFS
+        reads /data/, a missing directory counts as zero logs, the mount returns
+        OK, and the vBucket is then backfilled from seqno 0). The rebalance
+        report shows this as per-vBucket replicationInfo.inDocsTotal close to the
+        full vBucket item count and a backfill time far above snapshot_waiting.
+        With no writes during the rebalance, a genuine fusion move streams
+        (almost) no documents.
+
+        :param cluster: Cluster object
+        :param report: Already-fetched rebalance report (optional)
+        :return: {bucket: {"rebalance_method", "mounted_volume_count",
+                           "moved_vbuckets", "dcp_docs_in", "backfill_ms",
+                           "snapshot_waiting_ms"}}, or None if no report
+        """
+        data = report or self._fetch_rebalance_report(cluster)
+        if not data:
+            self.log.warning(f"No rebalance report available for cluster {cluster.id}")
+            return None
+        details = (data.get("stageInfo", {}).get("data") or {}).get("details") or {}
+        summary = {}
+        for bucket_name, bucket_data in details.items():
+            mounted = (bucket_data.get("mountingVolumes") or {}).get("volumes") or {}
+            entry = {
+                "rebalance_method": bucket_data.get("rebalance_method"),
+                "mounted_volume_count": sum(len(v or []) for v in mounted.values()),
+                "moved_vbuckets": 0,
+                "dcp_docs_in": 0,
+                "backfill_ms": 0,
+                "snapshot_waiting_ms": 0,
+            }
+            vbuckets = (bucket_data.get("vbucketLevelInfo") or {}).get("vbucketInfo") or []
+            for vb in vbuckets:
+                if not (vb.get("move") or {}).get("timeTaken"):
+                    continue
+                entry["moved_vbuckets"] += 1
+                entry["backfill_ms"] += (vb.get("backfill") or {}).get("timeTaken") or 0
+                entry["snapshot_waiting_ms"] += \
+                    (vb.get("snapshot_waiting") or {}).get("timeTaken") or 0
+                for repl in (vb.get("replicationInfo") or {}).values():
+                    entry["dcp_docs_in"] += (repl or {}).get("inDocsTotal") or 0
+            summary[bucket_name] = entry
+
+        table = PrettyTable()
+        table.field_names = ["Bucket", "Method", "Mounted GVs", "Moved vBs",
+                             "DCP docs in", "Backfill (s)", "Snapshot wait (s)"]
+        for name, e in summary.items():
+            table.add_row([name, e["rebalance_method"], e["mounted_volume_count"],
+                           e["moved_vbuckets"], e["dcp_docs_in"],
+                           round(e["backfill_ms"] / 1000.0, 1),
+                           round(e["snapshot_waiting_ms"] / 1000.0, 1)])
+        self.log.info(f"Rebalance data-transfer summary for cluster {cluster.id}:\n{table}")
+        return summary
+
     def log_rebalance_report(self, cluster):
         """
         Fetch and log the NS Server rebalance report for a cluster.
