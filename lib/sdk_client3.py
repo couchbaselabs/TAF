@@ -28,6 +28,8 @@ from sdk_utils.sdk_options import SDKOptions
 
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
+from couchbase.kv_range_scan import (PrefixScan, RangeScan, SamplingScan,
+                                     ScanTerm)
 from couchbase.options import (ClusterOptions, ClusterTimeoutOptions,
                                QueryOptions, WaitUntilReadyOptions,
                                GetAllReplicasOptions)
@@ -415,38 +417,54 @@ class SDKClient(object):
         self.log.info("RAM FootPrint: {}".format(str(mem)))
         return mem
 
-    def sampling_scan(self, limit, seed, timeout=None):
-        options = None
-        if timeout is not None:
-            options = SDKOptions.get_scan_options(timeout=60)
-        data = SDKClient.doc_op.sampling_scan(self.collection, limit, seed,
-                                              options)
-        result = self.__translate_ranges_scan_results(data)
+    def __kv_scan(self, scan_type, timeout=None, return_ids=False,
+                  **scan_options):
+        """
+        Runs a KV range scan on self.collection and drains it.
+        :param timeout: Scan timeout in secs. None keeps the SDK default
+        :param return_ids: Also return the scanned doc ids under 'ids'
+        :param scan_options: ids_only / batch_byte_limit / batch_item_limit /
+                             concurrency, see SDKOptions.get_scan_options()
+        :return: dict with 'count', 'exception' ("" if the scan passed),
+                 'status' and 'time_taken' (secs)
+        """
+        result = {"count": 0, "exception": "", "status": True}
+        ids = []
+        start_time = time.time()
+        try:
+            options = SDKOptions.get_scan_options(timeout=timeout,
+                                                  **scan_options)
+            for row in self.collection.scan(scan_type, options):
+                result["count"] += 1
+                if return_ids:
+                    ids.append(row.id)
+        except Exception as e:
+            result["exception"] = str(e)
+            result["status"] = False
+        result["time_taken"] = time.time() - start_time
+        if return_ids:
+            result["ids"] = ids
+        return result
+
+    def sampling_scan(self, limit, seed, timeout=None, **scan_options):
+        result = self.__kv_scan(SamplingScan(limit, seed), timeout,
+                                **scan_options)
         self.log.debug("sampling scan result for term %s" % (str(result)))
         return result, self.bucket.name, self.collection_name, self.scope_name
 
-    def prefix_range_scan(self, term, timeout=None):
+    def prefix_range_scan(self, term, timeout=None, **scan_options):
         self.log.debug("prefix scan started!")
-        options = None
-        if timeout is not None:
-            options = SDKOptions.get_scan_options(timeout=timeout)
-        data = SDKClient.doc_op.prefix_scan_query(self.collection, term,
-                                                  options)
-        result = self.__translate_ranges_scan_results(data)
-        self.log.debug("prefix scan result for term %s %s" % (str(result),
-                                                              term))
+        result = self.__kv_scan(PrefixScan(term), timeout, **scan_options)
+        self.log.debug("prefix scan result for term %s %s"
+                       % (str(result.get("count")), term))
         return result, self.bucket.name, self.collection_name, self.scope_name
 
     def range_scan(self, start_term, end_term, include_start=True,
-                   include_end=True, timeout=None):
-        options = None
-        if timeout is not None:
-            options = SDKOptions.get_scan_options(timeout=timeout)
-        data = SDKClient.doc_op.range_scan_query(self.collection,
-                                                 start_term, end_term,
-                                                 include_start,
-                                                 include_end, options)
-        result = self.__translate_ranges_scan_results(data)
+                   include_end=True, timeout=None, **scan_options):
+        scan_type = RangeScan(
+            start=ScanTerm(start_term, exclusive=not include_start),
+            end=ScanTerm(end_term, exclusive=not include_end))
+        result = self.__kv_scan(scan_type, timeout, **scan_options)
         return result, self.bucket.name, self.collection_name, self.scope_name
 
     def close(self):
@@ -501,15 +519,6 @@ class SDKClient(object):
             SDKClient.sdk_disconnections += 1
 
     # Translate APIs for document operations
-    @staticmethod
-    def __translate_ranges_scan_results(data):
-        result = dict()
-        result['time_taken'] = data['timeTaken']
-        result['count'] = int(data['count'])
-        result['exception'] = data['exception']
-        result['status'] = data['status']
-        return result
-
     @staticmethod
     def __translate_upsert_multi_results(data, docs=None):
         success = dict()

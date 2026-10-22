@@ -57,8 +57,26 @@ class SDKOptions(object):
 
     @staticmethod
     def get_scan_options(timeout=5,
-                         time_unit=SDKConstants.TimeUnit.SECONDS):
-        raise NotImplementedError()
+                         time_unit=SDKConstants.TimeUnit.SECONDS,
+                         ids_only=False, batch_byte_limit=None,
+                         batch_item_limit=None, concurrency=None):
+        """
+        timeout=None leaves the SDK's range scan timeout.
+        batch_byte_limit / batch_item_limit cap what the server returns per
+        vbucket continue (SDK defaults: 15000 bytes / 50 items), None keeps
+        the SDK default
+        """
+        scan_options = {"ids_only": ids_only}
+        if timeout is not None:
+            scan_options["timeout"] = SDKOptions.get_duration(timeout,
+                                                              time_unit)
+        if batch_byte_limit is not None:
+            scan_options["batch_byte_limit"] = batch_byte_limit
+        if batch_item_limit is not None:
+            scan_options["batch_item_limit"] = batch_item_limit
+        if concurrency is not None:
+            scan_options["concurrency"] = concurrency
+        return options.ScanOptions(**scan_options)
 
     # Document operations' getOptions APIs
     @staticmethod

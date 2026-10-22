@@ -800,7 +800,10 @@ class MemcachedClient(KeepRefs):
         while not done:
             cmd, opaque, cas, klen, extralen, dtype, data, frameextralen = self._handleKeyedResponse(None)
             if klen:
-                rv[data[0:klen].decode()] = data[klen:].decode()
+                # Some values are raw user data (e.g. a range scan's
+                # start/end keys), which need not be valid UTF-8
+                rv[data[0:klen].decode(errors="replace")] = \
+                    data[klen:].decode(errors="replace")
             else:
                 done = True
         return rv
