@@ -1,5 +1,9 @@
+import math
+import string
 import threading
 import time
+import zlib
+from random import choice
 
 from basetestcase import ClusterSetup
 from cb_tools.cb_cli import CbCli
@@ -9,6 +13,7 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from memcached.helper.data_helper import MemcachedClientHelper
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
@@ -877,3 +882,182 @@ class KVRateLimitingTests(ClusterSetup):
             f"{self.bucket.name} throttled while at "
             f"{results[self.bucket.name]['units_per_sec']:.0f} units/sec, "
             f"under throttleReserved={reserved}")
+
+    def _keys_in_one_vbucket(self, prefix, num_keys):
+        """
+        'num_keys' doc ids '<prefix><n>' which hash (CRC32, as the SDK does)
+        to the same vbucket as '<prefix>0'.
+        Returns (vbucket, keys)
+        """
+        num_vbs = self.bucket.numVBuckets
+        if not num_vbs:
+            self.fail(f"numVBuckets not known for {self.bucket.name}")
+
+        def vbucket_of(key):
+            return ((zlib.crc32(key.encode()) >> 16) & 0x7fff) \
+                & (num_vbs - 1)
+
+        target_vb = vbucket_of(f"{prefix}0")
+        keys = []
+        index = 0
+        while len(keys) < num_keys:
+            key = f"{prefix}{index}"
+            if vbucket_of(key) == target_vb:
+                keys.append(key)
+            index += 1
+        return target_vb, keys
+
+    @staticmethod
+    def _range_scan_throttled_stat(mc_client):
+        """
+        Highest per-scan 'throttled' count (MB-74302,
+        'vb_<vb>:<uuid>:throttled') across the bucket's live range scans,
+        0 if none reports it
+        """
+        stats = mc_client.stats("range-scans")
+        return max([int(value) for key, value in stats.items()
+                    if key.endswith(":throttled")], default=0)
+
+    def test_range_scan_throttled_within_continue(self):
+        """
+        Ref: MB-74302
+        A RangeScanContinue was checked for throttling only on arrival and
+        charged at its end, so a single continue could read a whole
+        vbucket far beyond the bucket's limit. With the fix, the throttle
+        is checked again each time the send buffer
+        (range_scan_read_buffer_send_size, 8KiB) fills, and a throttled
+        continue ends with range_scan_more for the client to resume.
+
+        All docs go to one vbucket and the scan's batch limits are above
+        the data size, so one continue could read every doc. Validates,
+         1. The scan returns every doc exactly once across the resumes
+         2. The bucket was throttled (throttle_count_total moved)
+         3. Read units charged between stat samples stay within the hard
+            limit. Before the fix the vbucket's whole read cost (~1 RU per
+            doc) was charged by a single continue
+         4. The per-scan 'throttled' stat is reported while the scan runs
+
+        Docs are loaded before the hard limit is lowered to
+        'scan_hard_limit', as each ~4KB doc costs 4 WU to write
+        """
+        scan_hard_limit = self.input.param("scan_hard_limit", 20)
+        num_docs = self.input.param("num_scan_docs", 256)
+        scan_timeout = self.input.param("scan_timeout", 300)
+        # vbuckets scanned in parallel, the others are empty
+        scan_concurrency = self.input.param("scan_concurrency", 16)
+        # Under read_unit_size (4KiB), so each doc costs 1 RU to scan
+        doc_size = 4000
+        # 8KiB buffer = 2 RU of overshoot per throttle check
+        overshoot = 2
+        prefix = "range_scan_doc_"
+        bucket_name = self.bucket.name
+
+        node_capacity, reserved, hard_limit = \
+            self._throttle_limits(self.bucket)
+        if reserved is None or reserved >= scan_hard_limit:
+            self.fail(f"Needs throttleReserved under "
+                      f"scan_hard_limit={scan_hard_limit}, found {reserved}")
+        if hard_limit is not None and hard_limit < num_docs * 4:
+            self.fail(f"throttleHardLimit={hard_limit} would throttle the "
+                      "doc load, leave it unset")
+
+        target_vb, keys = self._keys_in_one_vbucket(prefix, num_docs)
+        self.log.info(f"Loading {num_docs} docs into vbucket {target_vb}")
+        client = SDKClient(self.cluster, self.bucket)
+        mc_client = MemcachedClientHelper.direct_client(self.cluster.master,
+                                                        self.bucket)
+        try:
+            for key in keys:
+                # Random letters keep the value incompressible
+                value = "".join(choice(string.ascii_letters)
+                                for _ in range(doc_size))
+                result = client.crud("create", key, value)
+                if not result.get("status"):
+                    self.fail(f"Failed to load {key}: {result.get('error')}")
+            # Range scans read from disk
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         [self.bucket])
+
+            status, content = self.bucket_rest.edit_bucket(
+                bucket_name, {Bucket.throttleHardLimit: scan_hard_limit})
+            self.assertTrue(status,
+                            f"Failed to set throttleHardLimit: {content}")
+            self._wait_for_throttle_limits(
+                self.bucket, (node_capacity, reserved, scan_hard_limit))
+
+            scan_output = {}
+
+            def run_scan():
+                # Batch limits over the data size let one continue read
+                # the whole vbucket, as before the fix
+                scan_output["result"] = client.prefix_range_scan(
+                    prefix, timeout=scan_timeout, return_ids=True,
+                    batch_byte_limit=10 * num_docs * doc_size,
+                    batch_item_limit=10 * num_docs,
+                    concurrency=scan_concurrency)[0]
+
+            def sample():
+                # One STAT round trip over memcached, so samples stay close
+                # enough to catch a whole-vbucket charge in one window.
+                # The stats are read somewhere within the call, so keep both
+                # ends of it
+                before = time.time()
+                stats = mc_client.stats()
+                return (int(stats["ru_total"]) + int(stats["wu_total"]),
+                        int(stats["throttle_count_total"])
+                        + int(stats["reject_count_total"]),
+                        before, time.time())
+
+            samples = [sample()]
+            max_scan_throttled = 0
+            scan_thread = threading.Thread(target=run_scan)
+            scan_thread.start()
+            while scan_thread.is_alive():
+                max_scan_throttled = max(
+                    max_scan_throttled,
+                    self._range_scan_throttled_stat(mc_client))
+                samples.append(sample())
+            scan_thread.join()
+            samples.append(sample())
+        finally:
+            client.close()
+            mc_client.close()
+
+        result = scan_output["result"]
+        self.log.info(f"Scan :: count={result['count']}, "
+                      f"time_taken={result['time_taken']:.1f}s, "
+                      f"exception={result['exception']}")
+        self.assertTrue(result["status"],
+                        f"Range scan failed: {result['exception']}")
+        self.assertEqual(len(result["ids"]), len(set(result["ids"])),
+                         "Range scan returned duplicate keys")
+        self.assertEqual(sorted(result["ids"]), sorted(keys),
+                         "Range scan did not return every loaded doc")
+
+        # Two reads were at most (end of the later call - start of the
+        # earlier one) apart, which touches at most ceil(secs) + 1 ticks
+        worst = None
+        for (units_0, _, start_0, _), (units_1, _, _, end_1) in zip(
+                samples, samples[1:], strict=False):
+            span = end_1 - start_0
+            allowed = (scan_hard_limit + overshoot) * (math.ceil(span) + 1)
+            charged = units_1 - units_0
+            self.log.debug(f"Charged {charged} units within {span:.1f}s, "
+                           f"allowed {allowed}")
+            if worst is None or charged / allowed > worst[0] / worst[1]:
+                worst = (charged, allowed, span)
+        self.log.info(f"Worst window :: charged={worst[0]} units within "
+                      f"{worst[2]:.1f}s, allowed={worst[1]}")
+        self.assertLessEqual(
+            worst[0], worst[1],
+            f"Range scan charged {worst[0]} units within {worst[2]:.1f}s at "
+            f"throttleHardLimit={scan_hard_limit}, so a continue read past "
+            "the limit before the throttle was checked")
+
+        self.assertGreater(
+            max_scan_throttled, 0,
+            "Per-scan 'throttled' stat not seen in range-scans stats")
+        self.assertGreater(
+            samples[-1][1], samples[0][1],
+            f"Range scan reading ~{num_docs} RU was never throttled at "
+            f"throttleHardLimit={scan_hard_limit}")
