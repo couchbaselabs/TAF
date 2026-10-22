@@ -183,6 +183,8 @@ class FusionMonitorUtil():
     # reliable way to estimate that duration up front, so this is just a
     # generous fixed ceiling rather than something derived per-restore.
     DEFAULT_RESTORE_TIMEOUT_SECONDS = 8 * 3600  # 8 hours
+    # Max concurrent SSM cbstats calls in run_cbstats_on_all_nodes().
+    CBSTATS_MAX_WORKERS = 16
 
     def get_current_instance_ids(self, cluster):
         """
@@ -201,10 +203,15 @@ class FusionMonitorUtil():
           the restored topology, so "any running instance" isn't enough to
           know the new ones have actually replaced the old ones yet.
         """
-        filters = self.fusion_aws_util._cluster_filter(
-            cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['couchbase']}])
-        instances = self.fusion_aws_util.list_instances(filters=filters, suppress_log=True)
+        instances = self.fusion_aws_util.list_instances(filters=self._server_node_filter(cluster), suppress_log=True)
         return [i.get('InstanceId') for i in instances]
+
+    def _server_node_filter(self, cluster):
+        """EC2 filter for the cluster's Couchbase Server nodes only. Fusion
+        accelerators carry the same couchbase-cloud-cluster-id tag but have
+        couchbase-cloud-function=fusion-accelerator."""
+        return self.fusion_aws_util._cluster_filter(
+            cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['couchbase']}])
 
     def set_memcached_global_setting(self, cluster, key, value):
         """
@@ -454,7 +461,7 @@ class FusionMonitorUtil():
 
         try:
             instances = self.fusion_aws_util.list_instances(
-                self.fusion_aws_util._cluster_filter(cluster.id),
+                self._server_node_filter(cluster),
                 suppress_log=True
             )
         except Exception as e:
@@ -555,7 +562,7 @@ class FusionMonitorUtil():
         """
         self.set_admin_credentials(cluster)
         instances = self.fusion_aws_util.list_instances(
-            self.fusion_aws_util._cluster_filter(cluster.id),
+            self._server_node_filter(cluster),
             log="Couchbase Cloud Cluster", suppress_log=True
         )
 
@@ -566,7 +573,7 @@ class FusionMonitorUtil():
             f"-p '{cluster.master.rest_password}' "
             f"| grep {stat_key}"
         )
-        self.log.info(f"Running cbstats command: {cmd}")
+        self.log.info(f"Running cbstats command: {cmd.replace(cluster.master.rest_password, '****')}")
 
         def run_on_instance(instance):
             instance_id = instance.get('InstanceId')
@@ -591,7 +598,8 @@ class FusionMonitorUtil():
 
         from concurrent.futures import ThreadPoolExecutor, as_completed
         rows = []
-        with ThreadPoolExecutor(max_workers=len(instances) or 1) as executor:
+        # Bounded so a large cluster doesn't trip the SSM API rate limit.
+        with ThreadPoolExecutor(max_workers=min(len(instances), self.CBSTATS_MAX_WORKERS) or 1) as executor:
             futures = {executor.submit(run_on_instance, inst): inst for inst in instances}
             for future in as_completed(futures):
                 rows.append(future.result())
@@ -606,7 +614,7 @@ class FusionMonitorUtil():
         :param find_master_func: Optional callback function to find master node (signature: find_master_func(tenant, cluster))
         """
         instances = self.fusion_aws_util.list_instances(
-            self.fusion_aws_util._cluster_filter(cluster.id),
+            self._server_node_filter(cluster),
             log="Couchbase Cloud Cluster"
         )
         try:
@@ -617,7 +625,7 @@ class FusionMonitorUtil():
                 server_vb_map, server_list, num_replica = BucketHelper(cluster.master).get_vbucket_map_and_server_list(bucket.name)
                 cluster.fusion_uploader_dict[bucket.name] = dict()
                 cmd = f"curl -sk -u '{cluster.master.rest_username}:{cluster.master.rest_password}' --data 'ns_bucket:get_fusion_uploaders(\"{bucket.name}\").' https://localhost:18091/diag/eval"
-                self.log.info(f"Running command to get fusion uploader map for bucket {bucket.name} on cluster {cluster.id}: {cmd}")
+                self.log.info(f"Running command to get fusion uploader map for bucket {bucket.name} on cluster {cluster.id}: {cmd.replace(cluster.master.rest_password, '****')}")
                 result = self.fusion_aws_util.ec2.run_shell_command_large_output(
                     instances[0].get('InstanceId'), cmd)
                 stdout = result.get('stdout')
