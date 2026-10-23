@@ -469,7 +469,13 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1
         if len(tenants) != len(cluster_ids):
-            tenants = [tenants[0]] * len(cluster_ids)
+            # cluster_ids are grouped by tenant in tenant order, with the
+            # same number of clusters per tenant: [a1,a2,a3,b1,b2,b3,...]
+            per_tenant, extra = divmod(len(cluster_ids), len(tenants))
+            if extra:
+                self.fail("%s cluster_ids can't be split evenly across %s tenants"
+                          % (len(cluster_ids), len(tenants)))
+            tenants = [t for t in tenants for _ in range(per_tenant)]
         conf_file = self.input.param("conf_file", "")
         conf_label = conf_file.split("/")[-1].rsplit(".", 1)[0] if conf_file else ""
         for i, cluster_id in enumerate(cluster_ids):
@@ -493,6 +499,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             self.__populate_cluster_info(tenants[i], cluster_id, servers, cluster_srv,
                                          cluster_name, cluster_info)
             self.__populate_cluster_buckets(tenants[i], self.cb_clusters[cluster_name])
+            cluster_index += 1
 
     def __populate_cluster_info(self, tenant, cluster_id, servers, cluster_srv,
                                 cluster_name, service_config):
