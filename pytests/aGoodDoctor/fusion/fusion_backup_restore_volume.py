@@ -393,7 +393,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # wait_until_fusion_enabled never even started until the CP-level
         # restore job reported "complete", hiding it from view for the
         # entire (often 30-60+ minute) restore-job duration.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        # Not a "with" block: its exit joins every waiter, so a failed restore
+        # would sit behind the 8h healthy/fusion waits (build 1043 polled for
+        # 7h). shutdown(wait=False) in the finally lets the failure surface.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        try:
             restore_future = executor.submit(
                 CapellaAPI.wait_for_cloud_snapshot_restore_to_complete,
                 self.pod, tenant, project_id, target_cluster.id, restore_id,
@@ -423,18 +427,24 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 timeout=self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS,
             )
 
-            ok = restore_future.result()
-            self.assertTrue(
-                ok,
-                f"Snapshot restore {restore_id} did not complete on target {target_cluster.id}",
-            )
-            self.log.info(f"{tgt_label} Snapshot restore {restore_id} complete on {target_cluster.id}")
-
-            self.assertTrue(
-                deployment_job_future.result(),
-                f"{tgt_label} CP deployment job for restore {restore_id} on "
-                f"{target_cluster.id} failed -- see per-attempt errors logged above",
-            )
+            # Whichever of the restore and its deployment job fails first
+            # fails the test; don't wait for the other one.
+            pending = {restore_future, deployment_job_future}
+            while pending:
+                done, pending = concurrent.futures.wait(
+                    pending, return_when=concurrent.futures.FIRST_COMPLETED)
+                if restore_future in done:
+                    self.assertTrue(
+                        restore_future.result(),
+                        f"Snapshot restore {restore_id} did not complete on target {target_cluster.id}",
+                    )
+                    self.log.info(f"{tgt_label} Snapshot restore {restore_id} complete on {target_cluster.id}")
+                if deployment_job_future in done:
+                    self.assertTrue(
+                        deployment_job_future.result(),
+                        f"{tgt_label} CP deployment job for restore {restore_id} on "
+                        f"{target_cluster.id} failed -- see per-attempt errors logged above",
+                    )
 
             # Guest-volume checks only after the restore itself is confirmed
             # successful -- this happens regardless of whether
@@ -507,6 +517,8 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
             if fusion_future is not None:
                 fusion_future.result()
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
         # Refresh target_cluster's node list from the CP — an EBS snapshot
         # restore replaces the target's entire node topology to match
@@ -803,7 +815,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             # fusion_future here (unlike _restore_snapshot_backup): fusion isn't
             # enabled on this cluster yet at clone time -- that only happens
             # afterward, in _configure_secondary_fusion().
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            # Not a "with" block, for the same reason as in
+            # _restore_snapshot_backup(): a failed restore must not wait out
+            # the healthy wait.
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+            try:
                 restore_future = executor.submit(
                     CapellaAPI.wait_for_cloud_snapshot_restore_to_complete,
                     self.pod, tenant, project_id, new_cluster_id, restore_id,
@@ -821,6 +837,8 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     f"(new cluster {new_cluster_id})",
                 )
                 healthy_future.result()
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
         finally:
             fusion_status_stop_event.set()
             fusion_status_thread.join(timeout=5)

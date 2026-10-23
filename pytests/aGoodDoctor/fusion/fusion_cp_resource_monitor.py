@@ -1829,6 +1829,11 @@ class FusionCPResourceMonitor:
             ts = match.group(1) + match.group(2)
         return datetime.datetime.fromisoformat(ts)
 
+    # CP job statuses (internal/jobs/status.go) that are final failures, unlike
+    # "failed" which CP may requeue.
+    TERMINAL_FAILED_JOB_STATUSES = ("skippedDueToFatal", "killed",
+                                    "skippedDueToCircuitBreaker")
+
     def wait_for_deployment_job(self, pod, tenant, cluster, since_time,
                                  poll_interval=30, timeout=3600):
         """
@@ -1843,7 +1848,9 @@ class FusionCPResourceMonitor:
         Logs each new per-attempt error the instant it appears in the API's
         rolling last-10-errors window (rather than only being visible via
         after-the-fact Datadog log archaeology), and returns True as soon as
-        the matched job reaches "complete". A "failed" status is logged but
+        the matched job reaches "complete", and False as soon as it reaches a
+        terminal failure status (skippedDueToFatal, killed,
+        skippedDueToCircuitBreaker). A "failed" status is logged but
         not treated as terminal on its own -- CP can requeue the same job ID
         after a transient failure (e.g. a rebalance-acceleration lock
         collision) and carry it through to completion. The wait instead ends
@@ -1921,6 +1928,19 @@ class FusionCPResourceMonitor:
                                 f"{attempt} failed at {err.get('occurredAt')}: "
                                 f"{err.get('error')}"
                             )
+                    # A failing pre/post step (e.g. RestoreProvisionedCluster)
+                    # keeps its own errors; the job's top-level errors and
+                    # attempts stay empty.
+                    for step in (job.get("pre") or []) + (job.get("post") or []):
+                        for err in step.get("errors") or []:
+                            key = (step.get("type"), err.get("attempt"))
+                            if key not in seen_attempts:
+                                seen_attempts.add(key)
+                                self.log.error(
+                                    f"[{cluster.id}] Deployment job {job['id']} step "
+                                    f"{step.get('type')} attempt {err.get('attempt')} "
+                                    f"failed at {err.get('occurredAt')}: {err.get('error')}"
+                                )
 
                     attempts = job.get("attempts") or 0
                     status = job.get("status")
@@ -1943,6 +1963,15 @@ class FusionCPResourceMonitor:
                             f"successfully after {attempts} attempt(s)"
                         )
                         return True
+                    if status in self.TERMINAL_FAILED_JOB_STATUSES:
+                        # Unlike "failed", CP never requeues these (build 1043:
+                        # restore job 81653816 sat at skippedDueToFatal for 7h
+                        # while this kept polling).
+                        self.log.error(
+                            f"[{cluster.id}] Deployment job {job['id']} ended with "
+                            f"status={status} -- giving up, see errors logged above"
+                        )
+                        return False
                     if status == "failed":
                         # Not treated as terminal on its own: build 827's job
                         # 1c04045c-5eb1-4ec7-9f08-472470ead509 reported
