@@ -1398,6 +1398,37 @@ class OPD:
         else:
             self._restore_using_continuous_backup()
 
+    def _assert_cbbackupmgr_succeeded(self, output, error, operation):
+        """
+        CbBackupMgr's config/backup/merge/restore only log failures and
+        return (output, error), so an unchecked call lets a missing repo or a
+        failed backup surface much later -- as a restore that finds nothing
+        to restore, or as a doc-count mismatch once monitoring times out.
+        Fail here with the cbbackupmgr output instead.
+
+        Safe against a healthy run's output: cbbackupmgr prints its
+        per-bucket summary with '| Received | Errored | Skipped |' header
+        cells, which start with '|' rather than 'error'.
+        """
+        error_lines = [line for line in (output or [])
+                       if line.strip().lower().startswith("error")]
+        if error or not output or error_lines:
+            self.fail(f"cbbackupmgr {operation} failed. "
+                      f"stdout: {output}, stderr: {error}")
+
+    def _assert_cbcontbk_restore_succeeded(self, output, error, timestamp):
+        """
+        CbContBk.restore only logs failures and returns (output, error), so
+        an unchecked call lets a failed or partial restore surface much later
+        as a doc-count mismatch, after monitoring has burned restore_timeout.
+        Fail here with the cbcontbk output instead.
+        """
+        error_lines = [line for line in (output or [])
+                       if line.strip().lower().startswith("error")]
+        if error or not output or error_lines:
+            self.fail(f"cbcontbk restore to timestamp {timestamp} failed. "
+                      f"stdout: {output}, stderr: {error}")
+
     def _restore_using_cbbackupmgr(self):
         """
         Backup, merge and restore are per-cluster operations -- the repo is
@@ -1416,6 +1447,9 @@ class OPD:
             self.backup_archive, self.backup_repo,
             cluster_host=self.backup_cluster_host)
         self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+        # Fail before the flush below, which would otherwise empty the
+        # buckets with no good backup to restore them from.
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # merge_all_backups() raises for an object-store archive, which
         # cbbackupmgr cannot merge. Skipping the merge still leaves a
@@ -1424,6 +1458,9 @@ class OPD:
             output, error = self.drBackup.merge_all_backups(
                 archive=self.backup_archive, repo=self.backup_repo)
             self.log.info(f"Merge Output: {output}\n\n Merge Error: {error}")
+            # (None, None) means fewer than two backups -- nothing to merge
+            if (output, error) != (None, None):
+                self._assert_cbbackupmgr_succeeded(output, error, "merge")
         else:
             self.log.info("Skipping merge: cbbackupmgr cannot merge an "
                           "object-store archive (%s)"
@@ -1438,6 +1475,7 @@ class OPD:
             self.backup_archive, self.backup_repo,
             cluster_host=self.backup_cluster_host, threads=60)
         self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
+        self._assert_cbbackupmgr_succeeded(output, error, "restore")
 
         # The single restore above repopulates every bucket concurrently, so
         # the buckets share one deadline rather than getting restore_timeout
@@ -1496,56 +1534,55 @@ class OPD:
         self.sleep(30, "Sleep after flushing buckets, before triggering restore")
 
         buckets_by_name = {bucket.name: bucket for bucket in self.cluster.buckets}
-        try:
-            for timestamp, items_per_bucket in timestamps:
-                self.log.info("Restoring backup with timestamp: %s "
-                              "(expected items: %s)"
-                              % (timestamp, items_per_bucket))
-                # One restore per timestamp: cbcontbk replays every bucket in
-                # the repo, so this is per-cluster and not per-bucket.
-                output, error = self.drContBackup.trigger_restore(
-                    cluster=self.cluster,
-                    archive=self.backup_archive,
-                    repo=self.backup_repo,
-                    cont_backup_location=self.continuous_backup_location,
-                    staging_dir="/data/tmp",
-                    timestamp=timestamp,
-                    threads=60)
-                self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
+        for timestamp, items_per_bucket in timestamps:
+            self.log.info("Restoring backup with timestamp: %s "
+                            "(expected items: %s)"
+                            % (timestamp, items_per_bucket))
+            # One restore per timestamp: cbcontbk replays every bucket in
+            # the repo, so this is per-cluster and not per-bucket.
+            output, error = self.drContBackup.trigger_restore(
+                cluster=self.cluster,
+                archive=self.backup_archive,
+                repo=self.backup_repo,
+                cont_backup_location=self.continuous_backup_location,
+                staging_dir="/data/tmp",
+                timestamp=timestamp,
+                threads=60)
+            self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
+            self._assert_cbcontbk_restore_succeeded(output, error,
+                                                    timestamp)
 
-                # Monitoring is per-bucket and sequential. The buckets share
-                # one deadline because the restore above repopulates them
-                # concurrently -- giving each its own restore_timeout would
-                # let a hung restore burn N * restore_timeout. The 60s floor
-                # keeps a bucket that is already at its count from being
-                # reported as failed without a single poll.
-                deadline = time.time() + self.restore_timeout
-                failed = list()
-                for bucket_name, items in items_per_bucket.items():
-                    bucket = buckets_by_name.get(bucket_name)
-                    if bucket is None:
-                        failed.append("%s no longer exists on the cluster"
-                                      % bucket_name)
-                        continue
-                    result = self.drContBackup.monitor_restore(
-                        self.bucket_util, cluster=self.cluster, bucket=bucket,
-                        items=items,
-                        timeout=max(deadline - time.time(), 60))
-                    if not result:
-                        failed.append("%s did not reach %s items"
-                                      % (bucket_name, items))
-                self.assertFalse(
-                    failed,
-                    "Restore failed for backup with timestamp %s: %s"
-                    % (timestamp, ", ".join(failed)))
-        finally:
-            # Leave continuous backup on even if a restore failed, so the
-            # buckets are not silently left unprotected for the rest of the run.
-            for bucket in self.cluster.buckets:
-                self.toggle_continuous_backup(bucket, enable=True)
+            # Monitoring is per-bucket and sequential. The buckets share
+            # one deadline because the restore above repopulates them
+            # concurrently -- giving each its own restore_timeout would
+            # let a hung restore burn N * restore_timeout. The 60s floor
+            # keeps a bucket that is already at its count from being
+            # reported as failed without a single poll.
+            deadline = time.time() + self.restore_timeout
+            failed = list()
+            for bucket_name, items in items_per_bucket.items():
+                bucket = buckets_by_name.get(bucket_name)
+                if bucket is None:
+                    failed.append("%s no longer exists on the cluster"
+                                    % bucket_name)
+                    continue
+                result = self.drContBackup.monitor_restore(
+                    self.bucket_util, cluster=self.cluster, bucket=bucket,
+                    items=items,
+                    timeout=max(deadline - time.time(), 60))
+                if not result:
+                    failed.append("%s did not reach %s items"
+                                    % (bucket_name, items))
+            self.assertFalse(
+                failed,
+                "Restore failed for backup with timestamp %s: %s"
+                % (timestamp, ", ".join(failed)))
 
-            # Print stats after restore
-            self.print_stats(self.cluster)
+        for bucket in self.cluster.buckets:
+            self.toggle_continuous_backup(bucket, enable=True)
+
+        # Print stats after restore
+        self.print_stats(self.cluster)
 
     def restore_with_workloads_paused(self):
         """
@@ -2266,9 +2303,10 @@ class OPD:
         # configure_backup() wipes the archive before creating the repo, so it
         # subsumes provisioning for every backing store.
         self.drBackup.cleanup_archive(self.backup_archive)
-        self.drBackup.configure_backup(self.backup_archive, self.backup_repo,
-                                       [], [],
-                                       encrypted=self.ear_bk)
+        output, error = self.drBackup.configure_backup(
+            self.backup_archive, self.backup_repo, [], [],
+            encrypted=self.ear_bk)
+        self._assert_cbbackupmgr_succeeded(output, error, "config")
 
     def enable_continuous_backup_on_buckets(self):
         """
@@ -2398,6 +2436,7 @@ class OPD:
                 output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
                                                     cluster_host=self.backup_cluster_host)
                 self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                self._assert_cbbackupmgr_succeeded(output, error, "backup")
             elif step == "record_timestamp" and self.cont_bkp_test:
                 self.sleep(60 * self.continuous_backup_interval * 2, "Sleep for a while before recording timestamp for continuous backup")
                 self.record_timestamp_for_continuous_backup(self.cluster,
