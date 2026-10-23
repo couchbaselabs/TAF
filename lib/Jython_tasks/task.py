@@ -3523,9 +3523,17 @@ class StatsWaitTask(Task):
             for cbstat_obj in self.cbstatObjList:
                 cbstat_obj.disconnect()
         if time.time() > timeout:
+            # set_exception() raises, so the result has to be recorded
+            # before it. Task.__init__ already defaults result to False,
+            # but set it explicitly so the failure is not implicit.
+            self.set_result(False)
             self.set_exception("Could not verify stat {} within timeout {}"
                                .format(self.stat, self.timeout))
 
+        # Reached only when the comparison matched (self.stop) without the
+        # task raising -- every error path above either raises out of call()
+        # or falls into the timeout branch, leaving result False.
+        self.set_result(True)
         self.complete_task()
 
     def _get_all_stats_and_compare(self):

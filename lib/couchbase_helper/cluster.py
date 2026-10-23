@@ -981,7 +981,8 @@ class ServerTasks(object):
             boolean - Whether or not the correct stats state was seen"""
         _task = self.async_wait_for_stats(cluster, bucket, param, stat,
                                           comparison, value, timeout)
-        return self.jython_task_manager.get_task_result(_task)
+        self.jython_task_manager.get_task_result(_task)
+        return _task.result
 
     def shutdown(self, force=False):
         self.jython_task_manager.shutdown(force)

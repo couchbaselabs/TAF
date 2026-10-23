@@ -3898,12 +3898,17 @@ class BucketUtils(ScopeUtils):
         try:
             for task in stats_tasks:
                 self.task_manager.get_task_result(task)
-        except Exception as e:
-            self.log.error("{0}".format(e))
+                self.assertTrue(
+                    task.result,
+                    "Unable to get expected stats for bucket %s from the "
+                    "selected node" % bucket.name)
+        finally:
+            # Must run on both paths: a raised assert would otherwise leave
+            # the remaining stats tasks running. Cheap on finished tasks --
+            # get_task_result() has already popped the future, so
+            # stop_task() returns immediately.
             for task in stats_tasks:
                 self.task_manager.stop_task(task)
-            self.log.error("Unable to get expected stats from the "
-                           "selected node")
 
     def verify_stats_all_buckets(self, cluster, items, timeout=1200,
                                  num_zone=1, buckets=None):
@@ -3950,6 +3955,10 @@ class BucketUtils(ScopeUtils):
                     timeout=timeout))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+            self.assertTrue(
+                task.result,
+                "Stat '%s' did not reach the expected value for bucket %s"
+                % (stat_name, bucket.name))
 
     def _wait_for_stats_all_buckets(self, cluster, buckets, expected_val=0,
                                     comparison_condition='==',
@@ -3990,6 +3999,10 @@ class BucketUtils(ScopeUtils):
                 time.sleep(1)
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
+            self.assertTrue(
+                task.result,
+                "Stat '%s' did not reach the expected value on all buckets"
+                % stat_name)
 
     def validate_active_replica_item_count(self, cluster, bucket, timeout=300):
         end_time = time.time() + timeout
