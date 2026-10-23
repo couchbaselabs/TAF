@@ -332,7 +332,7 @@ class CBASError:
         },
         {
             "id": "kv_bucket_does_not_exist",
-            "msg": 'Connect link failed {\"Default.Local.%s\" : \"Bucket (%s) does not exist\"}',
+            "msg": 'Connect link failed {\"Default.Local.%s\":\"Bucket (%s) does not exist\"}',
             "code": 22001,
             "query": "connect link Local"
         },

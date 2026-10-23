@@ -535,6 +535,11 @@ class CBASBucketOperations(CBASBaseTest):
         shell.reboot_server_and_wait_for_cb_run(self.cluster_util,
                                                 self.cluster.master)
 
+        # Wait for CBAS service to recover after server restart
+        self.log.info('Waiting for CBAS service to recover')
+        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
+            self.fail("Analytics service failed to come up after server restart")
+
         dataset = self.cbas_util.list_all_dataset_objs()[0]
         self.log.info('Validate document count')
         count_n1ql = self.cluster.rest.query_tool(
