@@ -102,6 +102,21 @@ class UpgradeTests(UpgradeBase):
             self.log_failure(f"cbcontbk restore to timestamp {timestamp} failed. "
                              f"stdout: {output}, stderr: {error}")
 
+    def _assert_backup_succeeded(self, output, error, operation):
+        """CbBackupMgr.create_repo/backup only log failures and return
+        (output, error), so unchecked calls let a missing archive or a
+        failed initial backup surface much later as a restore that finds
+        nothing to restore. Fail here with the cbbackupmgr output instead.
+
+        Safe against a healthy run's output: cbbackupmgr prints its
+        per-bucket summary with '| Received | Errored | Skipped |' header
+        cells, which start with '|' rather than 'error'."""
+        error_lines = [line for line in (output or [])
+                       if line.strip().lower().startswith("error")]
+        if error or not output or error_lines:
+            self.log_failure(f"cbbackupmgr {operation} failed. "
+                             f"stdout: {output}, stderr: {error}")
+
     def __play_with_collection(self):
         # MB-44092 - Collection load not working with pre-existing connections
         self.cluster.sdk_client_pool = SDKClientPool()
@@ -1656,12 +1671,15 @@ class UpgradeTests(UpgradeBase):
         # for a local/NFS archive, where the flag is simply not appended.
         obj_staging_dir = self.backup_location.obj_staging_dir
         self.log.info("Creating backup repository in %s" % self.backup_archive_dir)
-        self.backup_mgr.create_repo(self.backup_archive_dir,
-                                    self.backup_repo_name,
-                                    obj_staging_dir=obj_staging_dir)
+        output, error = self.backup_mgr.create_repo(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=obj_staging_dir)
+
         self.log.info("Performing initial backup using CbBackupMgr")
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=obj_staging_dir)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=obj_staging_dir)
+        self._assert_backup_succeeded(output, error, "backup")
 
         self.sleep(self.continuous_backup_interval * 60 * 2,
                    f"Waiting for {self.continuous_backup_interval * 2} minutes after initial backup")
