@@ -1703,8 +1703,13 @@ class UpgradeTests(UpgradeBase):
 
     def _verify_continuous_backup_restore(self):
         """
-        Disable continuous backup, flush buckets, and restore from all captured
-        timestamps sequentially, verifying item counts at each restore point.
+        Disable continuous backup, then restore each captured timestamp in
+        turn and verify the item counts recorded alongside it.
+
+        Every restore starts from empty buckets. Restoring on top of the
+        previous restore leaves a bucket holding the union of both points,
+        so the resulting count cannot be attributed to a single timestamp --
+        the buckets are flushed again ahead of each restore instead.
         """
         self.PrintStep("Continuous backup verification: disable, flush, and restore")
 
@@ -1717,12 +1722,7 @@ class UpgradeTests(UpgradeBase):
                     continuous_backup_enabled="false")
                 self.log.info("Continuous backup disabled for bucket: %s" % bucket.name)
 
-        # Flush all buckets
-        self.log.info("Flushing all buckets before restore verification")
-        for bucket in self.cluster.buckets:
-            flush_status = self.bucket_util.flush_bucket(self.cluster, bucket)
-            self.assertTrue(flush_status, f"Failed to flush bucket {bucket.name}")
-        self.sleep(30, "Waiting after bucket flush")
+        no_ssl_verify = self.tls_level == "strict"
 
         # Restore from all timestamps in sequential fashion and verify item counts
         self.log.info("Restoring from %d timestamps sequentially" % len(self.pitr_timestamps))
@@ -1730,24 +1730,28 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Restoring from timestamp %d: %s (expected items: %s)"
                           % (i + 1, timestamp, bucket_item_counts))
 
-            # Restore using cbcontbk for each bucket. cbcontbk reads the
+            # Flush all buckets
+            self.log.info("Flushing all buckets before restore verification")
+            for bucket in self.cluster.buckets:
+                flush_status = self.bucket_util.flush_bucket(self.cluster, bucket)
+                self.assertTrue(flush_status, f"Failed to flush bucket {bucket.name}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self.sleep(30, "Waiting after bucket flush")
+
+            # One cbcontbk call restores every bucket held in the backup:
+            # with no --map-data each is restored under its own name, so
+            # there is nothing to map per bucket. cbcontbk reads both the
             # continuous backup location and the traditional archive, so an
             # object-store backing needs the staging dir here too.
-            for bucket in self.cluster.buckets:
-                if bucket.storageBackend == Bucket.StorageBackend.magma:
-                    no_ssl_verify = True if self.tls_level == "strict" \
-                        else False
+            output, error = self.cont_bk_mgr.restore(
+                self.backup_archive_dir, self.backup_repo_name,
+                location=self.continuous_backup_location,
+                temp_dir="/data/tmp",
+                timestamp=timestamp,
+                obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
+                no_ssl_verify=no_ssl_verify)
 
-                    output, error = self.cont_bk_mgr.restore(
-                        self.backup_archive_dir, self.backup_repo_name,
-                        location=self.continuous_backup_location,
-                        temp_dir="/data/tmp",
-                        timestamp=timestamp,
-                        map_data=f"{bucket.name}={bucket.name}",
-                        obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
-                        no_ssl_verify=no_ssl_verify)
-
-                    self._assert_restore_succeeded(output, error, timestamp)
+            self._assert_restore_succeeded(output, error, timestamp)
 
             # Wait for stats and verify item count
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
