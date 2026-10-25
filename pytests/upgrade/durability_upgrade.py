@@ -19,6 +19,7 @@ from StatsLib.StatsOperations import StatsHelper
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_constants import DocLoading, CbServer
+from table_view import TableView
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from collections_helper.collections_spec_constants import MetaCrudParams, MetaConstants
@@ -116,6 +117,188 @@ class UpgradeTests(UpgradeBase):
         if error or not output or error_lines:
             self.log_failure(f"cbbackupmgr {operation} failed. "
                              f"stdout: {output}, stderr: {error}")
+
+    def _capture_item_counts_per_collection(self, label):
+        """
+        Snapshot the item count of every collection of every bucket.
+
+        :returns: {bucket_name: {scope_name: {collection_name: items}}}
+
+        A bucket-level total cannot tell a restore that brought the right
+        number of documents back from one that put them in the wrong
+        collections, or that lost a collection and made the difference up
+        elsewhere. The per-collection breakdown pins both down.
+
+        Counts come from `cbstats collections` summed over the KV nodes by
+        get_doc_count_per_collection(), which is the same source the
+        framework uses to set collection.num_items, so the numbers are
+        directly comparable to the framework's own bookkeeping.
+
+        The _system scope is skipped -- it is server-managed and is not part
+        of what continuous backup restores.
+        """
+        item_counts = dict()
+        for bucket in self.cluster.buckets:
+            collection_data = self.bucket_util.get_doc_count_per_collection(
+                self.cluster, bucket)
+            bucket_counts = dict()
+            for scope_name, collections in collection_data.items():
+                # get_doc_count_per_collection() returns scalar entries
+                # ('count', 'manifest_uid') alongside the per-scope dicts
+                if not isinstance(collections, dict) \
+                        or scope_name == CbServer.system_scope:
+                    continue
+                bucket_counts[scope_name] = {
+                    c_name: c_data["items"]
+                    for c_name, c_data in collections.items()}
+            item_counts[bucket.name] = bucket_counts
+
+        self._log_item_counts_per_collection(item_counts, label)
+        return item_counts
+
+    @staticmethod
+    def _bucket_total_from_collections(bucket_counts):
+        """Sum of every collection of one bucket in a captured snapshot."""
+        return sum(items
+                   for collections in bucket_counts.values()
+                   for items in collections.values())
+
+    def _cross_check_bucket_total(self, item_counts, b_name, label):
+        """
+        Compare the bucket total reported by REST against the sum of the
+        per-collection counts, and return the REST figure.
+
+        The two come from different places and are worth holding against
+        each other: the per-collection numbers are `cbstats collections`
+        read live from each KV node, while get_buckets_item_count() reads
+        basicStats.itemCount, an ns_server aggregate of sampled per-node
+        stats, less the _system scope -- which is also what the capture
+        leaves out, so the two are directly comparable.
+
+        A divergence is logged as a warning rather than recorded as a
+        failure: the two are sampled at slightly different instants, and
+        basicStats.itemCount has been observed drifting on a quiesced
+        cluster, so it is a signal about the measurement rather than proof
+        that the data is wrong. The per-collection comparison is what
+        decides pass or fail.
+        """
+        collection_total = self._bucket_total_from_collections(
+            item_counts[b_name])
+        rest_total = self.bucket_util.get_buckets_item_count(
+            self.cluster, b_name)
+        if rest_total != collection_total:
+            self.log.warning(
+                "Bucket %s item count %s disagrees between sources: REST "
+                "reports %s, sum of collections is %s (difference %s)"
+                % (b_name, label, rest_total, collection_total,
+                   rest_total - collection_total))
+        return rest_total
+
+    def _log_item_counts_per_collection(self, item_counts, label):
+        """
+        Print a per-collection snapshot: a total per bucket at info level,
+        and the full breakdown as a table at debug level (100+ collections
+        per bucket is too much for the default log).
+        """
+        table = TableView(self.log.debug)
+        table.set_headers(["Bucket", "Scope", "Collection", "Items"])
+        for b_name in sorted(item_counts):
+            bucket_total = 0
+            for s_name in sorted(item_counts[b_name]):
+                for c_name in sorted(item_counts[b_name][s_name]):
+                    items = item_counts[b_name][s_name][c_name]
+                    bucket_total += items
+                    table.add_row([b_name, s_name, c_name, str(items)])
+            rest_total = self._cross_check_bucket_total(
+                item_counts, b_name, label)
+            self.log.info("Item count %s :: bucket %s, %s collection(s), "
+                          "total %s items (REST reports %s)"
+                          % (label, b_name,
+                             sum(len(c) for c in item_counts[b_name].values()),
+                             bucket_total, rest_total))
+        table.display("Per-collection item count %s" % label)
+        self.log.debug("Per-collection item count %s: %s"
+                       % (label, item_counts))
+
+    def _verify_item_counts_per_collection(self, expected, actual, timestamp):
+        """
+        Compare two per-collection snapshots and record every divergence.
+
+        Differences are recorded with log_failure() rather than raised so a
+        single bad collection does not hide the state of the rest; the test
+        still fails later at validate_test_failure().
+        """
+        mismatches = 0
+        for b_name, exp_scopes in expected.items():
+            act_scopes = actual.get(b_name)
+            if act_scopes is None:
+                mismatches += 1
+                self.log_failure("Bucket %s missing after restore to %s"
+                                 % (b_name, timestamp))
+                continue
+            for s_name, exp_collections in exp_scopes.items():
+                act_collections = act_scopes.get(s_name)
+                if act_collections is None:
+                    mismatches += 1
+                    self.log_failure("Scope %s.%s missing after restore "
+                                     "to %s" % (b_name, s_name, timestamp))
+                    continue
+                for c_name, exp_items in exp_collections.items():
+                    act_items = act_collections.get(c_name)
+                    if act_items is None:
+                        mismatches += 1
+                        self.log_failure(
+                            "Collection %s.%s.%s missing after restore to "
+                            "%s (expected %s items)"
+                            % (b_name, s_name, c_name, timestamp, exp_items))
+                    elif act_items != exp_items:
+                        mismatches += 1
+                        self.log_failure(
+                            "Item count mismatch for %s.%s.%s at timestamp "
+                            "%s. Expected: %s, Actual: %s"
+                            % (b_name, s_name, c_name, timestamp,
+                               exp_items, act_items))
+
+        # Anything restored that was never captured is just as wrong as a
+        # missing collection, so report it too
+        for b_name, act_scopes in actual.items():
+            exp_scopes = expected.get(b_name, {})
+            for s_name, act_collections in act_scopes.items():
+                exp_collections = exp_scopes.get(s_name, {})
+                for c_name, act_items in act_collections.items():
+                    if c_name not in exp_collections:
+                        mismatches += 1
+                        self.log_failure(
+                            "Unexpected collection %s.%s.%s after restore "
+                            "to %s holding %s items"
+                            % (b_name, s_name, c_name, timestamp, act_items))
+
+        # Second layer: the bucket total straight from REST, held against
+        # the total captured for this timestamp. Independent of the
+        # per-collection walk above -- a restore that lands the right grand
+        # total in the wrong collections fails the first layer, one that
+        # leaves whole collections unaccounted for fails this one.
+        for b_name, exp_scopes in expected.items():
+            expected_total = self._bucket_total_from_collections(exp_scopes)
+            rest_total = self._cross_check_bucket_total(
+                actual, b_name, "after restore to %s" % timestamp)
+            self.log.info("Bucket %s at timestamp %s: expected %s items, "
+                          "REST reports %s"
+                          % (b_name, timestamp, expected_total, rest_total))
+            if rest_total != expected_total:
+                mismatches += 1
+                self.log_failure(
+                    "Bucket item count mismatch for %s at timestamp %s. "
+                    "Expected: %s, Actual (REST): %s"
+                    % (b_name, timestamp, expected_total, rest_total))
+
+        if mismatches == 0:
+            self.log.info("All collections and bucket totals match the "
+                          "counts captured at timestamp %s" % timestamp)
+        else:
+            self.log.error("%s divergence(s) from the counts captured at "
+                           "timestamp %s" % (mismatches, timestamp))
+        return mismatches == 0
 
     def __play_with_collection(self):
         # MB-44092 - Collection load not working with pre-existing connections
@@ -1691,12 +1874,8 @@ class UpgradeTests(UpgradeBase):
                    f"Waiting for {self.continuous_backup_interval * 2} minutes after initial backup")
 
         # Capture initial timestamp and item count
-        item_counts = {}
-        for bucket in self.cluster.buckets:
-            curr_items = self.bucket_util.get_buckets_item_count(
-                self.cluster, bucket.name)
-            item_counts[bucket.name] = curr_items
-            self.log.info("Initial item count for bucket %s: %s" % (bucket.name, curr_items))
+        item_counts = self._capture_item_counts_per_collection(
+            "at initial capture")
         timestamp = self.cont_bk_mgr.get_cluster_timestamp()
         self.pitr_timestamps[timestamp] = item_counts
         self.log.info("Initial timestamp captured: %s" % timestamp)
@@ -1726,9 +1905,12 @@ class UpgradeTests(UpgradeBase):
 
         # Restore from all timestamps in sequential fashion and verify item counts
         self.log.info("Restoring from %d timestamps sequentially" % len(self.pitr_timestamps))
-        for i, (timestamp, bucket_item_counts) in enumerate(sorted(self.pitr_timestamps.items())):
-            self.log.info("Restoring from timestamp %d: %s (expected items: %s)"
-                          % (i + 1, timestamp, bucket_item_counts))
+        for i, (timestamp, expected_item_counts) in enumerate(
+                sorted(self.pitr_timestamps.items())):
+            # The expected counts themselves are too large to log inline now
+            # that they are per collection -- they were dumped when captured
+            self.log.info("Restoring from timestamp %d/%d: %s"
+                          % (i + 1, len(self.pitr_timestamps), timestamp))
 
             # Flush all buckets
             self.log.info("Flushing all buckets before restore verification")
@@ -1753,18 +1935,12 @@ class UpgradeTests(UpgradeBase):
 
             self._assert_restore_succeeded(output, error, timestamp)
 
-            # Wait for stats and verify item count
+            # Wait for stats and verify the item count of every collection
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-            for bucket in self.cluster.buckets:
-                actual_items = self.bucket_util.get_buckets_item_count(
-                    self.cluster, bucket.name)
-                expected_count = bucket_item_counts.get(bucket.name)
-                self.log.info("Bucket %s: Expected items=%s, Actual items=%s"
-                              % (bucket.name, expected_count, actual_items))
-                if expected_count is not None and actual_items != expected_count:
-                    self.log_failure("Item count mismatch for bucket %s at timestamp %s. "
-                                     "Expected: %s, Actual: %s"
-                                     % (bucket.name, timestamp, expected_count, actual_items))
+            actual_item_counts = self._capture_item_counts_per_collection(
+                "after restore to %s" % timestamp)
+            self._verify_item_counts_per_collection(
+                expected_item_counts, actual_item_counts, timestamp)
 
         self.log.info("Continuous backup restore verification completed")
 
@@ -2009,13 +2185,8 @@ class UpgradeTests(UpgradeBase):
                 self.sleep(self.continuous_backup_interval * 2 * 60,
                            f"Waiting for {self.continuous_backup_interval * 2} minutes for continuous backup")
 
-                item_counts = {}
-                for bucket in self.cluster.buckets:
-                    curr_items = self.bucket_util.get_buckets_item_count(
-                        self.cluster, bucket.name)
-                    item_counts[bucket.name] = curr_items
-                    self.log.info("Item count for bucket %s after rebalance: "
-                                  "%s" % (bucket.name, curr_items))
+                item_counts = self._capture_item_counts_per_collection(
+                    "after rebalance task")
 
                 timestamp = self.cont_bk_mgr.get_cluster_timestamp()
                 if i == len(rebalance_tasks) -1 :
