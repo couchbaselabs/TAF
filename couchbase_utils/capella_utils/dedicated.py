@@ -4,6 +4,7 @@ import uuid
 
 from constants.cloud_constants.capella_constants import AWS, Cluster
 from global_vars import logger
+from TestInput import TestInputServer
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import ClusterOperationsAPIs as ClusterOpsAPIv4
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI as CapellaAPIv4
@@ -461,6 +462,23 @@ class CapellaUtils(object):
                 break
 
     @staticmethod
+    def get_cluster_specs(pod, tenant, cluster_id):
+        """
+        :return: current service-group specs of the cluster as returned by
+                 GET .../clusters/<id>/specs (services / compute as strings)
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.get_cluster_specs(tenant.id, tenant.projects[0],
+                                             cluster_id)
+        if resp.status_code != 200:
+            raise Exception("Fetch cluster specs failed: %s" % resp.content)
+        return json.loads(resp.content)["data"]["specs"]
+
+    @staticmethod
     def upgrade(pod, tenant, cluster, config):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
@@ -872,6 +890,11 @@ class CapellaUtils(object):
         return content.get("data").get("status").get("state")
 
     @staticmethod
+    def get_cluster_provider(pod, tenant, cluster_id):
+        content = CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
+        return content.get("data").get("provider").get("name")
+
+    @staticmethod
     def get_cluster_srv(pod, tenant, cluster_id):
         content = CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
         return content.get("data").get("connect").get("srv")
@@ -902,6 +925,35 @@ class CapellaUtils(object):
                     f"get_nodes for {cluster_id} kept failing (last "
                     f"status {resp.status_code}) for over {timeout}s")
             time.sleep(5)
+
+    @staticmethod
+    def refresh_cluster_nodes(pod, tenant, cluster):
+        """Rebuild cluster node objects from the Capella node list"""
+        servers = None
+        for _ in range(5):
+            servers = CapellaUtils.get_nodes(pod, tenant, cluster.id)
+            if servers:
+                break
+        if not servers:
+            raise Exception("Capella API to fetch nodes failed!!")
+        # New node objects keep the Capella context of the old ones
+        capella_context = getattr(cluster.master, "capella", None)
+        nodes = list()
+        for server in servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = cluster.username
+            temp_server.rest_password = cluster.password
+            temp_server.hosted_on_cloud = True
+            temp_server.memcached_port = "11207"
+            temp_server.type = "dedicated"
+            temp_server.capella = capella_context
+            nodes.append(temp_server)
+        cluster.refresh_object(nodes)
+        return servers
 
     @staticmethod
     def get_db_users(pod, tenant, cluster_id, page=1, limit=100):

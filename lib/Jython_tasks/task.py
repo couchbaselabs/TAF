@@ -61,6 +61,9 @@ from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
+from capella_utils.dedicated_rest.context import CapellaContext
+from capella_utils.dedicated_rest.rebalance_watcher import RebalanceWatcher
+from capella_utils.dedicated_rest.scale_spec import CapellaScaleSpec
 from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
     CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
@@ -439,44 +442,21 @@ class RebalanceTaskCapella(Task):
                 self.log.critical(e)
                 self.result = False
                 return self.result
-        count = 5
-        while count > 0:
-            self.servers = DedicatedUtils.get_nodes(
-                self.pod, self.tenant, self.cluster.id)
-            count -= 1
-            if self.servers:
-                break
-        nodes = list()
-        # POC-NOTE (remove later)
-        # WHY: after a scale / upgrade, TAF throws away the old node objects
-        #      and builds new ones. Without this, new nodes lose their
-        #      Capella "ID card" and Capella REST variants stop working
-        # CAME FROM: test -> cluster.async_rebalance (dedicated)
-        #      -> RebalanceTaskCapella.call (or UpgradeProvisionedCluster)
-        # DOES: copies node.capella from the current master to new nodes
-        capella_context = getattr(self.cluster.master, "capella", None)
-        for server in self.servers:
-            temp_server = TestInputServer()
-            temp_server.ip = server.get("hostname")
-            temp_server.hostname = server.get("hostname")
-            temp_server.services = server.get("services")
-            temp_server.port = "18091"
-            temp_server.rest_username = self.cluster.username
-            temp_server.rest_password = self.cluster.password
-            temp_server.hosted_on_cloud = True
-            temp_server.memcached_port = "11207"
-            temp_server.type = "dedicated"
-            temp_server.capella = capella_context
-            nodes.append(temp_server)
-
-        if self.servers:
-            self.cluster.refresh_object(nodes)
-        else:
-            raise Exception("RebalanceTask: Capella API to fetch nodes failed!!")
+        self.servers = DedicatedUtils.refresh_cluster_nodes(
+            self.pod, self.tenant, self.cluster)
         return self.result
 
 
+
 class RebalanceTask(Task):
+    def __new__(cls, *args, **kwargs):
+        # Capella dedicated: same call, scaled via the Capella API
+        cluster = args[0] if args else kwargs.get("cluster")
+        if cls is RebalanceTask \
+                and getattr(cluster, "type", None) == "dedicated":
+            cls = CapellaRebalanceTask
+        return super(RebalanceTask, cls).__new__(cls)
+
     def __init__(self, cluster, to_add=[], to_remove=[],
                  use_hostnames=False, services=None,
                  check_vbucket_shuffling=True,
@@ -1026,6 +1006,98 @@ class RebalanceTask(Task):
                     .format(progress, time.time() - self.start_time))
                 self.result = True
                 return
+
+
+class CapellaRebalanceTask(RebalanceTask):
+    """
+    Capella twin of RebalanceTask, built by RebalanceTask.__new__ for
+    dedicated clusters (same arguments): to_add / to_remove become a
+    scale of len(to_add) - len(to_remove) nodes via the Capella API.
+
+    Validates what RebalanceTask validates on-prem, where Capella allows:
+    scale finished healthy, ns_server rebalance done without error,
+    node count, and file-based rebalance (8.5+).
+    Capella retries a failed rebalance by itself: up to MAX_FAILED_ATTEMPTS
+    failures are accepted (logged) if the last attempt succeeds.
+    """
+    MAX_FAILED_ATTEMPTS = 3
+    TIMEOUT = 1200
+
+    def __init__(self, cluster, to_add=[], to_remove=[],
+                 use_hostnames=False, services=None, **on_prem_only_args):
+        Task.__init__(self, "CapellaRebalanceTask_%s" % time.time())
+        context = CapellaContext.of(cluster.master)
+        self.pod, self.tenant = context.pod, context.tenant
+        self.cluster = cluster
+        self.delta = len(to_add) - len(to_remove)
+        self.services = services[0].split(",") if services else None
+        self.timeout = self.TIMEOUT
+        self.servers = None
+        self.expected_nodes = None
+
+    def call(self):
+        self.start_task()
+        try:
+            watcher = RebalanceWatcher(self.cluster, timeout=self.timeout)
+            watcher.mark_start()
+            self.trigger_scale()
+            report = watcher.watch()
+            DedicatedUtils.refresh_cluster_nodes(self.pod, self.tenant,
+                                                 self.cluster)
+            self.refresh_bucket_servers()
+            self.result = self.validate(report)
+        except Exception as e:
+            self.test_log.error("Capella rebalance failed: %s" % e)
+            self.result = False
+        self.complete_task()
+        return self.result
+
+    def trigger_scale(self):
+        spec = CapellaScaleSpec(
+            DedicatedUtils.get_cluster_specs(self.pod, self.tenant,
+                                             self.cluster.id),
+            DedicatedUtils.get_cluster_provider(self.pod, self.tenant,
+                                                self.cluster.id))
+        self.expected_nodes = spec.node_count + self.delta
+        self.test_log.info("Scaling cluster %s by %s node(s) to %s"
+                           % (self.cluster.id, self.delta,
+                              self.expected_nodes))
+        DedicatedUtils.scale(self.pod, self.tenant, self.cluster,
+                             spec.resize(self.delta, self.services))
+
+    def refresh_bucket_servers(self):
+        """Drop removed / add new nodes in each bucket's server list"""
+        for bucket in self.cluster.buckets:
+            global_vars.bucket_util.get_updated_bucket_server_list(
+                self.cluster, bucket)
+
+    def validate(self, report):
+        failed = report.failed_attempts()
+        if failed:
+            self.test_log.warning("Capella retried rebalance after %s failed "
+                                  "attempt(s): %s" % (len(failed), failed))
+        checks = [
+            (report.error is None, "Scale error: %s" % report.error),
+            (report.succeeded(), "Last ns_server rebalance attempt failed "
+                                 "or was not seen: %s" % report.attempts),
+            (len(failed) <= self.MAX_FAILED_ATTEMPTS,
+             "%s failed rebalance attempts, allowed %s"
+             % (len(failed), self.MAX_FAILED_ATTEMPTS)),
+            (len(self.cluster.nodes_in_cluster) == self.expected_nodes,
+             "Nodes %s != expected %s" % (len(self.cluster.nodes_in_cluster),
+                                          self.expected_nodes)),
+            (not self.cluster.buckets or report.methods,
+             "Rebalance method not observed, rebalance finished between "
+             "polls"),
+            (not report.methods or report.is_file_based(),
+             "Rebalance not file based: %s" % report.methods)]
+        failures = [msg for ok, msg in checks if not ok]
+        for msg in failures:
+            self.test_log.error(msg)
+        self.test_log.warning("CAPELLA-GAP orchestrator selection and "
+                              "bucket ranking validations not supported "
+                              "on Capella")
+        return not failures
 
 
 class GenericLoadingTask(Task):

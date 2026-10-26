@@ -1,12 +1,8 @@
-from copy import deepcopy
-
 import Jython_tasks.task as jython_tasks
 from Jython_tasks import sirius_task
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants import CbServer, DocLoading
 from Jython_tasks.task import MutateDocsFromSpecTask
-from capella_utils.dedicated import CapellaUtils
-from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
 from global_vars import logger
@@ -714,54 +710,16 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - A task future that is a handle to the scheduled task
         """
-        if cluster and cluster.type == "dedicated":
-            if not services:
-                services = [CloudCluster.Services.KV]
-
-            service_group_len = dict()
-            new_service_groups = list()
-            cluster_config_to_update = \
-                deepcopy(cluster.cluster_config["servers"])
-
-            for service_group in services:
-                service_group_len[service_group] = \
-                    services.count(service_group)
-
-            for service_group, nodes_to_add in service_group_len.items():
-                services_list = service_group.split(",")
-                services_list.sort()
-                for cluster_config_spec in cluster_config_to_update:
-                    cluster_config_spec["services"].sort()
-                    if services_list == cluster_config_spec["services"]:
-                        cluster_config_spec["size"] += \
-                            service_group_len[service_group]
-                        """
-                        WARNING: Currently passing to_remove is considered
-                                 only for rebalancing out the KV nodes.
-                        TODO: Need to address to_remove in framework level
-                              to make it work uniformly for all services
-                        """
-                        if CloudCluster.Services.KV in services_list:
-                            cluster_config_spec["size"] -= len(to_remove)
-                    else:
-                        new_service_groups.append(
-                            CapellaUtils.get_cluster_config_spec(
-                                services, service_group_len[service_group]))
-
-            cluster_config_to_update.extend(new_service_groups)
-            _task = jython_tasks.RebalanceTaskCapella(
-                cluster, cluster_config_to_update)
-        else:
-            _task = jython_tasks.RebalanceTask(
-                cluster, to_add, to_remove, use_hostnames=use_hostnames,
-                services=services,
-                check_vbucket_shuffling=check_vbucket_shuffling,
-                retry_get_process_num=retry_get_process_num,
-                add_nodes_server_groups=add_nodes_server_groups,
-                defrag_options=defrag_options,
-                validate_bucket_ranking=validate_bucket_ranking,
-                service_topology=service_topology,
-                network_delay_between_nodes=network_delay_between_nodes)
+        _task = jython_tasks.RebalanceTask(
+            cluster, to_add, to_remove, use_hostnames=use_hostnames,
+            services=services,
+            check_vbucket_shuffling=check_vbucket_shuffling,
+            retry_get_process_num=retry_get_process_num,
+            add_nodes_server_groups=add_nodes_server_groups,
+            defrag_options=defrag_options,
+            validate_bucket_ranking=validate_bucket_ranking,
+            service_topology=service_topology,
+            network_delay_between_nodes=network_delay_between_nodes)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

@@ -43,6 +43,19 @@ class CapellaBaseTest(CouchbaseBaseTest):
         self.pod_table.set_headers(["Tenant", "Creds", "Cluster", "SRV"])
 
         self.deploy_timeout = self.input.param("deploy_timeout", 600)
+        # Read by rebalance tests (only OnPremBaseTest sets them)
+        self.wait_timeout = self.input.param("wait_timeout", 120)
+        self.network_delay_between_nodes = \
+            self.input.param("network_delay_between_nodes", None)
+        self.enable_encryption_at_rest = self.input.param(
+            "enable_encryption_at_rest", False)
+        self.encryption_at_rest_id = self.input.param(
+            "encryption_at_rest_id", None)
+        self.encryptionAtRestDekRotationInterval = self.input.param(
+            "encryptionAtRestDekRotationInterval", 2592000)
+        self.encryption_at_rest_dek_lifetime = self.input.param(
+            "encryption_at_rest_dek_lifetime",
+            CbServer.encryption_at_rest_dek_lifetime_interval)
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
         self.ipv4_only = self.input.param("ipv4_only", False)

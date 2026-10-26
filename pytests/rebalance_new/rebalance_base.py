@@ -29,21 +29,10 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).setUp()
         self.rest = ClusterRestAPI(self.cluster.master)
 
-        # Verify FBR (File-Based Rebalance) setting is enabled
-        status, content = self.rest.set_internal_settings()
-        if not status:
-            self.fail(f"Failed to get internalSettings: {content}")
-        if not isinstance(content, dict):
-            self.fail(f"Expected dict from internalSettings, got {type(content)}")
-        file_based_backfill_enabled = content.get('dataServiceFileBasedRebalanceEnabled', False)
-        self.assertTrue(file_based_backfill_enabled,
-                       "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.5")
-        self.log.info("FBR (dataServiceFileBasedRebalanceEnabled) is enabled as expected")
-
-        # Check if FBR should be disabled for DCP fallback testing
-        if self.disable_file_based_rebalance:
-            self.cluster_util.set_file_based_rebalance(
-                self.cluster.master, enabled=False)
+        # Capella: internalSettings is not readable, FBR is validated by
+        # CapellaRebalanceTask from the running rebalance instead
+        if self.cluster.type == "default":
+            self.verify_file_based_rebalance_setting()
 
         self.doc_ops = self.input.param("doc_ops", "create")
         self.bucket_size = self.input.param("bucket_size", 256)
@@ -280,6 +269,23 @@ class RebalanceBaseTest(BaseTestCase):
             self._create_default_bucket(bucket_size)
         else:
             self._create_multiple_buckets()
+
+    def verify_file_based_rebalance_setting(self):
+        # Verify FBR (File-Based Rebalance) setting is enabled
+        status, content = self.rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+        file_based_backfill_enabled = content.get('dataServiceFileBasedRebalanceEnabled', False)
+        self.assertTrue(file_based_backfill_enabled,
+                       "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.5")
+        self.log.info("FBR (dataServiceFileBasedRebalanceEnabled) is enabled as expected")
+
+        # Check if FBR should be disabled for DCP fallback testing
+        if self.disable_file_based_rebalance:
+            self.cluster_util.set_file_based_rebalance(
+                self.cluster.master, enabled=False)
 
     def tearDown(self):
         self.cluster_util.print_cluster_stats(self.cluster)

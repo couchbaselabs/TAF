@@ -62,6 +62,14 @@ class CapellaClusterRestAPI(ClusterRestAPI):
                       "capellaState": cp_state})
         return status, tasks
 
+    def node_cluster_tasks(self):
+        """
+        /pools/default/tasks exactly as ns_server reports it, without the
+        control-plane state merged in by cluster_tasks(). Used to inspect
+        the real rebalance (status, rebalance_method) during a scale.
+        """
+        return super(CapellaClusterRestAPI, self).cluster_tasks()
+
     # POC-NOTE (remove later)
     # WHY: Capella can't add/remove a specific node or fail one over.
     #      Faking success would make tests pass while testing nothing

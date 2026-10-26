@@ -38,7 +38,14 @@ call sites, while exercising the Capella control plane where it exists.
 | `context.py` | `CapellaContext` - pod/tenant/cluster on the node. Never log tenant |
 | `bucket_param_translator.py` | Pure mapping of on-prem bucket params <-> Capella API fields. No HTTP |
 | `bucket_helper.py` | `CapellaBucketHelper` - create / delete / flush via `CapellaUtils`, wait till node reflects it, read back & compare |
-| `cluster_rest.py` | `CapellaClusterRestAPI` - honest `cluster_tasks()`, unsupported topology/failover calls |
+| `cluster_rest.py` | `CapellaClusterRestAPI` - honest `cluster_tasks()`, raw `node_cluster_tasks()`, unsupported topology/failover calls |
+| `scale_spec.py` | `CapellaScaleSpec` - pure: current specs (GET) -> object-form scale payload (POST /specs), min 3 data nodes |
+| `rebalance_watcher.py` | `RebalanceWatcher` / `RebalanceReport` - follows a scale: Capella state + ns_server rebalance attempts and `rebalance_method` (FBR) from node tasks |
+
+## Scaling (rebalance on Capella)
+
+`RebalanceTask.__new__` returns the Capella twin `CapellaRebalanceTask`
+for dedicated clusters (lib/Jython_tasks/task.py).
 
 ## Rules for adding a variant method
 

@@ -37,6 +37,11 @@ class RebalanceOutTests(RebalanceBaseTest):
             durability=self.durability_level,
             ryow=self.ryow, check_persistence=self.check_persistence,
             load_using=self.load_docs_using)
+        created = self.gen_create.end - self.gen_create.start
+        self.num_items += created
+        for bucket in self.cluster.buckets:
+            bucket.scopes[self.scope_name] \
+                .collections[self.collection_name].num_items += created
 
         self.task_manager.get_task_result(rebalance_task)
         for task in tasks_info.keys():
