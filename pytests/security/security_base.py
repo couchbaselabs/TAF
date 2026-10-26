@@ -399,6 +399,9 @@ class SecurityBase(CouchbaseBaseTest):
                 subnet = resp.json()["cidr"]["suggestedBlock"]
                 payload["cidr"] = subnet
                 resp = self.capellaAPIv2.deploy_v2_cluster(self.tenant_id, payload)
+                print(resp.json())
+                print("Request ID: {}".format(
+                    resp.headers.get("Vnd-Cloud-Couchbase-Com-Request-Id")))
                 if resp.status_code == 202:
                     self.cluster_id = resp.json()['id']
                     break
