@@ -49,6 +49,14 @@ class APIBase(CouchbaseBaseTest):
         "eu-west-1": {"azure": "westus3", "gcp": "europe-west2"}
     }
 
+    # Errors a create returns when its CIDR clashes with an existing one.
+    DUPLICATE_CIDR_MESSAGES = [
+        "Please ensure that the CIDR range is unique within this organisation",
+        "Please ensure you are passing a unique CIDR block and try again.",
+        "Please choose a different CIDR and try again",
+        "overlaps with existing resource with CIDR"
+    ]
+
     def _get_region(self, default, cloud_provider="aws"):
         # -p param wins; otherwise use the [capella] section from the ini
         region = self.input.param(
@@ -1767,12 +1775,6 @@ class APIBase(CouchbaseBaseTest):
                     serviceGroups=None, availability=None, support=None,
                     couchbaseServer=None, header=None, **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")
-        duplicate_CIDR_messages = [
-            "Please ensure that the CIDR range is unique within this organisation",
-            "Please ensure you are passing a unique CIDR block and try again.",
-            "Please choose a different CIDR and try again",
-            "overlaps with existing resource with CIDR"
-        ]
 
         start_time = time.time()
         while time.time() - start_time < 1800:
@@ -1798,7 +1800,7 @@ class APIBase(CouchbaseBaseTest):
                 return result
             try:
                 r = result.json()
-                if any(i in r["message"] for i in duplicate_CIDR_messages):
+                if any(i in r["message"] for i in self.DUPLICATE_CIDR_MESSAGES):
                     cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
                     self.capella["clusters"]["cidr"] = cloudProvider["cidr"]
                     self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
@@ -1901,11 +1903,7 @@ class APIBase(CouchbaseBaseTest):
         """Collects dp-agent and Couchbase Server logs for a cluster when collect_logs=True; best effort, never fails the test."""
         if not self.input.param("collect_logs", False) or not cluster_id:
             return
-        # Not [capella] override_token: pipelines pass the test override key there.
-        token = self.input.param("internal_support_token", None) or \
-            self.input.capella.get("internal_support_token") or \
-            os.environ.get("TOKEN_FOR_INTERNAL_SUPPORT") or \
-            os.environ.get(self._internal_support_token_env())
+        token = self.internal_support_token()
         if not token:
             for log_type in ("dp-agent", "server"):
                 self._record_collected_log(cluster_id, "before destroy", log_type, "", "FAILED", "",
@@ -1914,8 +1912,8 @@ class APIBase(CouchbaseBaseTest):
                              "token was found, skipping log collection")
             return
 
-        base = ("https://" + self.url).replace("https://cloud", "https://", 1) + \
-            "/internal/support/logcollections/clusters/{}".format(cluster_id)
+        base = self.internal_support_url(
+            "/logcollections/clusters/{}".format(cluster_id))
         headers = {"Authorization": "Bearer {}".format(token),
                    "Content-Type": "application/json"}
         step = "before destroy"
@@ -2015,6 +2013,19 @@ class APIBase(CouchbaseBaseTest):
         for log_type in ("dp-agent", "server"):
             self._record_collected_log(cluster_id, "before destroy", log_type, "", "SKIPPED", "", reason)
         self.log.info("Skipping log collection for cluster {}: {}".format(cluster_id, reason))
+
+    def internal_support_token(self):
+        """Token for the /internal/support API: test param, [capella] section, then the executor's env vars."""
+        # Not [capella] override_token: pipelines pass the test override key there.
+        return self.input.param("internal_support_token", None) or \
+            self.input.capella.get("internal_support_token") or \
+            os.environ.get("TOKEN_FOR_INTERNAL_SUPPORT") or \
+            os.environ.get(self._internal_support_token_env())
+
+    def internal_support_url(self, path):
+        """The pod's /internal/support URL for path; the support API lives on api.<env>, not cloudapi.<env>."""
+        return ("https://" + self.url).replace("https://cloud", "https://", 1) + \
+            "/internal/support" + path
 
     def _internal_support_token_env(self):
         """Name of the per-environment token variable the TAF Jenkins executors export, chosen from the pod URL."""
