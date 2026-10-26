@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import string
 import time
@@ -2538,6 +2539,293 @@ class basic_ops(ClusterSetup):
                                              f"mismatch. Expected "
                                              f"'{exp_body}': {record}")
             shell.disconnect()
+
+    def test_mb_65486(self):
+        """
+        Ref: MB-65486 / CBSE-23654
+        couchstore marked a commit point by writing the header block with
+        the 'Header' block type straight away. A reader racing with that
+        write (bg-fetch opening the vbucket file on ext4) or a failure
+        mid-write could find a partially written header, failing with
+        'Open error:checksum fail'.
+        With the fix, the header is first written with the 'Data' block
+        type and fsync'ed, then only its block type byte is flipped to
+        'Header' and fsync'ed again.
+
+        1. Disable the bloom filter, so every get on a missing key in this
+           full eviction bucket bg-fetches from the vbucket file
+        2. Run writes targeting few vbuckets (frequent commits on them)
+           and get-misses (bg-fetches) from the node using pillowfight
+        3. Watch the tail block of the target vbucket files on the node
+           using scripts/couchstore_header_watch.py and validate,
+           - Commits pass through a 'pending' header (complete header with
+             the Data block type), later flipped to Header in place
+           - No torn / corrupt header is ever visible to a reader
+           - ep_data_read_failed / ep_data_write_failed stay at zero and
+             memcached.log has no new 'checksum fail'
+        4. SIGKILL memcached while a header is pending, wait for warmup
+           and validate the orphaned header is left with the Data block
+           type and all docs are readable post warmup
+        """
+        watch_duration = self.input.param("watch_duration", 120)
+        num_watch_vbs = self.input.param("num_watch_vbs", 8)
+        min_flips = self.input.param("min_flips", 5)
+        kill_attempts = self.input.param("kill_attempts", 3)
+        miss_ops_rate = self.input.param("miss_ops_rate", 5000)
+        miss_key_prefix = "mb65486_miss_"
+        # Bracketed, so pkill does not match its own shell
+        miss_pf_pattern = "[m]b65486_miss_"
+        local_script = os.path.join(os.path.dirname(__file__), "..", "..",
+                                    "scripts", "couchstore_header_watch.py")
+        remote_script = "/tmp/couchstore_header_watch.py"
+
+        bucket = self.cluster.buckets[0]
+        node = self.cluster.master
+        # Populates bucket.uuid, used as the bucket's data dir name
+        self.bucket_util.get_all_buckets(self.cluster)
+        if bucket.storageBackend != Bucket.StorageBackend.couchstore \
+                or bucket.evictionPolicy \
+                != Bucket.EvictionPolicy.FULL_EVICTION:
+            self.fail("Test needs a couchstore bucket with full eviction, "
+                      f"got {bucket.storageBackend}/{bucket.evictionPolicy}")
+
+        shell = RemoteMachineShellConnection(node)
+        cbstat = Cbstats(node)
+
+        def get_stats():
+            stats = cbstat.all_stats(bucket.name)
+            return {stat: int(stats[stat]) for stat in
+                    ["ep_data_read_failed", "ep_data_write_failed",
+                     "ep_bg_fetched"]}
+
+        def checksum_fail_count():
+            output, _ = shell.execute_command(
+                f"grep -h 'checksum fail' "
+                f"{Linux.COUCHBASE_LOGS_PATH}/memcached.log* | wc -l")
+            return int(output[0].strip())
+
+        def start_loads():
+            # Gets on random keys which never get written.
+            # Each of them bg-fetches as the bloom filter is disabled.
+            # Started first, so a failure here leaves no doc loader
+            # running behind
+            shell.execute_command(
+                f"nohup timeout {watch_duration + 60} "
+                f"{Linux.COUCHBASE_BIN_PATH}cbc-pillowfight "
+                f"-U couchbase://localhost/{bucket.name} "
+                f"-u {node.rest_username} -P {node.rest_password} "
+                f"--key-prefix {miss_key_prefix} -I 100000000 "
+                f"--no-population --set-pct 0 -t 2 -B 100 "
+                f"--rate-limit {miss_ops_rate} > /dev/null 2>&1 &",
+                debug=False)
+            return self.task.async_continuous_doc_ops(
+                self.cluster, bucket, write_gen,
+                op_type=DocLoading.Bucket.DocOps.UPDATE,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                timeout_secs=self.sdk_timeout)
+
+        def stop_loads(load_task):
+            load_task.end_task()
+            self.task_manager.get_task_result(load_task)
+            shell.execute_command(f"pkill -f '{miss_pf_pattern}'")
+
+        def run_watcher(kill_pid=0):
+            output, error = shell.execute_command(
+                f"PY={Linux.CB_PATH}lib/python/interp/bin/python3; "
+                f"[ -x $PY ] || PY=python3; "
+                f"$PY {remote_script} --vb-dir {vb_dir} "
+                f"--vbuckets {','.join(str(vb) for vb in watch_vbs)} "
+                f"--duration {watch_duration} --kill-pid {kill_pid}",
+                timeout=watch_duration + 120)
+            for line in output:
+                if line.strip().startswith("RESULT:"):
+                    return json.loads(line.strip()[len("RESULT:"):])
+            self.fail(f"No result from header watcher: {output}, {error}")
+
+        try:
+            # Bucket data dir is named by the bucket's uuid (MB-66178)
+            data_path = MembaseRestConnection(node).get_data_path()
+            vb_dir = None
+            for dir_name in [bucket.uuid, bucket.name]:
+                output, _ = shell.execute_command(
+                    f"ls -d {data_path}/{dir_name}")
+                if output and output[0].strip() == f"{data_path}/{dir_name}":
+                    vb_dir = output[0].strip()
+                    break
+            if vb_dir is None:
+                self.fail(f"Data dir of {bucket.name} not found "
+                          f"under {data_path}")
+            if not shell.copy_file_local_to_remote(local_script,
+                                                   remote_script):
+                self.fail(f"Failed to copy {local_script} to {node.ip}")
+
+            watch_vbs = sorted(int(vb) for vb in cbstat.vbucket_list(
+                bucket.name, "active"))[:num_watch_vbs]
+            # Default loader, as the Sirius doc generators ignore
+            # target_vbucket and would spread writes over all vbuckets
+            write_gen = doc_generator(self.key, 0, self.num_items,
+                                      doc_size=self.doc_size,
+                                      target_vbucket=watch_vbs)
+            # Continuous updates fragment the files fast. Compaction moving
+            # them to a new revision would drop the header left orphaned
+            self._disable_auto_compaction(bucket)
+            self.log.info(f"Loading {self.num_items} docs into vbuckets "
+                          f"{watch_vbs} in {vb_dir}")
+            create_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, write_gen,
+                DocLoading.Bucket.DocOps.CREATE, 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                timeout_secs=self.sdk_timeout)
+            self.task_manager.get_task_result(create_task)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         [bucket])
+
+            self.log.info("Disabling bloom filter")
+            Cbepctl(shell, node.rest_username, node.rest_password).set(
+                bucket.name, "flush_param", "bfilter_enabled", "false")
+            bfilter = cbstat.all_stats(bucket.name)["ep_bfilter_enabled"]
+            if bfilter != "false":
+                self.fail(f"ep_bfilter_enabled={bfilter} after disabling")
+
+            self.log.info("Watching couchstore commits under load")
+            stats_before = get_stats()
+            checksum_fails_before = checksum_fail_count()
+            load_task = start_loads()
+            try:
+                self.sleep(10, "Wait for the loads to ramp up")
+                result = run_watcher()
+            finally:
+                stop_loads(load_task)
+            stats_after = get_stats()
+            checksum_fails = checksum_fail_count() - checksum_fails_before
+
+            watch_stats = result["stats"]
+            stats_tbl = TableView(self.log.info)
+            stats_tbl.set_headers(["Stat", "Value"])
+            for stat_name in ["samples", "header_ok", "pending_header",
+                              "pending_positions", "flip_confirmed",
+                              "torn_header", "bad_header", "data_tail"]:
+                stats_tbl.add_row([stat_name, watch_stats[stat_name]])
+            for stat_name, value in stats_after.items():
+                stats_tbl.add_row([f"{stat_name} (delta)",
+                                   value - stats_before[stat_name]])
+            stats_tbl.add_row(["memcached.log 'checksum fail' (new)",
+                               checksum_fails])
+            stats_tbl.display(f"Commit watch over vbuckets {watch_vbs} "
+                              f"for {result['elapsed']}s")
+            for example in result["examples"]:
+                self.log.warning(f"Watcher example: {example}")
+
+            if watch_stats["flip_confirmed"] < min_flips:
+                self.log_failure(
+                    f"Only {watch_stats['flip_confirmed']} header(s) seen "
+                    f"written with the Data block type and then flipped to "
+                    f"Header, expected >= {min_flips}. Commit point is not "
+                    f"made by the one byte flip")
+            if watch_stats["torn_header"] or watch_stats["bad_header"]:
+                self.log_failure(
+                    f"Reader saw torn={watch_stats['torn_header']} / "
+                    f"bad={watch_stats['bad_header']} header blocks")
+            for stat_name in ["ep_data_read_failed", "ep_data_write_failed"]:
+                if stats_after[stat_name] != stats_before[stat_name]:
+                    self.log_failure(f"{stat_name} moved from "
+                                     f"{stats_before[stat_name]} to "
+                                     f"{stats_after[stat_name]}")
+            if stats_after["ep_bg_fetched"] == stats_before["ep_bg_fetched"]:
+                self.log_failure("No bg-fetch happened during the watch")
+            if checksum_fails > 0:
+                self.log_failure(f"{checksum_fails} new 'checksum fail' "
+                                 f"line(s) in memcached.log")
+
+            self.log.info("SIGKILL memcached while a header is pending")
+            orphan = None
+            for attempt in range(1, kill_attempts + 1):
+                memcached_pid = shell.get_memcache_pid().strip()
+                load_task = start_loads()
+                try:
+                    self.sleep(10, "Wait for the loads to ramp up")
+                    result = run_watcher(kill_pid=memcached_pid)
+                finally:
+                    stop_loads(load_task)
+                killed = result["killed"]
+                if killed is None:
+                    self.log_failure("No pending header seen to SIGKILL "
+                                     "memcached on")
+                    break
+                self.log.info(f"Attempt {attempt}: Killed memcached with "
+                              f"pending header in {killed['file']} at "
+                              f"pos {killed['pos']}")
+                if not self.bucket_util._wait_warmup_completed(
+                        bucket, [node], wait_time=self.warmup_timeout):
+                    self.log_failure("Bucket warmup did not complete after "
+                                     "killing memcached")
+                    break
+                # Reconnect, in case cbstats is over a memcached connection
+                cbstat.disconnect()
+                cbstat = Cbstats(node)
+                output, _ = shell.execute_command(
+                    f"stat -c %s {killed['file']}")
+                if not output or not output[0].strip().isdigit():
+                    self.log.info(f"{killed['file']} replaced by a newer "
+                                  f"revision, retrying")
+                    continue
+                header_len = len(killed["header_hex"]) // 2
+                output, _ = shell.execute_command(
+                    f"od -An -v -tx1 -j {killed['pos']} -N {header_len} "
+                    f"{killed['file']} | tr -d ' \\n'")
+                on_disk = output[0].strip() if output else ""
+                if on_disk == killed["header_hex"]:
+                    orphan = killed
+                    break
+                if on_disk == "01" + killed["header_hex"][2:]:
+                    self.log.info("Block type got flipped before memcached "
+                                  "was killed, retrying")
+                    continue
+                self.log_failure(f"Pending header at pos {killed['pos']} "
+                                 f"changed on disk. Expected "
+                                 f"{killed['header_hex']}, got '{on_disk}'")
+                break
+            else:
+                self.log_failure(f"Could not leave a pending header orphaned "
+                                 f"in {kill_attempts} attempts")
+
+            if orphan is not None:
+                self.log.info(f"Header left orphaned with the Data block "
+                              f"type: {orphan}. Validating docs post warmup")
+                stats_before = get_stats()
+                checksum_fails_before = checksum_fail_count()
+                self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                          self.num_items)
+                read_task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, write_gen,
+                    DocLoading.Bucket.DocOps.READ, 0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    timeout_secs=self.sdk_timeout)
+                self.task_manager.get_task_result(read_task)
+                if read_task.fail:
+                    self.log_failure(f"{len(read_task.fail)} doc read(s) "
+                                     f"failed post warmup")
+                stats_after = get_stats()
+                if stats_after["ep_data_read_failed"] \
+                        != stats_before["ep_data_read_failed"]:
+                    self.log_failure(
+                        f"ep_data_read_failed moved from "
+                        f"{stats_before['ep_data_read_failed']} to "
+                        f"{stats_after['ep_data_read_failed']} post warmup")
+                checksum_fails = checksum_fail_count() - checksum_fails_before
+                if checksum_fails > 0:
+                    self.log_failure(f"{checksum_fails} new 'checksum fail' "
+                                     f"line(s) in memcached.log post warmup")
+        finally:
+            shell.execute_command(f"pkill -f '{miss_pf_pattern}'; "
+                                  f"rm -f {remote_script}")
+            cbstat.disconnect()
+            shell.disconnect()
+
+        self.validate_test_failure()
 
     @staticmethod
     def _regions_per_slab(allocator_dump, min_size):
