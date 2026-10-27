@@ -101,6 +101,19 @@ class SecurityBase(CouchbaseBaseTest):
         self.project_id = self.input.capella.get("project_id", None)
         self.instance_id = None
         self.cmek_id = None
+        if self.project_id is not None:
+            # A pinned project_id (from ini or resolved by an earlier TC
+            # in this run) can go stale if the project was deleted or
+            # expired - without this check every subsequent TC in the
+            # run would fail cluster creation with "project not found".
+            resp = self.capellaAPI.org_ops_apis.fetch_project_info(
+                self.tenant_id, self.project_id)
+            if resp.status_code != 200:
+                self.log.warning(
+                    "Pinned project {} is no longer valid ({}), resolving "
+                    "a fresh one instead.".format(
+                        self.project_id, resp.content))
+                self.project_id = None
         if self.project_id is None:
             self.project_id = self.find_project_by_name(
                 self.tenant_id, self.prefix + "Project")
