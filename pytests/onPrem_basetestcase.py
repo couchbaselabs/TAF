@@ -607,7 +607,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 # Enable KV-rate limiting
                 if self.data_service_rate_limiting:
                     status, content= ClusterRestAPI(cluster.master) \
-                        .manage_global_memcached_setting(throttle_enabled=True)
+                        .manage_global_memcached_setting(throttle_enabled="true")
                     self.assertTrue(status,
                                     msg=f"Failed to set throttling: {content}")
 

@@ -1,18 +1,31 @@
+import re
+import threading
+
 from BucketLib.bucket import Bucket
 from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
 from cb_constants import CbServer
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.rest_client import RestConnection
 from cbas_utils.cbas_utils import CbasUtil
 from cluster_utils.cluster_ready_functions import CBCluster
 from collections_helper.collections_spec_constants import MetaConstants
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from security_utils.security_utils import SecurityUtils
+from StatsLib.StatsOperations_Rest import StatsHelper
+from throttling_helper import ThrottlingHelper
 from tpch_utils.tpch_utils import TPCHUtil
 
 
 class CBASBaseTest(BaseTestCase):
+    # Added in 8.5.0 by MB-45591, served on /_prometheusMetricsHigh
+    DCP_STREAM_METRICS = [
+        "cbas_dcp_streams",
+        "cbas_dcp_streams_pending_merge",
+        "cbas_dcp_stream_merges_total",
+        "cbas_dcp_stream_vbucket_migrations_total",
+        "cbas_duplicated_incoming_records_total"]
 
     def setUp(self):
         """
@@ -207,6 +220,22 @@ class CBASBaseTest(BaseTestCase):
         self.cbas_memory_quota_percent = int(self.input.param(
             "cbas_memory_quota_percent", 80))
         self.bucket_size = self.input.param("bucket_size", 256)
+
+        # MB-45591 (8.5.0+): STARTING_POSITION | KV_COLLECTION
+        self.dcp_stream_allocation_strategy = \
+            self.normalise_dcp_stream_allocation_strategy(self.input.param(
+                "dcp_stream_allocation_strategy", None))
+        # Fail in tearDown if the buckets' throttle_count_total did not grow
+        # after setUp. expect_cbas_throttling: KV is idle after setUp, so the
+        # throttles come from analytics DCP (Level 1). expect_bucket_throttling:
+        # a KV workload keeps the bucket throttled while analytics runs
+        # (Level 2); it does not prove @cbas itself was throttled.
+        self.expect_cbas_throttling = self.input.param(
+            "expect_cbas_throttling", False)
+        self.expect_bucket_throttling = self.input.param(
+            "expect_bucket_throttling", False)
+        self.throttle_count_baseline = {}
+        self.cbas_stats_helpers = {}
 
         self.cbas_util = CbasUtil(self.task)
 
@@ -410,6 +439,13 @@ class CBASBaseTest(BaseTestCase):
                     num_writer_threads="disk_io_optimized",
                     num_reader_threads="disk_io_optimized")
 
+            # MB-45591: pick how analytics allocates DCP streams. Set before
+            # any dataset exists so the first link connect uses it.
+            if self.dcp_stream_allocation_strategy \
+                    and hasattr(cluster, "cbas_cc_node"):
+                self.set_dcp_stream_allocation_strategy(
+                    cluster, self.dcp_stream_allocation_strategy)
+
             if self.cluster_kv_infra[i] == "bkt_spec":
                 if self.bucket_spec is not None:
                     try:
@@ -436,12 +472,247 @@ class CBASBaseTest(BaseTestCase):
                     eviction_policy=self.bucket_eviction_policy,
                     flush_enabled=self.flush_enabled)
 
+            # Spec-created buckets ignore bucket_throttle_* at creation, so
+            # apply them here. Doing it after the initial KV load means only
+            # analytics ingestion (DCP as @cbas) consumes the bucket's units.
+            self.apply_bucket_throttle_limits(cluster)
+
             self.bucket_util.add_rbac_user(cluster.master)
 
+        for cluster in self.cb_clusters.values():
+            if self.bucket_throttle_reserved \
+                    or self.bucket_throttle_hard_limit:
+                self.throttle_count_baseline[cluster.name] = \
+                    self.read_throttle_counts(cluster)
+        self.start_dcp_stream_metrics_sampler()
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
+        # Collect before cleanup drops the datasets; fail after cleanup so a
+        # validation miss never leaves the cluster dirty for the next test.
+        validation_errors = []
+        try:
+            validation_errors = self.validate_dcp_streams_and_throttling()
+        finally:
+            self._cbas_tear_down()
+        if validation_errors:
+            self.fail("; ".join(validation_errors))
+
+    @staticmethod
+    def normalise_dcp_stream_allocation_strategy(value):
+        """
+        The server parses the option case- and separator-insensitively
+        (KV_COLLECTION, kv-collection, kvCollection), so compare canonically
+        """
+        if value is None:
+            return None
+        value = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", str(value))
+        return value.replace("-", "_").upper()
+
+    def set_dcp_stream_allocation_strategy(self, cluster, strategy):
+        """
+        MB-45591: set analytics dcpStreamAllocationStrategy. The doc says the
+        value applies at the next link connect, but on 8.5.0-1392 analytics
+        only applies it at startup (ConfigManager [main]); without a restart
+        KV_COLLECTION runs still merged. So always restart on a change.
+        Not restored in tearDown: a write without a restart would make the
+        stored value differ from the running one. The comparison below keeps
+        a reused cluster on the strategy each test asks for.
+        """
+        option = "dcpStreamAllocationStrategy"
+        status, config, _ = \
+            self.cbas_util.fetch_service_parameter_configuration_on_cbas(
+                cluster)
+        if not status:
+            self.fail(f"Failed to fetch analytics service config: {config}")
+        current = config.get(option)
+        if current is None:
+            self.fail(f"{option} not found in analytics service config. "
+                      f"Server is older than 8.5.0?")
+        if self.normalise_dcp_stream_allocation_strategy(current) == strategy:
+            self.log.info(f"{option} already {current}")
+            return
+
+        self.log.info(f"Setting {option}: {current} -> {strategy}")
+        status, content, _ = \
+            self.cbas_util.update_service_parameter_configuration_on_cbas(
+                cluster, {option: strategy})
+        if not status:
+            self.fail(f"Failed to set {option}={strategy}: {content}")
+        status, content, _ = self.cbas_util.restart_analytics_cluster_uri(
+            cluster)
+        if not status:
+            self.fail(f"Failed to restart analytics cluster: {content}")
+        if not self.cbas_util.is_analytics_running(cluster):
+            self.fail("Analytics did not come up after restart")
+        if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
+            self.fail("Analytics service failed to recover after restart")
+
+        status, config, _ = \
+            self.cbas_util.fetch_service_parameter_configuration_on_cbas(
+                cluster)
+        if not status or self.normalise_dcp_stream_allocation_strategy(
+                config.get(option)) != strategy:
+            self.fail(f"{option} is {config} after update, "
+                      f"expected {strategy}")
+
+    def apply_bucket_throttle_limits(self, cluster):
+        if not (self.bucket_throttle_reserved
+                or self.bucket_throttle_hard_limit):
+            return
+        if not self.cluster_util.is_enterprise_edition(cluster):
+            self.log.info("Bucket throttle limits not supported on CE")
+            return
+        edit_params = {}
+        if self.bucket_throttle_reserved:
+            edit_params[Bucket.throttleReserved] = \
+                self.bucket_throttle_reserved
+        if self.bucket_throttle_hard_limit:
+            edit_params[Bucket.throttleHardLimit] = \
+                self.bucket_throttle_hard_limit
+        bucket_rest = BucketRestApi(cluster.master)
+        for bucket in cluster.buckets:
+            status, content = bucket_rest.edit_bucket(bucket.name,
+                                                      edit_params)
+            if not status:
+                self.fail(f"Failed to set throttle limits {edit_params} on "
+                          f"{bucket.name}: {content}")
+            self.log.info(f"Throttle limits {edit_params} set on bucket "
+                          f"{bucket.name}")
+
+    def read_dcp_stream_metrics(self, cluster):
+        """Sum of each MB-45591 metric across the cluster's analytics nodes"""
+        metrics = {}
+        for node in cluster.cbas_nodes:
+            try:
+                if node.ip not in self.cbas_stats_helpers:
+                    self.cbas_stats_helpers[node.ip] = StatsHelper(node)
+                lines = self.cbas_stats_helpers[node.ip] \
+                    .get_prometheus_metrics_high(component="cbas")
+            except Exception as e:
+                self.log.warning(f"Unable to read analytics metrics "
+                                 f"from {node.ip}: {e}")
+                continue
+            for line in lines:
+                # name{labels} value [timestamp]
+                if "{" in line:
+                    name, rest = line.split("{", 1)
+                    rest = rest.rsplit("}", 1)[-1]
+                else:
+                    name, _, rest = line.partition(" ")
+                if name not in self.DCP_STREAM_METRICS:
+                    continue
+                metrics[name] = metrics.get(name, 0) + float(rest.split()[0])
+        return metrics
+
+    def start_dcp_stream_metrics_sampler(self, interval=30):
+        """
+        Analytics drops a link's stream metrics once its datasets/links go
+        away, so a teardown-only read misses tests that drop everything
+        before returning. Keep the peak of each metric seen during the test.
+        """
+        self.dcp_metrics_peak = {}
+        self.dcp_metrics_stop = threading.Event()
+        if not self.dcp_stream_allocation_strategy:
+            return
+        # Subclass setUp can still fail after this, and then tearDown
+        # never runs; cleanups always do
+        self.addCleanup(self.dcp_metrics_stop.set)
+
+        def sample():
+            while True:
+                try:
+                    for cluster in self.cb_clusters.values():
+                        if not cluster.cbas_nodes:
+                            continue
+                        peak = self.dcp_metrics_peak.setdefault(
+                            cluster.name, {})
+                        for name, value in \
+                                self.read_dcp_stream_metrics(cluster).items():
+                            peak[name] = max(peak.get(name, 0), value)
+                except Exception as e:
+                    # Keep sampling; a dead thread would stop the peaks
+                    self.log.warning(f"DCP stream metrics sample failed: {e}")
+                if self.dcp_metrics_stop.wait(interval):
+                    break
+
+        self.dcp_metrics_sampler = threading.Thread(
+            target=sample, name="dcp_stream_metrics_sampler", daemon=True)
+        self.dcp_metrics_sampler.start()
+
+    def validate_dcp_streams_and_throttling(self):
+        """
+        Logs MB-45591 stream metrics and KV throttle stats for the job.
+        Returns a list of validation failures instead of failing, so the
+        caller can finish cleanup first.
+        """
+        errors = []
+        strategy = getattr(self, "dcp_stream_allocation_strategy", None)
+        sampler = getattr(self, "dcp_metrics_sampler", None)
+        if sampler:
+            self.dcp_metrics_stop.set()
+            sampler.join(timeout=120)
+        for cluster in self.cb_clusters.values():
+            if strategy and cluster.cbas_nodes:
+                metrics = dict(getattr(self, "dcp_metrics_peak", {})
+                               .get(cluster.name, {}))
+                for name, value in \
+                        self.read_dcp_stream_metrics(cluster).items():
+                    metrics[name] = max(metrics.get(name, 0), value)
+                self.log.info(f"{cluster.name} analytics DCP stream metrics "
+                              f"({strategy}, peak during test): {metrics}")
+                if not metrics:
+                    errors.append(f"No MB-45591 DCP stream metrics seen on "
+                                  f"{cluster.name} analytics nodes during "
+                                  f"the test")
+                # Doc 6.3 signature. Duplicates are not part of it: a
+                # reconnect/rollback in the rebalance lines can re-deliver.
+                if strategy == "KV_COLLECTION":
+                    for name in ["cbas_dcp_stream_merges_total",
+                                 "cbas_dcp_stream_vbucket_migrations_total",
+                                 "cbas_dcp_streams_pending_merge"]:
+                        if metrics.get(name, 0):
+                            errors.append(f"{name}={metrics[name]} with "
+                                          f"KV_COLLECTION, expected 0")
+
+            if not (self.bucket_throttle_reserved
+                    or self.bucket_throttle_hard_limit):
+                continue
+            baseline = self.throttle_count_baseline.get(cluster.name, {})
+            throttled = 0
+            for key, count in self.read_throttle_counts(cluster).items():
+                base = baseline.get(key, 0)
+                # Counter resets if memcached restarts (failover lines)
+                throttled += count - base if count >= base else count
+            self.log.info(f"{cluster.name} throttle_count_total increase "
+                          f"since setUp: {throttled}")
+            for flag in ["expect_cbas_throttling", "expect_bucket_throttling"]:
+                if getattr(self, flag, False) and throttled == 0:
+                    errors.append(f"{flag}=True but throttle_count_total did "
+                                  f"not increase after setUp on any bucket "
+                                  f"of {cluster.name}")
+        return errors
+
+    def read_throttle_counts(self, cluster):
+        """throttle_count_total per (bucket, KV node)"""
+        counts = {}
+        for bucket in cluster.buckets:
+            for node in cluster.kv_nodes:
+                try:
+                    stats = ThrottlingHelper(node, self.log) \
+                        .get_throttle_stats(bucket.name)
+                except Exception as e:
+                    self.log.warning(f"Unable to read throttle stats for "
+                                     f"{bucket.name} on {node.ip}: {e}")
+                    continue
+                self.log.info(f"Throttle stats {bucket.name} on "
+                              f"{node.ip}: {stats}")
+                counts[(bucket.name, node.ip)] = int(
+                    stats.get("throttle_count_total", 0))
+        return counts
+
+    def _cbas_tear_down(self):
         if self.input.param("n2n_encryption", False):
             for i, (cluster_name, cluster) in enumerate(self.cb_clusters.items()):
                 self.log.info("Disabling Auto-Failover")

@@ -236,7 +236,7 @@ class BaseUtil(object):
                 generated_name = ".".join(name_key for i in range(
                     name_cardinality))
             else:
-                max_name_len = max_length / name_cardinality
+                max_name_len = max_length // name_cardinality
                 if fixed_length:
                     generated_name = '.'.join(''.join(random.choice(
                         string.ascii_letters + string.digits)
@@ -2025,7 +2025,7 @@ class Dataset_Util(Link_Util):
                     "percent_of_remote_datasets")) // 100
                 no_of_local_datasets = total_no_of_datasets - no_of_external_datasets - no_of_remote_datasets
 
-            for dataverse in self.dataverses.values():
+            for dataverse in list(self.dataverses.values()):
                 if dataset_spec.get(
                     "include_dataverses", []) and CBASHelper.unformat_name(
                         dataverse.name) not in dataset_spec["include_dataverses"]:
@@ -4428,7 +4428,9 @@ class CbasUtil(CBOUtil):
         status, content, response = \
             cbas_helper.operation_service_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
-        return status, json.loads(content), response
+        if status:
+            content = json.loads(content)
+        return status, content, response
 
     def update_node_parameter_configuration_on_cbas(
             self, cluster, config_map=None, username=None, password=None):
