@@ -494,7 +494,8 @@ class UpgradeBase(BaseTestCase):
                 log=self.log,
                 cbcontbk_cloud_provider=self.cont_bkp_location.cloud_provider,
                 backup_cloud_provider=self.backup_location.cloud_provider,
-                obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+                obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
+                cmd_timeout=15600)
 
     def teardown_backup_locations(self):
         """
