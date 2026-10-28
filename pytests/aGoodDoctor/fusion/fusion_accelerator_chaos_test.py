@@ -1002,8 +1002,9 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
         Validates:
         - Fusion rebalance takes the accelerator path (instances launched)
         - A specific accelerator instance is successfully terminated via the AWS API
-        - The terminated instance's own ASG (one ASG per accelerator) relaunches a
-          replacement (new InstanceId in that same ASG), OR the rebalance completes
+        - The terminated instance's own ASG (one ASG per AZ, holding one or more
+          accelerators) relaunches a replacement (an InstanceId in that same ASG that
+          was not there before the fault), OR the rebalance completes
           without entering a failed state (both are valid recovery outcomes — the CP
           may finish the phase before the ASG replaces the node). Checked against that
           one ASG rather than the whole fleet, since other ASGs launching their first
@@ -1041,12 +1042,18 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
             "No accelerator instances appeared — fusion rebalance did not launch "
             "accelerators; cannot test termination resilience")
 
-        # One ASG per accelerator (see _wait_for_accelerator_fleet_stable), so mapping
-        # instance -> owning ASG lets the replacement check below poll that ASG
-        # specifically instead of diffing the whole fleet.
+        # ASGs are per AZ and hold several accelerators, so map instance -> owning ASG
+        # and snapshot each ASG's members: the replacement check below polls that ASG
+        # and diffs against its pre-fault members (a sibling already in the ASG is not
+        # a replacement).
         asg_by_instance_id = {
             inst["InstanceId"]: asg.get("AutoScalingGroupName")
             for asg in asgs for inst in asg.get("Instances", [])
+        }
+        initial_ids_by_asg = {
+            asg.get("AutoScalingGroupName"):
+                {i["InstanceId"] for i in asg.get("Instances", [])}
+            for asg in asgs
         }
 
         target_instance = initial_instances[0]
@@ -1054,8 +1061,8 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
         target_asg_name = asg_by_instance_id.get(target_id)
         self.assertIsNotNone(
             target_asg_name,
-            f"Could not find the owning ASG for accelerator {target_id} — one ASG per "
-            f"accelerator is assumed, so there is no ASG to poll for a replacement")
+            f"Could not find the owning ASG for accelerator {target_id} — there is no "
+            f"ASG to poll for a replacement")
         self.log.info(
             f"Terminating accelerator instance {target_id} (ASG {target_asg_name}) "
             f"({len(initial_instances)} total accelerators active)")
@@ -1090,7 +1097,8 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
             current_asg_instance_ids = (
                 {i["InstanceId"] for i in target_asg.get("Instances", [])}
                 if target_asg else set())
-            new_ids = current_asg_instance_ids - {target_id}
+            new_ids = (current_asg_instance_ids - {target_id}
+                       - initial_ids_by_asg.get(target_asg_name, set()))
             if new_ids:
                 elapsed = time.time() - termination_time
                 replacement_seen = True
@@ -1197,12 +1205,17 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
             inst["InstanceId"]: asg.get("AutoScalingGroupName")
             for asg in asgs for inst in asg.get("Instances", [])
         }
+        initial_ids_by_asg = {
+            asg.get("AutoScalingGroupName"):
+                {i["InstanceId"] for i in asg.get("Instances", [])}
+            for asg in asgs
+        }
         target_id = instances[0]["InstanceId"]
         target_asg_name = asg_by_instance_id.get(target_id)
         self.assertIsNotNone(
             target_asg_name,
-            f"Could not find the owning ASG for accelerator {target_id} — one ASG per "
-            f"accelerator is assumed, so there is no ASG to poll for a replacement")
+            f"Could not find the owning ASG for accelerator {target_id} — there is no "
+            f"ASG to poll for a replacement")
 
         with self._stage("Chaos AWS1: stop an accelerator instance"):
             self.log.info(
@@ -1246,7 +1259,8 @@ class FusionAcceleratorChaosTest(FusionAcceleratorLifecycleTest):
                 current_asg_instance_ids = (
                     {i["InstanceId"] for i in target_asg.get("Instances", [])}
                     if target_asg else set())
-                new_ids = current_asg_instance_ids - {target_id}
+                new_ids = (current_asg_instance_ids - {target_id}
+                           - initial_ids_by_asg.get(target_asg_name, set()))
                 if new_ids:
                     outcome = (f"ASG {target_asg_name} replaced it "
                                f"(new: {sorted(new_ids)})")

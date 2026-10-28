@@ -444,7 +444,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
 
     def _wait_for_all_asgs_inservice(self, cluster_id: str, timeout: int = 300):
         """
-        Block until every fusion ASG in the cluster has exactly one InService
+        Block until every fusion ASG in the cluster has at least one InService
         instance, or raise AssertionError on timeout.
         """
         deadline = time.time() + timeout

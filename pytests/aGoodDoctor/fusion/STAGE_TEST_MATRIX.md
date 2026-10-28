@@ -94,7 +94,7 @@ Status: ✅ implemented · ⬜ planned (see COVERAGE.md) · **gap** = not yet in
 |---|---|---|---|
 | P1 | below threshold → 0 accelerators (DCP); above → N | `test_accelerator_instance_count_matches_data_size` | ✅ |
 | A | all accelerators of one specific EC2 instance type (+ in ASG override list) | `test_accelerator_deployment` | ✅ |
-| A | ASG DesiredCapacity==1, 1 instance/ASG, #ASG==#accelerators | `test_asg_desired_capacity_one_per_shard` | ✅ |
+| A | one fusion ASG per availability zone (no 1:1 ASG↔accelerator relation) | `test_one_asg_per_az` | ✅ |
 | A | private subnet + AZ colocation with KV nodes | `test_accelerator_network_placement` | ⬜ |
 | A | IAM instance profile attached | `test_accelerator_iam_instance_profile` | ⬜ |
 | A | complete tag set on instances | `test_accelerator_instance_tags_complete` | ⬜ |
@@ -167,10 +167,10 @@ vBuckets). So assert a **bounded** invariant (used bytes climb toward, never exc
 Size; end > 0), not an exact match.
 
 **Accelerator count (Stage A) is validated loosely, not by formula.** Per ACCELERATION.md the
-count is `sum over hosts of min(ceil(hostData / 50GB), 22)` — one accelerator + one EBS + one
-ASG per shard, each shard ≥ 50 GB (`minVolumeSize`), capped at `maxSlots = 22` per host.
+count is `sum over hosts of min(ceil(hostData / 50GB), 22)` — one accelerator + one EBS per
+shard (ASGs are per AZ, not per shard), each shard ≥ 50 GB (`minVolumeSize`), capped at `maxSlots = 22` per host.
 `test_accelerator_instance_count_matches_data_size` only asserts `>= expected_accelerator_count`
-(a param), and `test_asg_desired_capacity_one_per_shard` asserts `#ASG == #accelerators`. Exact
+(a param), and `test_one_asg_per_az` asserts one ASG per availability zone. Exact
 formula validation would need per-host `StorageSize` from the CBS manifest, which TAF cannot read
 directly — so it is intentionally not asserted. The 50 GB floor itself is checked by
 `test_accelerator_ebs_volume_min_size`.

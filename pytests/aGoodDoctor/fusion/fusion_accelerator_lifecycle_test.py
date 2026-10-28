@@ -83,11 +83,6 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         # Background migration freeze state (see _pause_migration).
         self._migration_paused = False
         self._prior_migration_rate_limit = None
-        # Guest-volume IOPS scale-down watch handed from Stage C to Stage E.
-        self._iops_watch = {}
-        self._iops_settled_unscaled = {}
-        self._iops_scaled_count = 0
-        self._iops_total_count = 0
         CapellaAPI.wait_until_done(
             self.pod, self.tenant, self.cluster.id,
             "Wait for healthy cluster state before bucket cleanup", timeout=600)
@@ -707,7 +702,18 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         return self._cached_data_path
 
     def _avg_main_volume_usage(self):
-        """Average main persistent-volume disk-usage percent across cluster nodes (SSM df)."""
+        """Average main persistent-volume disk-usage percent across cluster nodes (SSM df).
+
+        Computed from used/total bytes rather than df's whole-number percent, which is ~10 GiB
+        per step on a 1 TiB volume and hides a migration copying a few GiB. Falls back to the
+        whole-percent reading if the byte reading is unavailable.
+        """
+        usage = self.cp_monitor.get_main_volume_disk_usage_bytes(
+            self.cluster, data_path=self._data_path())
+        pcts = [100.0 * used / total for used, total in
+                (v for v in usage.values() if v) if total]
+        if pcts:
+            return sum(pcts) / len(pcts)
         usage = self.cp_monitor.get_main_volume_disk_usage_percent(
             self.cluster, data_path=self._data_path())
         vals = [v for v in usage.values() if isinstance(v, int)]
@@ -1380,6 +1386,22 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 [{"Name": "tag:couchbase-cloud-function", "Values": ["couchbase"]}]),
             log="KvNodeFilter", suppress_log=True)}
 
+    @staticmethod
+    def _asgs_by_az(asgs):
+        """Group fusion ASG names by availability zone.
+
+        Accelerators and ASGs are NOT 1:1 — each ASG covers one AZ and holds however many
+        accelerators landed there. The AZ comes from the ASG's AvailabilityZones, falling
+        back to the AZ suffix of the ASG name (cc-fusion-asg-<cluster>-<id>-<az>).
+        """
+        by_az = {}
+        for asg in asgs:
+            name = asg.get("AutoScalingGroupName", "unknown")
+            azs = asg.get("AvailabilityZones") or ["-".join(name.rsplit("-", 3)[-3:])]
+            for az in azs:
+                by_az.setdefault(az, []).append(name)
+        return by_az
+
     def _wait_for_accelerator_fleet_stable(self, rebalance_task, timeout=None):
         """Wait for the accelerator fleet to stop changing; return (instances, asgs).
 
@@ -1389,16 +1411,17 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
 
         Two exits, both returning a self-consistent snapshot:
 
-          1. Fast path — one sample with the fleet fully up: one InService instance per ASG,
-             tagged instance count == ASG count, every instance holding its guest volume.
-          2. Stability path — the tagged count held steady for `fleet_stable_samples`
-             consecutive polls and equals the ASG count. Needed because on a fast rebalance
+          1. Fast path — one sample with the fleet fully up: one ASG per AZ, at least one
+             accelerator, every instance holding its guest volume.
+          2. Stability path — one ASG per AZ and both the tagged count and the guest-volume
+             count (non-zero) held steady for `fleet_stable_samples` consecutive polls. Needed because on a fast rebalance
              volumes attach and detach per shard, so "every instance has its guest volume"
              may never be true in a single sample.
 
-        Stability is measured on CONCURRENT samples, not by unioning instance IDs over the
-        phase: an ASG relaunching a terminated accelerator (which the chaos test does on
-        purpose) would inflate a cumulative union and fail parity spuriously.
+        There is no relation between the accelerator count and the ASG count (an ASG holds
+        one or more accelerators). Stability is measured on CONCURRENT samples, not by
+        unioning instance IDs over the phase: an ASG relaunching a terminated accelerator
+        (which the chaos test does on purpose) would inflate a cumulative union.
 
         Fails with the observed history if the fleet never settles, since a bare "4 != 1"
         would hide the real problem.
@@ -1440,21 +1463,25 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 f"[fleet] accelerators(tagged)={len(instances)} asgs={len(asgs)} "
                 f"with_guest_volume={with_guest_vol}")
 
-            one_per_asg = bool(asgs) and all(len(_in_service(a)) == 1 for a in asgs)
-            parity = bool(asgs) and len(instances) == len(asgs)
+            one_asg_per_az = bool(asgs) and all(
+                len(names) == 1 for names in self._asgs_by_az(asgs).values())
 
-            if one_per_asg and parity and with_guest_vol == len(instances):
+            if (instances and one_asg_per_az
+                    and with_guest_vol == len(instances)):
                 self.log.info(
                     f"Accelerator fleet fully up: {len(instances)} instance(s), "
                     f"{len(asgs)} ASG(s), all guest volumes attached")
                 return instances, asgs
 
-            recent = [h[0] for h in history[-stable_samples:]]
+            # Both the instance count and the guest-volume count must hold steady, and at
+            # least one volume must be attached: instances appear ~15-20s before their
+            # guest volumes, so a stable instance count alone would return mid-attach.
+            recent = [(h[0], h[2]) for h in history[-stable_samples:]]
             if (len(recent) == stable_samples and len(set(recent)) == 1
-                    and one_per_asg and parity):
+                    and instances and with_guest_vol > 0 and one_asg_per_az):
                 self.log.info(
                     f"Accelerator fleet stable at {len(instances)} instance(s) across "
-                    f"{stable_samples} polls, matching {len(asgs)} ASG(s) "
+                    f"{stable_samples} polls, {len(asgs)} ASG(s), one per AZ "
                     f"({with_guest_vol} with a guest volume attached at this sample)")
                 return instances, asgs
 
@@ -1470,8 +1497,8 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 f"Observed (tagged instances / ASGs / with guest volume): {counts}")
         self.fail(
             f"Accelerator fleet never stabilised within {timeout}s: the tagged instance "
-            f"count never held steady for {stable_samples} consecutive polls while "
-            f"matching the ASG count with one InService instance each. Fleet-wide "
+            f"and guest-volume count never held steady (non-zero) for {stable_samples} consecutive polls "
+            f"with one ASG per availability zone. Fleet-wide "
             f"Stage A assertions are not meaningful against a moving fleet. Observed "
             f"(tagged instances / ASGs / with guest volume): {counts}. If the counts "
             f"rise and fall, the accelerator lifecycle is completing faster than this "
@@ -1622,54 +1649,34 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         return actual_type
 
     def _validate_asg_topology(self, rebalance_task, instances=None, asgs=None):
-        """Stage A: one ASG per accelerator, each DesiredCapacity/MaxSize == 1.
+        """Stage A: exactly one fusion ASG per availability zone.
+
+        Accelerators are not mapped 1:1 to ASGs — an ASG holds however many accelerators
+        landed in its AZ — so neither the ASG size nor the accelerator count is asserted.
 
         Expects the stable-fleet snapshot from _wait_for_accelerator_fleet_stable(), and
         takes one itself when `instances`/`asgs` are not supplied, so both the standalone
-        and end-to-end tests assert against a settled fleet.
-
-        Parity counts accelerators by TAG on BOTH sides — see
-        _list_accelerator_instances_by_tag for why the IOPS-filtered list is wrong here.
-        Returns the ASG list.
+        and end-to-end tests assert against a settled fleet. Returns the ASG list.
         """
-        def _in_service(asg):
-            return [i for i in asg.get("Instances", [])
-                    if i.get("LifecycleState") == "InService"]
-
         if instances is None or asgs is None:
             instances, asgs = self._wait_for_accelerator_fleet_stable(rebalance_task)
 
         self.assertGreater(len(asgs), 0, "No fusion ASGs found during rebalance")
 
-        failures = []
+        by_az = self._asgs_by_az(asgs)
         for asg in asgs:
-            name = asg.get("AutoScalingGroupName", "unknown")
-            desired = asg.get("DesiredCapacity")
-            max_size = asg.get("MaxSize")
-            in_service = _in_service(asg)
             self.log.info(
-                f"ASG {name}: desired={desired} max={max_size} "
-                f"in_service={len(in_service)}")
-            if desired != 1:
-                failures.append(f"{name}: DesiredCapacity={desired}, expected 1")
-            if max_size != 1:
-                failures.append(f"{name}: MaxSize={max_size}, expected 1")
-            if len(in_service) != 1:
-                failures.append(
-                    f"{name}: {len(in_service)} InService instances, expected 1")
+                f"ASG {asg.get('AutoScalingGroupName', 'unknown')}: "
+                f"desired={asg.get('DesiredCapacity')} max={asg.get('MaxSize')} "
+                f"in_service={len([i for i in asg.get('Instances', []) if i.get('LifecycleState') == 'InService'])}")
+        failures = [f"{az}: {len(names)} ASGs {sorted(names)}, expected 1"
+                    for az, names in sorted(by_az.items()) if len(names) != 1]
         self.assertEqual(
             len(failures), 0,
-            "ASG desired-capacity violations:\n" + "\n".join(failures))
-
-        # One ASG per accelerator instance — both sides counted by tag.
-        self.assertEqual(
-            len(asgs), len(instances),
-            f"Expected one ASG per accelerator: {len(asgs)} ASGs vs "
-            f"{len(instances)} tagged accelerator instance(s) "
-            f"({sorted(i.get('InstanceId') for i in instances)})")
+            "Expected one fusion ASG per availability zone:\n" + "\n".join(failures))
         self.log.info(
-            f"All {len(asgs)} fusion ASGs have DesiredCapacity==1 with one InService "
-            f"instance — one ASG per accelerator confirmed")
+            f"{len(asgs)} fusion ASG(s) across {len(by_az)} AZ(s) "
+            f"({sorted(by_az)}), {len(instances)} accelerator(s) — one ASG per AZ confirmed")
         return asgs
 
     def _validate_accelerator_volume_specs(self, rebalance_task):
@@ -1739,44 +1746,8 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         self.log.info(f"Tracking {len(guest_vol_ids)} guest volume(s): {guest_vol_ids}")
         return guest_vol_ids
 
-    def _report_iops_scale_down(self, still_live, settled, scaled_count, total_count,
-                                window_note):
-        """Report the guest-volume IOPS scale-down as its own issue (never a handoff fail).
-
-        `still_live` and `settled` are {vol_id: last IOPS seen} for volumes never observed
-        below the download IOPS: the first still existed when observation stopped, the
-        second were already deleted and so can never scale. Only the second is conclusive.
-
-        "Scaled down" means strictly below `expected_iops` (16000), not equal to any
-        particular value. The CP settles at the gp3 baseline (`scaled_iops`, 3000) but that
-        figure is not the invariant — staying at download IOPS is the defect, and any lower
-        value means the scale-down happened. `scaled_iops` is log context only.
-        """
-        expected_iops = self.input.param("expected_iops", 16000)
-        scaled_iops = self.input.param("scaled_iops", 3000)
-        unscaled = dict(settled)
-        unscaled.update(still_live)
-        if not unscaled:
-            self.log.info(
-                f"All {scaled_count}/{total_count} guest volume(s) scaled below the "
-                f"{expected_iops} download IOPS (CP default target is {scaled_iops})")
-            return
-        detail = "\n".join(
-            f"  {v}: last iops={unscaled[v] if unscaled[v] is not None else 'never read'}"
-            f"{' (deleted before scale-down)' if v in settled else ' (still present)'}"
-            for v in sorted(unscaled))
-        message = (
-            f"{len(unscaled)} of {total_count} guest volume(s) were never observed below "
-            f"the {expected_iops} download IOPS (expected a scale-down {window_note}; the "
-            f"CP normally settles at {scaled_iops}); {scaled_count} did scale. The handoff "
-            f"itself succeeded for all volumes — this is only about the IOPS "
-            f"property.\n{detail}")
-        if not self.soft_fail_stages:
-            self.fail(message)
-        self._record_issue("Guest volume IOPS scale-down", message)
-
     def _validate_guest_volume_drain(self, expected_start=None, baseline_du=None,
-                                     timeout=None, poll_interval=30, iops_watch=None):
+                                     timeout=None, poll_interval=30):
         """Stage E (simplified): watch the guest volumes drain while the main volume fills.
 
         A deliberately small view of background migration, using only cheap and unambiguous
@@ -1794,28 +1765,16 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         :param baseline_du: main-volume usage sampled immediately after rebalance completion,
             the last point at which no extents have migrated. Sampled here if not supplied,
             which weakens the growth check since copying may already be under way.
-        :param iops_watch: {vol_id: last IOPS} handed over by Stage C for volumes not yet
-            seen below the download IOPS. This loop already describes every volume each
-            poll, so it finishes that observation for free and watches until each volume is
-            actually deleted. Reported at the end as its own issue, never as a drain failure.
         """
         timeout = timeout or self.hydration_timeout
         if baseline_du is None:
             baseline_du = self._avg_main_volume_usage()
             self.log.warning(
                 f"No pre-migration disk baseline supplied — sampling now "
-                f"({baseline_du:.1f}%); growth may already be partly included")
+                f"({baseline_du:.3f}%); growth may already be partly included")
         self.log.info(
             f"Stage E: draining guest volumes (expected_start={expected_start}, "
-            f"baseline_du={baseline_du:.1f}%, timeout={timeout}s)")
-
-        expected_iops = self.input.param("expected_iops", 16000)
-        iops_watch = dict(iops_watch or {})
-        iops_scaled_late = dict()
-        if iops_watch:
-            self.log.info(
-                f"Stage E also watching the IOPS scale-down of {len(iops_watch)} "
-                f"volume(s) handed over by Stage C: {sorted(iops_watch)}")
+            f"baseline_du={baseline_du:.3f}%, timeout={timeout}s)")
 
         counts, du_series, api_series = [], [], []
         drained = False
@@ -1827,18 +1786,6 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             counts.append(len(volumes))
             du_series.append(du_now)
 
-            for vol in volumes:
-                vid = vol.get("VolumeId")
-                if vid in iops_watch:
-                    iops_watch[vid] = vol.get("Iops")
-                    # Scaled down = anything below the download IOPS, not one exact value.
-                    if (vol.get("Iops") or expected_iops) < expected_iops:
-                        iops_scaled_late[vid] = iops_watch.pop(vid)
-                        self.log.info(
-                            f"[drain] {vid} IOPS scaled to {vol.get('Iops')}, below the "
-                            f"{expected_iops} download value (observed during the drain, "
-                            f"after Stage C ended)")
-
             api_count, _ = self._log_active_guest_volumes("drain")
             api_series.append(api_count)
 
@@ -1846,8 +1793,8 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 f"[drain] elapsed={time.time() - start:.0f}s "
                 f"guest_volumes={len(volumes)} (attached={len(attached)}, "
                 f"api={api_count if api_count is not None else 'unavailable'}) "
-                f"main_du={du_now:.1f}% at {self._data_path()} "
-                f"(baseline {baseline_du:.1f}%, delta {du_now - baseline_du:+.1f})\n"
+                f"main_du={du_now:.3f}% at {self._data_path()} "
+                f"(baseline {baseline_du:.3f}%, delta {du_now - baseline_du:+.3f})\n"
                 f"    volume ids: {sorted(v.get('VolumeId') for v in volumes)}")
 
             if not volumes:
@@ -1861,7 +1808,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             f"    guest volume count (AWS): {counts}\n"
             f"    guest volume count (API): {api_series}\n"
             f"    main volume du % ({self._data_path()}): "
-            f"{[round(d, 1) for d in du_series]}")
+            f"{[round(d, 3) for d in du_series]}")
 
         # Nothing to observe: distinguish "already gone" from "never there".
         if counts and counts[0] == 0:
@@ -1875,21 +1822,6 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 "No guest volumes present at the start of Stage E and none were seen "
                 "earlier — there was never a migration to observe (was the fusion path "
                 "taken at all?)")
-
-        # Close out Stage C's deferred IOPS watch BEFORE this stage's own assertions, so the
-        # verdict is recorded even if the drain assertions below fail.
-        settled_at_handover = dict(getattr(self, "_iops_settled_unscaled", {}) or {})
-        if iops_watch or iops_scaled_late or settled_at_handover:
-            never = dict(settled_at_handover)
-            never.update(iops_watch)
-            scaled_before = getattr(self, "_iops_scaled_count", 0)
-            total = (getattr(self, "_iops_total_count", 0)
-                     or len(never) + len(iops_scaled_late))
-            self._report_iops_scale_down(
-                still_live={}, settled=never,
-                scaled_count=scaled_before + len(iops_scaled_late),
-                total_count=total,
-                window_note="before the volume was deleted, watched through the drain")
 
         # The count must only ever fall: nothing adds guest volumes during migration.
         rises = [(i, counts[i - 1], counts[i])
@@ -1910,10 +1842,10 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         self.assertGreater(
             max_du, baseline_du,
             f"Main-volume usage did not increase during migration (baseline "
-            f"{baseline_du:.1f}%, max {max_du:.1f}%) — the extent copy into the main "
-            f"volume was not observed. Full series: {[round(d, 1) for d in du_series]}")
+            f"{baseline_du:.3f}%, max {max_du:.3f}%) — the extent copy into the main "
+            f"volume was not observed. Full series: {[round(d, 3) for d in du_series]}")
         self.log.info(
-            f"Main-volume usage grew {baseline_du:.1f}% -> {max_du:.1f}% as extents "
+            f"Main-volume usage grew {baseline_du:.3f}% -> {max_du:.3f}% as extents "
             f"were copied in")
 
     def _validate_guest_volume_transfer(self, rebalance_task, accel_ids, guest_vol_ids,
@@ -1927,10 +1859,8 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         Time here is not free: guest volumes are deleted as migration completes, so every
         second spent is a second of the drain Stage E cannot observe. Two knobs:
 
-          iops_grace=0        exit as soon as the handoff is complete and defer the IOPS
-                              verdict to Stage E, which polls the same volumes anyway and
-                              can watch until each is deleted — the real deadline. Non-zero
-                              lingers here, which suits the standalone test.
+          iops_grace=0        exit as soon as the handoff is complete (default). The IOPS
+                              scale-down is no longer validated; non-zero only lingers.
           run_read_workload   False when a later stage validates reads, so the drain window
                               is not spent loading documents.
 
@@ -1955,7 +1885,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         # handed off between two polls.
         poll_interval = int(self.input.param("transfer_poll_interval", 5))
         if iops_grace is None:
-            iops_grace = int(self.input.param("scaled_iops_grace", 120))
+            iops_grace = 0
 
         transferred_on = dict()   # vol_id -> KV instance it was first seen attached to
         iops_scaled = dict()      # vol_id -> IOPS, once seen below expected_iops on a KV node
@@ -2044,12 +1974,6 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             if not pending and accel_terminated:
                 # Handoff complete — the assertion this stage owns is satisfied.
                 if iops_grace <= 0:
-                    if unscaled:
-                        self.log.info(
-                            f"[transfer] all {len(transferred_on)} volume(s) on KV nodes; "
-                            f"leaving now and handing the IOPS watch for "
-                            f"{len(unscaled)} volume(s) to the drain stage, so the drain "
-                            f"window is not spent waiting here")
                     break
                 # Otherwise linger for the scale-down, bounded so a never-scaling volume
                 # delays the stage by iops_grace at most.
@@ -2090,34 +2014,6 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         self.log.info(
             f"All {len(transferred_on)} guest volume(s) handed off to KV nodes: "
             + ", ".join(f"{v}->{i}" for v, i in sorted(transferred_on.items())))
-
-        # 1b: IOPS scale-down, reported separately from the handoff — a volume can be
-        # correctly transferred and never scaled (observed: 16000 -> deleted).
-        never_scaled = [v for v in guest_vol_ids if v not in iops_scaled]
-        # Published for a later stage to continue the watch. Volumes already deleted can
-        # never scale, so they are settled rather than watchable.
-        self._iops_watch = {v: last_iops.get(v) for v in never_scaled if v not in deleted}
-        self._iops_settled_unscaled = {v: last_iops.get(v) for v in never_scaled
-                                       if v in deleted}
-        self._iops_scaled_count = len(iops_scaled)
-        self._iops_total_count = len(guest_vol_ids)
-
-        if not never_scaled:
-            self.log.info(
-                f"All {len(iops_scaled)} guest volume(s) scaled below the {expected_iops} "
-                f"download IOPS after handoff: "
-                + ", ".join(f"{v}={i}" for v, i in sorted(iops_scaled.items())))
-        elif iops_grace <= 0:
-            self.log.info(
-                f"IOPS verdict deferred: {len(iops_scaled)}/{len(guest_vol_ids)} volume(s) "
-                f"seen below {expected_iops} IOPS so far; {len(self._iops_watch)} still live "
-                f"and being handed to the drain stage to watch "
-                f"({sorted(self._iops_watch)}), {len(self._iops_settled_unscaled)} already "
-                f"deleted without scaling ({sorted(self._iops_settled_unscaled)})")
-        else:
-            self._report_iops_scale_down(
-                self._iops_watch, self._iops_settled_unscaled, len(iops_scaled),
-                len(guest_vol_ids), f"within {iops_grace}s of the handoff completing")
 
         # 2: all accelerator instances terminated
         self.assertTrue(
@@ -2223,7 +2119,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
 
         if baseline_du is None:
             baseline_du = self._avg_main_volume_usage()
-        self.log.info(f"Main-volume usage baseline: {baseline_du:.1f}%")
+        self.log.info(f"Main-volume usage baseline: {baseline_du:.3f}%")
 
         # Monitor migration to completion.
         max_du = baseline_du
@@ -2247,9 +2143,9 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             max_du = max(max_du, du_now)
             pct = (completed / total * 100) if total else 0
             self.log.info(
-                f"[migration] completed={completed}/{total} ({pct:.1f}%) | "
-                f"guest_volumes={gv_now}/{gv_start} | main_du={du_now:.1f}% "
-                f"(baseline {baseline_du:.1f}%) | failures={failures_seen}")
+                f"[migration] completed={completed}/{total} ({pct:.3f}%) | "
+                f"guest_volumes={gv_now}/{gv_start} | main_du={du_now:.3f}% "
+                f"(baseline {baseline_du:.3f}%) | failures={failures_seen}")
             # Complete when the copy is done OR all guest volumes have been released.
             if (total > 0 and completed >= total) or gv_now == 0:
                 migrated = True
@@ -2282,10 +2178,10 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         self.assertGreater(
             max_du, baseline_du,
             f"Main-volume usage did not increase during migration "
-            f"(baseline {baseline_du:.1f}%, max {max_du:.1f}%) — copy not observed")
+            f"(baseline {baseline_du:.3f}%, max {max_du:.3f}%) — copy not observed")
         self.log.info(
             f"Background migration complete: guest volumes drained to 0, main_du "
-            f"{baseline_du:.1f}% -> {max_du:.1f}%, no failures")
+            f"{baseline_du:.3f}% -> {max_du:.3f}%, no failures")
 
     def _assert_no_orphan_accelerator_resources(self, label="teardown"):
         """No orphaned guest volumes, ASGs, or accelerator instances survive.
@@ -2777,10 +2673,8 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             if rebalance_task.state in self._FAILED_STATES:
                 self.fail(f"Rebalance failed before guest volumes appeared: "
                           f"{rebalance_task.state}")
-            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
-                "couchbase-cloud-cluster-id": self.cluster.id,
-                "couchbase-cloud-function": "fusion-accelerator",
-            })
+            # guest_only: exclude each accelerator's root volume (unencrypted gp3 defaults)
+            volumes = self._list_accelerator_volumes(guest_only=True)
             if volumes:
                 self.log.info(
                     f"Found {len(volumes)} guest volume(s) — inspecting properties")
@@ -3063,18 +2957,16 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
-    # Test 13: One ASG per accelerator, each with DesiredCapacity == 1
+    # Test 13: One ASG per availability zone
     # ------------------------------------------------------------------
 
-    def test_asg_desired_capacity_one_per_shard(self):
+    def test_one_asg_per_az(self):
         """
-        Stage A / phase 4: one ASG per shard/accelerator, each with DesiredCapacity == 1
-        and exactly one InService instance.
+        Stage A / phase 4: one fusion ASG per availability zone.
 
         Validates (see _validate_asg_topology):
-        - every fusion ASG has DesiredCapacity == 1 and MaxSize == 1
-        - every fusion ASG has exactly one InService instance
-        - #ASGs == #accelerator instances
+        - no availability zone has more than one fusion ASG
+        - accelerator count is not tied to the ASG count
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
@@ -3247,7 +3139,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             # the rebalance took.
             baseline_du = self._avg_main_volume_usage()
             self.log.info(
-                f"Pre-migration main-volume usage baseline: {baseline_du:.1f}% at "
+                f"Pre-migration main-volume usage baseline: {baseline_du:.3f}% at "
                 f"{self._data_path()}"
                 + ("" if migration_paused else
                    " (migration was NOT frozen, so some copying may already be included)"))
@@ -3350,7 +3242,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
           Stage 0 — freeze background migration BEFORE the rebalance is triggered, so no
             guest volume is deleted while Stages A-C observe them        [_pause_migration]
           Stage A — accelerators launched (>= 1), homogeneous instance type present in the
-            ASG override list, one ASG per accelerator at DesiredCapacity 1, every guest
+            ASG override list, one fusion ASG per availability zone, every guest
             volume >= 50 GB at 16000 IOPS   [_validate_accelerator_instance_type,
                                              _validate_asg_topology,
                                              _validate_accelerator_volume_specs]
@@ -3462,7 +3354,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             baseline_du = self._avg_main_volume_usage()
             self.log.info(
                 f"Pre-migration main-volume usage baseline (post-completion): "
-                f"{baseline_du:.1f}% at {self._data_path()}")
+                f"{baseline_du:.3f}% at {self._data_path()}")
 
         # ---------------- Stage C: handoff to KV nodes (phase 6) ----------------
         # First among the post-completion checks and before any slow reporting: the volumes
@@ -3501,8 +3393,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         with self._stage("Stage E: guest volume drain + main volume growth"):
             self._validate_guest_volume_drain(
                 expected_start=gv_count or len(guest_vol_ids),
-                baseline_du=baseline_du,
-                iops_watch=getattr(self, "_iops_watch", None))
+                baseline_du=baseline_du)
 
         # ---------------- Stage F: teardown (phase 8) ----------------
         with self._stage("Stage F: teardown and durability"):
@@ -3696,7 +3587,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         # pre-migration no matter how long the two rebalances took.
         baseline_du = self._avg_main_volume_usage()
         self.log.info(
-            f"Pre-migration main-volume usage baseline: {baseline_du:.1f}% at "
+            f"Pre-migration main-volume usage baseline: {baseline_du:.3f}% at "
             f"{self._data_path()}")
         self._log_cluster_data_summary("after both rebalances, migration still frozen")
 
@@ -3733,28 +3624,18 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
           couchbase-cloud-cluster-id = <cluster.id>
           couchbase-cloud-function   = fusion-accelerator
 
-        Covers accelerator EC2 instances, their ASGs, guest EBS volumes, the S3
-        log-store bucket, and the accelerator IAM instance profile/role -- the five
-        resource kinds the CP provisions and tears down per rebalance.
+        Covers accelerator EC2 instances, their ASGs and guest EBS volumes. The S3
+        log-store bucket and IAM instance profile/role tags are intentionally not
+        asserted.
 
         Guest-volume tags are also checked by test_guest_volume_properties; they are
-        repeated here so this test is a single place proving ALL temporary resources are
-        tagged, not just some of them. The EC2/ASG/volume checks re-verify a tag value
-        that already had to match for the resource to be *found* (they are discovered by
-        that same tag filter), so they mainly guard against a future regression that
-        widens the filter. The S3 bucket and IAM instance-profile/role checks are
-        different: those two are looked up by name/ARN, never by tag filter, so this is
-        the first real assertion anywhere in this suite that the CP tags them at all.
+        repeated here so this test is a single place proving the temporary compute and
+        storage resources are tagged.
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
         self._apply_fusion_config_from_params()
         self._apply_fusion_sync_threshold()
-
-        s3_bucket_name, _ = self._capture_s3_log_store_baseline()
-        self.assertIsNotNone(
-            s3_bucket_name, "No S3 log-store bucket found before rebalance — "
-            "cannot validate bucket tags")
 
         self._load_above_threshold()
         rebalance_task = self._trigger_rebalance()
@@ -3766,15 +3647,6 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             len(volumes), 0,
             "No guest volumes appeared alongside the accelerator fleet — "
             "cannot validate guest volume tags")
-
-        iam_profile_name = self.fusion_aws_util.ec2.get_instance_iam_profile_name(
-            instances[0]["InstanceId"])
-        self.assertIsNotNone(
-            iam_profile_name,
-            f"Accelerator instance {instances[0]['InstanceId']} has no IAM instance "
-            f"profile attached — cannot validate IAM tags")
-        iam_tags = self.fusion_aws_util.ec2.get_iam_resource_tags(iam_profile_name)
-        s3_tags = self.fusion_aws_util.s3.get_bucket_tags(s3_bucket_name)
 
         expected = {
             "couchbase-cloud-cluster-id": self.cluster.id,
@@ -3806,21 +3678,12 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             _check("guest volume", vol.get("VolumeId"),
                    {t["Key"]: t["Value"] for t in vol.get("Tags", [])})
 
-        _check("S3 log-store bucket", s3_bucket_name, s3_tags)
-        _check("IAM instance profile", iam_profile_name,
-               iam_tags.get("instance_profile_tags", {}))
-        for role_name, role_tags in iam_tags.get("role_tags", {}).items():
-            _check("IAM role", role_name, role_tags)
-
         self.assertEqual(
             len(failures), 0,
             "Resource tag violations across the accelerator fleet:\n"
             + "\n".join(failures))
         self.log.info(
             f"All accelerator resources correctly tagged: {len(instances)} instance(s), "
-            f"{len(asgs)} ASG(s), {len(volumes)} guest volume(s), 1 S3 bucket, "
-            f"1 IAM instance profile"
-            + (f" + {len(iam_tags.get('role_tags', {}))} role(s)"
-               if iam_tags.get("role_tags") else ""))
+            f"{len(asgs)} ASG(s), {len(volumes)} guest volume(s)")
 
         self.wait_for_rebalances([rebalance_task])

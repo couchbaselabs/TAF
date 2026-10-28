@@ -747,6 +747,64 @@ class FusionCPResourceMonitor:
 
         return usage
 
+    def get_main_volume_disk_usage_bytes(self, cluster, data_path=None):
+        """
+        Byte-level variant of get_main_volume_disk_usage_percent.
+
+        ``df --output=pcent`` is a whole percent (~10 GiB per step on a 1 TiB volume), too
+        coarse to see a migration that copies a few GiB. This reads used/total bytes.
+
+        :return: dict mapping instance ID -> (used_bytes, total_bytes), or None for any
+                 instance whose check failed
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        instances = self.fusion_aws_util.list_instances(
+            self.fusion_aws_util._cluster_filter(
+                cluster.id,
+                [{'Name': 'tag:couchbase-cloud-function', 'Values': ['couchbase']}]),
+            log="Couchbase Cluster Instances", suppress_log=True)
+
+        data_path = data_path or self.resolve_data_path(cluster)
+        cmd = f"df -B1 --output=used,size {data_path} 2>/dev/null | tail -1"
+
+        def check_instance(instance):
+            instance_id = instance.get('InstanceId', 'N/A')
+            try:
+                result = self.fusion_aws_util.ec2.run_shell_command(instance_id, cmd)
+                parts = result.get('stdout', '').split()
+                if (result.get('success') and len(parts) == 2
+                        and all(p.isdigit() for p in parts)):
+                    return instance_id, (int(parts[0]), int(parts[1]))
+                self.log.warning(
+                    f"Could not parse main volume disk bytes on {instance_id}: "
+                    f"stdout={result.get('stdout')!r} stderr={result.get('stderr')}")
+            except Exception as e:
+                self.log.error(
+                    f"Failed to check main volume disk bytes on {instance_id}: {e}")
+            return instance_id, None
+
+        usage = {}
+        if instances:
+            with ThreadPoolExecutor(max_workers=min(len(instances), 50)) as executor:
+                futures = {
+                    executor.submit(check_instance, inst): inst for inst in instances
+                }
+                for future in as_completed(futures):
+                    instance_id, value = future.result()
+                    usage[instance_id] = value
+
+        gib = 1024 ** 3
+        table = PrettyTable()
+        table.field_names = ["Instance ID", "Main Volume Used (GiB)", "Total (GiB)"]
+        for instance_id, value in usage.items():
+            table.add_row([instance_id] + (
+                [f"{value[0] / gib:.2f}", f"{value[1] / gib:.2f}"]
+                if value else ["N/A", "N/A"]))
+        self.log.info(
+            f"Main volume disk bytes for cluster {cluster.id} at {data_path}:\n{table}")
+        return usage
+
     def scan_dp_agent_logs_for_errors(self, clusters, stop_run_event, interval=300):
         """
         Background thread: periodically scan dp-agent logs for ERROR entries on all cluster instances.
