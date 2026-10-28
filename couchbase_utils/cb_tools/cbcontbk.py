@@ -24,7 +24,8 @@ class CbContBk(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
                  password="password", log=None,
                  cbcontbk_cloud_provider=None, backup_cloud_provider=None,
-                 kms_provider=None, obj_staging_dir=None, cmd_timeout=None):
+                 kms_provider=None, obj_staging_dir=None, cmd_timeout=None,
+                 no_ssl_verify=None):
         """
         :param cbcontbk_cloud_provider: provider backing the continuous-backup
                                         location (cbcontbk's -l)
@@ -55,7 +56,11 @@ class CbContBk(CbCmdBase):
         """
         CbCmdBase.__init__(self, shell_conn, "cbcontbk",
                            username=username, password=password)
+        if no_ssl_verify is None:
+            no_ssl_verify = CbServer.use_https
         self.cli_flags = ""
+        if no_ssl_verify:
+            self.cli_flags += " --no-ssl-verify"
         self.cbcontbk_cloud_provider = cbcontbk_cloud_provider
         self.backup_cloud_provider = backup_cloud_provider
         self.kms_provider = kms_provider
@@ -189,8 +194,7 @@ class CbContBk(CbCmdBase):
 
     def restore(self, archive_path, repo_name,
                 location, temp_dir, cluster_host=None, threads=8, timestamp=None,
-                include_data=None, map_data=None, obj_staging_dir=None,
-                no_ssl_verify=False):
+                include_data=None, map_data=None, obj_staging_dir=None):
         """
         Restores a continuous backup to a specified point in time.
         :param archive_path: Path to the traditional backup location
@@ -235,8 +239,6 @@ class CbContBk(CbCmdBase):
             cmd += f" --include-data {include_data}"
         if map_data:
             cmd += f" --map-data {map_data}"
-        if no_ssl_verify:
-            cmd += f" --no-ssl-verify"
 
         cmd += self.cli_flags
 

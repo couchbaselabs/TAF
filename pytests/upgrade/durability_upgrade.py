@@ -1901,8 +1901,6 @@ class UpgradeTests(UpgradeBase):
                     continuous_backup_enabled="false")
                 self.log.info("Continuous backup disabled for bucket: %s" % bucket.name)
 
-        no_ssl_verify = self.tls_level == "strict"
-
         # Restore from all timestamps in sequential fashion and verify item counts
         self.log.info("Restoring from %d timestamps sequentially" % len(self.pitr_timestamps))
         for i, (timestamp, expected_item_counts) in enumerate(
@@ -1930,8 +1928,7 @@ class UpgradeTests(UpgradeBase):
                 location=self.continuous_backup_location,
                 temp_dir="/data/tmp",
                 timestamp=timestamp,
-                obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
-                no_ssl_verify=no_ssl_verify)
+                obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
 
             self._assert_restore_succeeded(output, error, timestamp)
 
