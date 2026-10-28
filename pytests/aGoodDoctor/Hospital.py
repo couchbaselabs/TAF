@@ -613,6 +613,9 @@ class Murphy(BaseTestCase, OPD):
         # self.stop_stats = True
         # stat_th.join()
 
+        # Record "everything" as a timestamp for PITR
+        self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_everything"])
+
         # Restore using backup/PITR.
         # The mutation thread started by initial_setup() is still running here
         # -- this test never clears self.mutations -- so the workloads have to
@@ -1685,8 +1688,8 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     self.end_step_checks()
 
-                    # Record timestamp for PITR
-                    self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_timestamp"])
+                    # Record "everything" as a timestamp for PITR
+                    self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_everything"])
 
                 ###################################################################
                 # Skipped when the caller owns the restore step --
@@ -2045,8 +2048,8 @@ class Murphy(BaseTestCase, OPD):
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
 
-                # Record timestamp for PITR
-                self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_timestamp"])
+                # Record "everything" as a timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_everything"])
 
                 ###################################################################
                 '''

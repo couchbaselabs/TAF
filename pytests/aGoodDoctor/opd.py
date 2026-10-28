@@ -1513,7 +1513,11 @@ class OPD:
         # Each entry is [timestamp, {bucket_name: item_count}]. The timestamps
         # are fixed-width ISO-8601 UTC, so ordering them lexicographically on
         # the first element is chronological; the per-bucket counts in the
-        # second element are never compared.
+        # second element are never compared. A "record_everything" entry
+        # holds the literal "everything" instead, which sorts after every
+        # ISO timestamp ('e' > any digit) -- the right place for "the latest
+        # data cbcontbk has backed up" -- and the stable sort keeps several
+        # of them in the order they were recorded.
         timestamps = sorted(self.continuous_backup_timestamps,
                             key=lambda entry: entry[0])
         if not timestamps:
@@ -2397,20 +2401,27 @@ class OPD:
                            % ("enable" if enable else "disable", bucket.name))
         return status
 
-    def record_timestamp_for_continuous_backup(self, cluster, bucket_util, continuous_backup_timestamps):
+    def record_timestamp_for_continuous_backup(self, cluster, bucket_util, continuous_backup_timestamps,
+                                               timestamp=None):
         """
         Record a PITR restore point as [timestamp, {bucket_name: item_count}].
+
+        `timestamp` defaults to the backup node's current UTC time. Pass
+        "everything" to restore up to the latest data cbcontbk has backed up
+        instead of to a fixed point in time.
 
         The item count is captured for every bucket, since one cbcontbk
         restore replays the whole cluster and each bucket has to be verified
         against its own count at that timestamp.
         """
-        # Get timestamp of backup for continuous backup test
-        shell = RemoteMachineShellConnection(cluster.backup_nodes[0])
-        output, _ = shell.execute_command("date -u +'%Y-%m-%dT%H:%M:%SZ'")
-        cont_bkp_timestamp = output[0].strip() if output else None
+        cont_bkp_timestamp = timestamp
+        if cont_bkp_timestamp is None:
+            # Get timestamp of backup for continuous backup test
+            shell = RemoteMachineShellConnection(cluster.backup_nodes[0])
+            output, _ = shell.execute_command("date -u +'%Y-%m-%dT%H:%M:%SZ'")
+            cont_bkp_timestamp = output[0].strip() if output else None
+            shell.disconnect()
         self.log.info("Continuous backup timestamp: {}".format(cont_bkp_timestamp))
-        shell.disconnect()
 
         if cont_bkp_timestamp is None:
             # Recording a None would both lose the restore point and break the
@@ -2432,8 +2443,12 @@ class OPD:
         """
         Run the backup steps in `order`, each one of:
             "traditional_backup" -- take a cbbackupmgr backup
-            "record_timestamp"   -- record a PITR restore point; a no-op
-                                    unless cont_bkp_test is set
+            "record_timestamp"   -- record a PITR restore point at the
+                                    current time; a no-op unless
+                                    cont_bkp_test is set
+            "record_everything"  -- the same, but the restore point is
+                                    cbcontbk's "everything" (the latest data
+                                    it has backed up) instead of a fixed time
 
         With no `order`, a continuous-backup run only records a restore
         point, and also takes a traditional backup after it when
@@ -2462,15 +2477,18 @@ class OPD:
                     cluster_host=self.backup_cluster_host)
                 self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
                 self._assert_cbbackupmgr_succeeded(output, error, "backup")
-            elif step == "record_timestamp":
+            elif step in ("record_timestamp", "record_everything"):
                 if self.cont_bkp_test:
                     self.sleep(cont_bkp_wait, "Sleep for a while before recording "
                                               "timestamp for continuous backup")
                     self.record_timestamp_for_continuous_backup(
                         self.cluster, self.bucket_util,
-                        self.continuous_backup_timestamps)
+                        self.continuous_backup_timestamps,
+                        timestamp=("everything" if step == "record_everything"
+                                   else None))
             else:
                 self.fail(f"Unknown backup step {step!r}, expected "
-                          f"'traditional_backup' or 'record_timestamp'")
+                          f"'traditional_backup', 'record_timestamp' or "
+                          f"'record_everything'")
             if self.cont_bkp_test:
                 self.sleep(cont_bkp_wait, f"Sleep for a while after {step}")
