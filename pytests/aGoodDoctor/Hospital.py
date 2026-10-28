@@ -117,6 +117,7 @@ class Murphy(BaseTestCase, OPD):
 
         # Flag to avoid running initial_setup more than once
         self.initial_setup_done = False
+        self.first_backup_done = False
 
         self.ql = list()
         self.ftsQL = list()
@@ -593,12 +594,6 @@ class Murphy(BaseTestCase, OPD):
         self.read_perc = perc
         self.mutation_perc = self.input.param("mutation_perc", 100)
 
-        # Take first backup
-        if self.cont_bkp_test and self.drBackup is not None:
-            self.sleep(60 * self.continuous_backup_interval * 2,
-                       "Sleep for a while before taking first backup")
-        self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
-
         while self.loop <= self.iterations:
             #######################################################################
             '''
@@ -782,6 +777,14 @@ class Murphy(BaseTestCase, OPD):
             self.mutations = True
             self.mutation_th = threading.Thread(target=self.normal_mutations)
             self.mutation_th.start()
+
+        # Take first backup
+        if self.cont_bkp_test and self.drBackup is not None:
+            self.sleep(60 * self.continuous_backup_interval * 2,
+                       "Sleep for a while before taking first backup")
+        if not self.first_backup_done:
+            self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
+            self.first_backup_done = True
 
     def test_rebalance(self):
         self.initial_setup()
@@ -1174,12 +1177,6 @@ class Murphy(BaseTestCase, OPD):
         self.initial_setup()
 
         self.loop = 0
-
-        # Take first backup
-        if self.cont_bkp_test and self.drBackup is not None:
-            self.sleep(60 * self.continuous_backup_interval * 2,
-                       "Sleep for a while before taking first backup")
-        self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
 
         if self.cluster_ops_fixed_topology:
             self.PrintStep("Fixed topology: running only the failover -> "
@@ -1736,12 +1733,6 @@ class Murphy(BaseTestCase, OPD):
         self.track_failures = False
         self.initial_setup()
 
-        # Take first backup
-        if self.cont_bkp_test and self.drBackup is not None:
-            self.sleep(60 * self.continuous_backup_interval * 2,
-                        "Sleep for a while before taking first backup")
-        self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
-
         self.PrintStep("Crash indexer with Loading of docs")
         self.crash_indexer(num_kills=2, graceful=False)
 
@@ -2242,13 +2233,6 @@ class Murphy(BaseTestCase, OPD):
                       f"ini or drop the param.")
 
         self.initial_setup()
-
-        # Take first backup
-        if self.cont_bkp_test and self.drBackup is not None:
-            self.sleep(60 * self.continuous_backup_interval * 2,
-                        "Sleep for a while before taking first backup")
-        self.traditional_backup_and_record_timestamp_for_continuous_backup(
-            order=["traditional_backup"])
 
         self.target_disk_util = self.input.param("target_disk_usage", "50G")
         max_collections = self.input.param("max_collections",
