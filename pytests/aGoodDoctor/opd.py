@@ -2492,3 +2492,21 @@ class OPD:
                           f"'record_everything'")
             if self.cont_bkp_test:
                 self.sleep(cont_bkp_wait, f"Sleep for a while after {step}")
+
+    def _restart_backup_chain_after_restore(self):
+        """
+        Start the next iteration's backups afresh from the data a restore
+        just put back: drop the recorded restore points and take a new base
+        backup.
+
+        A PITR restore replays every recorded timestamp onto a flushed
+        bucket, so the next one only needs those recorded from here on.
+        Keeping the older ones would make each iteration replay all of them
+        again -- 2 more full restores per iteration.
+        """
+        self.continuous_backup_timestamps = []
+        if self.cont_bkp_test and self.drBackup is not None:
+            self.sleep(60 * self.continuous_backup_interval * 2,
+                       "Sleep before taking a fresh base backup")
+        self.traditional_backup_and_record_timestamp_for_continuous_backup(
+            order=["traditional_backup"])

@@ -1704,6 +1704,10 @@ class Murphy(BaseTestCase, OPD):
                     # queries against a flushed bucket are noise. They resume
                     # from the same point once the restore is verified.
                     self.restore_with_workloads_paused()
+                    # No next iteration to take a new base backup for
+                    # after the last one
+                    if self.loop + 1 < self.iterations:
+                        self._restart_backup_chain_after_restore()
 
             #######################################################################
                 self.loop += 1
@@ -2075,6 +2079,10 @@ class Murphy(BaseTestCase, OPD):
                 # against a flushed bucket are noise. They resume from the
                 # same point once the restore is verified.
                 self.restore_with_workloads_paused()
+                # No next iteration to take a new base backup for after the
+                # last one
+                if self.loop + 1 < self.iterations:
+                    self._restart_backup_chain_after_restore()
 
                 self.loop += 1
         self.mutations = False
@@ -2431,11 +2439,10 @@ class Murphy(BaseTestCase, OPD):
             # still running, and would otherwise be querying a flushed bucket
             # for the length of the restore.
             self.restore_with_workloads_paused()
-            # A PITR restore replays every recorded timestamp onto a flushed
-            # bucket, so the next one only needs those recorded from here on.
-            # Keeping the older ones would make each iteration replay all of
-            # them again -- 2 more full restores per iteration.
-            self.continuous_backup_timestamps = []
+            # No next iteration to take a new base backup for after the last
+            # one
+            if loop_index + 1 < iterations:
+                self._restart_backup_chain_after_restore()
 
             loop_index += 1
             mutation_num += 1
