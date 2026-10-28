@@ -1386,8 +1386,8 @@ class OPD:
             backup -> merge -> capture item count -> flush -> restore ->
             monitor
         continuous backup / PITR:
-            disable cont-backup -> flush -> restore every recorded timestamp
-            in order -> monitor -> re-enable cont-backup
+            disable cont-backup -> for each recorded timestamp, in order:
+            flush -> restore -> monitor; then re-enable cont-backup
         """
         if self.drBackup is None:
             self.log.info("No backup configured for this run; skipping restore")
@@ -1534,11 +1534,16 @@ class OPD:
         # Print stats before restore
         self.print_stats(self.cluster)
 
-        self.bucket_util.flush_all_buckets(self.cluster)
-        self.sleep(30, "Sleep after flushing buckets, before triggering restore")
-
         buckets_by_name = {bucket.name: bucket for bucket in self.cluster.buckets}
         for timestamp, items_per_bucket in timestamps:
+            # Flush all buckets
+            self.log.info("Flushing all buckets before restore verification")
+            for bucket in self.cluster.buckets:
+                flush_status = self.bucket_util.flush_bucket(self.cluster, bucket)
+                self.assertTrue(flush_status, f"Failed to flush bucket {bucket.name}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self.sleep(180, "Waiting after bucket flush")
+
             self.log.info("Restoring backup with timestamp: %s "
                             "(expected items: %s)"
                             % (timestamp, items_per_bucket))
