@@ -1154,32 +1154,39 @@ class FusionClusterOnOffTest(_FusionTestBase):
 
     def test_enable_fusion_then_immediately_turn_off_cluster(self):
         """
-        Trigger a fusion enable, then immediately try to turn the cluster off
-        while the enable (and the rebalance it drives) is still in progress.
+        Turn the cluster off at each stage of a fusion enable.
 
-        Enabling fusion rebalances the cluster, and the CP must reject a
-        turn-off while the cluster is rebalancing with EntityStateInvalid
-        ("Temporarily unavailable while the Cluster is in the Rebalancing
-        state."). Once the enable completes, a normal off/on cycle must work
-        and fusion must stay enabled.
+        A fusion enable first runs a cluster deployment job, during which the
+        cluster is 'rebalancing' and fusion is still 'disabled'. Near the end
+        of that job fusion moves to 'enabling'; the job then finishes and the
+        cluster is 'healthy' again while fusion is still 'enabling' (about
+        10s), after which fusion becomes 'enabled'.
+
+        The CP gates turn-off on the cluster state only:
+        - cluster 'rebalancing' -> rejected with EntityStateInvalid
+        - cluster 'healthy' with fusion 'enabling' -> accepted (202); the
+          turn-on path re-queues the enable, so fusion comes back 'enabled'
 
         Test sequence:
         1.  Ensure fusion is 'disabled' (clean baseline).
-        2.  Call enable_fusion API (async — state transitions to 'enabling').
-        3.  Wait until fusion enters 'enabling', then immediately issue a
-            cluster turn-off.
-        4.  Assert the turn-off is rejected with EntityStateInvalid.
-        5.  Wait for fusion to reach 'enabled' and the cluster to be healthy.
-        6.  Turn the cluster off, then back on; wait for 'healthy'.
-        7.  Assert fusion is still 'enabled' after turn-on.
-        8.  Assert no memcached errors throughout.
+        2.  Call enable_fusion API.
+        3.  Phase A: as soon as the cluster is 'rebalancing', issue a turn-off
+            and assert it is rejected with EntityStateInvalid.
+        4.  Phase B: as soon as fusion is 'enabling', issue a turn-off.
+            Cluster 'healthy': assert it is accepted (202) and the cluster
+            reaches 'turned_off'.
+            Cluster 'rebalancing': assert EntityStateInvalid, wait for fusion
+            'enabled', then turn the cluster off.
+        5.  Turn the cluster back on; wait for 'healthy'.
+        6.  Assert fusion is 'enabled' after turn-on.
+        7.  Assert no memcached errors throughout.
 
         Validates:
         - enable_fusion API returns 200 OK on a healthy disabled cluster
-        - Turn-off is rejected (EntityStateInvalid) while the enable rebalance
-          is in progress
-        - The rejected turn-off does not disturb the in-flight enable
-        - Cluster off/on works after the enable completes; fusion stays enabled
+        - Turn-off is rejected (EntityStateInvalid) while the enable's
+          deployment job has the cluster rebalancing
+        - Turn-off is accepted while fusion is 'enabling' on a healthy cluster
+        - Fusion ends 'enabled' after the off/on cycle
         - No memcached errors throughout
         """
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
@@ -1190,7 +1197,27 @@ class FusionClusterOnOffTest(_FusionTestBase):
         enabling_wait_timeout = self.input.param("enabling_wait_timeout", 120)
         fusion_settle_timeout = self.input.param("fusion_settle_timeout", 1200)
 
-        # Trigger fusion enable (asynchronous — state transitions to 'enabling')
+        dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
+
+        def turn_off_rejected(resp, context):
+            self.assertNotEqual(
+                resp.status_code, 202,
+                f"Turn-off was accepted on {self.cluster.id} {context} — "
+                f"expected EntityStateInvalid")
+            try:
+                err_type = resp.json().get("errorType", "")
+            except Exception:
+                err_type = ""
+            self.assertEqual(
+                err_type, "EntityStateInvalid",
+                f"Turn-off {context} rejected with unexpected error "
+                f"{resp.status_code}: {resp.content}")
+            self.log.info(
+                f"Turn-off correctly rejected {context}: "
+                f"{resp.status_code} {resp.content}")
+
+        # Trigger fusion enable (asynchronous — runs a deployment job, then
+        # fusion transitions to 'enabling').
         self.log.info(f"Triggering fusion enable on cluster {self.cluster.id}")
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
         self.assertEqual(
@@ -1198,22 +1225,48 @@ class FusionClusterOnOffTest(_FusionTestBase):
             f"enable_fusion returned unexpected status "
             f"{resp.status_code}: {resp.content}")
 
-        # Wait until fusion enters the 'enabling' transitional state so the
-        # turn-off lands while the enable rebalance is in flight.
+        # Phase A: turn-off while the enable's deployment job has the cluster
+        # rebalancing.
         deadline = time.time() + enabling_wait_timeout
-        fusion_state_at_turnoff = "unknown"
+        cluster_state = "unknown"
+        fusion_state = "unknown"
         while time.time() < deadline:
-            status = CapellaAPI.get_fusion_status(
+            cluster_state = CapellaAPI.get_cluster_state(
                 self.pod, self.tenant, self.cluster.id)
-            fusion_state_at_turnoff = status.get("state", "unknown")
+            fusion_state = CapellaAPI.get_fusion_status(
+                self.pod, self.tenant, self.cluster.id).get("state", "unknown")
             self.log.info(
-                f"Fusion state while waiting to turn off: {fusion_state_at_turnoff}")
-            if fusion_state_at_turnoff in ("enabling", "enabled"):
+                f"Phase A — cluster state: {cluster_state}, fusion state: "
+                f"{fusion_state}")
+            if cluster_state == "rebalancing" or \
+                    fusion_state in ("enabling", "enabled"):
                 break
-            time.sleep(5)
+            time.sleep(1)
+        if cluster_state == "rebalancing":
+            resp = dr_on_off.capella_api.turn_off_cluster(
+                self.tenant.id, self.tenant.project_id, self.cluster.id)
+            turn_off_rejected(
+                resp, f"while the cluster was rebalancing during fusion "
+                      f"enable (fusion: {fusion_state})")
+        else:
+            self.log.warning(
+                f"Cluster never entered 'rebalancing' before fusion reached "
+                f"'{fusion_state}' (cluster: {cluster_state}) — skipping the "
+                f"rebalancing turn-off check")
+
+        # Phase B: turn-off as soon as fusion is 'enabling'. The window is
+        # about 10s, so poll every second.
+        fusion_state_at_turnoff = fusion_state
+        while time.time() < deadline and \
+                fusion_state_at_turnoff not in ("enabling", "enabled"):
+            time.sleep(1)
+            fusion_state_at_turnoff = CapellaAPI.get_fusion_status(
+                self.pod, self.tenant, self.cluster.id).get("state", "unknown")
+            self.log.info(
+                f"Phase B — fusion state: {fusion_state_at_turnoff}")
         self.assertEqual(
             fusion_state_at_turnoff, "enabling",
-            f"Fusion did not enter 'enabling' within {enabling_wait_timeout}s "
+            f"Fusion was not seen in 'enabling' within {enabling_wait_timeout}s "
             f"(last state: {fusion_state_at_turnoff}) — cannot exercise "
             f"turn-off during an in-progress enable")
 
@@ -1223,40 +1276,47 @@ class FusionClusterOnOffTest(_FusionTestBase):
             f"Issuing cluster turn-off — fusion state: "
             f"{fusion_state_at_turnoff}, cluster state: "
             f"{cluster_state_at_turnoff}")
-
-        dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
         resp = dr_on_off.capella_api.turn_off_cluster(
             self.tenant.id, self.tenant.project_id, self.cluster.id)
-        self.assertNotEqual(
-            resp.status_code, 202,
-            f"Turn-off was accepted on {self.cluster.id} while fusion enable "
-            f"was in progress (fusion: {fusion_state_at_turnoff}, cluster: "
-            f"{cluster_state_at_turnoff}) — expected EntityStateInvalid")
-        try:
-            err_type = resp.json().get("errorType", "")
-        except Exception:
-            err_type = ""
-        self.assertEqual(
-            err_type, "EntityStateInvalid",
-            f"Turn-off during fusion enable rejected with unexpected error "
-            f"{resp.status_code}: {resp.content}")
-        self.log.info(
-            f"Turn-off correctly rejected during fusion enable: "
-            f"{resp.status_code} {resp.content}")
 
-        # The rejected turn-off must not disturb the in-flight enable.
-        self._wait_for_fusion_state(
-            self.tenant, self.cluster, "enabled", timeout=fusion_settle_timeout)
-        self.log.info(
-            f"Fusion enable completed on {self.cluster.id} after rejected "
-            f"turn-off")
+        if cluster_state_at_turnoff == "rebalancing":
+            turn_off_rejected(
+                resp, "while fusion was 'enabling' and the cluster was "
+                      "rebalancing")
 
-        # Now that the enable has finished, a normal off/on cycle must work.
-        turned_off = dr_on_off.turn_off_cluster(timeout=turn_off_timeout)
+            # The rejected turn-off must not disturb the in-flight enable.
+            self._wait_for_fusion_state(
+                self.tenant, self.cluster, "enabled",
+                timeout=fusion_settle_timeout)
+            turned_off = dr_on_off.turn_off_cluster(timeout=turn_off_timeout)
+        else:
+            # The cluster is healthy while fusion is 'enabling', so the CP
+            # accepts the turn-off.
+            self.assertEqual(
+                resp.status_code, 202,
+                f"Turn-off was rejected on {self.cluster.id} while fusion was "
+                f"'enabling' (cluster: {cluster_state_at_turnoff}): "
+                f"{resp.status_code} {resp.content}")
+            self.log.info(
+                f"Turn-off accepted while fusion was 'enabling' "
+                f"(cluster: {cluster_state_at_turnoff})")
+
+            turned_off = False
+            deadline = time.time() + turn_off_timeout
+            while time.time() < deadline:
+                cluster_state = CapellaAPI.get_cluster_state(
+                    self.pod, self.tenant, self.cluster.id)
+                if cluster_state == "turned_off":
+                    turned_off = True
+                    break
+                if cluster_state == "turning_off_failed":
+                    break
+                self.sleep(5, f"Waiting for cluster to turn off, current "
+                              f"state: {cluster_state}")
         self.assertTrue(
             turned_off,
             f"Cluster {self.cluster.id} did not reach 'turned_off' state "
-            f"within {turn_off_timeout}s after fusion enable completed")
+            f"within {turn_off_timeout}s after a turn-off during fusion enable")
 
         self.log.info(
             f"Cluster {self.cluster.id} is off; turning it back on")
