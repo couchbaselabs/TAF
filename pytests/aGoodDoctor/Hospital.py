@@ -157,6 +157,12 @@ class Murphy(BaseTestCase, OPD):
         self.drBackup = None
         self.drContBackup = None
         self.continuous_backup_timestamps = list()
+
+        self.continuous_backup_strategy = self.input.param("continuous_backup_strategy", None)
+        if self.continuous_backup_strategy not in [None, "incremental_backup"]:
+            self.fail(f"Invalid value for continuous_backup_strategy. Expected either of None, incremental_backup."
+                      f"Got: {self.continuous_backup_strategy}")
+
         # Whether ClusterOpsVolume() restores at the end of each of its
         # iterations. Tests that call it as a sub-step and own the restore
         # themselves turn this off -- see
@@ -588,6 +594,9 @@ class Murphy(BaseTestCase, OPD):
         self.mutation_perc = self.input.param("mutation_perc", 100)
 
         # Take first backup
+        if self.cont_bkp_test and self.drBackup is not None:
+            self.sleep(60 * self.continuous_backup_interval * 2,
+                       "Sleep for a while before taking first backup")
         self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
 
         while self.loop <= self.iterations:
@@ -1167,6 +1176,9 @@ class Murphy(BaseTestCase, OPD):
         self.loop = 0
 
         # Take first backup
+        if self.cont_bkp_test and self.drBackup is not None:
+            self.sleep(60 * self.continuous_backup_interval * 2,
+                       "Sleep for a while before taking first backup")
         self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
 
         if self.cluster_ops_fixed_topology:
@@ -1420,9 +1432,8 @@ class Murphy(BaseTestCase, OPD):
                         self.assertTrue(rebalance_task.result, "Rebalance Failed")
                         self.end_step_checks()
 
-                    # Take an incremental backup
-                    self.traditional_backup_and_record_timestamp_for_continuous_backup(
-                        order=["traditional_backup"])
+                        # Take an incremental backup and record timestamp for PITR
+                        self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1726,6 +1737,9 @@ class Murphy(BaseTestCase, OPD):
         self.initial_setup()
 
         # Take first backup
+        if self.cont_bkp_test and self.drBackup is not None:
+            self.sleep(60 * self.continuous_backup_interval * 2,
+                        "Sleep for a while before taking first backup")
         self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
 
         self.PrintStep("Crash indexer with Loading of docs")
@@ -2230,6 +2244,9 @@ class Murphy(BaseTestCase, OPD):
         self.initial_setup()
 
         # Take first backup
+        if self.cont_bkp_test and self.drBackup is not None:
+            self.sleep(60 * self.continuous_backup_interval * 2,
+                        "Sleep for a while before taking first backup")
         self.traditional_backup_and_record_timestamp_for_continuous_backup(
             order=["traditional_backup"])
 

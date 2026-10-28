@@ -2428,18 +2428,49 @@ class OPD:
 
         continuous_backup_timestamps.append([cont_bkp_timestamp, items])
 
-    def traditional_backup_and_record_timestamp_for_continuous_backup(self, order=["record_timestamp", "traditional_backup"]):
+    def traditional_backup_and_record_timestamp_for_continuous_backup(self, order=None):
+        """
+        Run the backup steps in `order`, each one of:
+            "traditional_backup" -- take a cbbackupmgr backup
+            "record_timestamp"   -- record a PITR restore point; a no-op
+                                    unless cont_bkp_test is set
+
+        With no `order`, a continuous-backup run only records a restore
+        point, and also takes a traditional backup after it when
+        continuous_backup_strategy=incremental_backup. Any other run just
+        takes the traditional backup.
+
+        On a continuous-backup run every step is followed by a wait of two
+        continuous-backup intervals, and recording a restore point is also
+        preceded by one.
+        """
         if self.drBackup is None:
             return
+
+        if order is None:
+            if self.cont_bkp_test \
+                    and self.continuous_backup_strategy != "incremental_backup":
+                order = ["record_timestamp"]
+            else:
+                order = ["record_timestamp", "traditional_backup"]
+
+        cont_bkp_wait = 60 * self.continuous_backup_interval * 2
         for step in order:
             if step == "traditional_backup":
-                output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
-                                                    cluster_host=self.backup_cluster_host)
+                output, error = self.drBackup.backup(
+                    self.backup_archive, self.backup_repo,
+                    cluster_host=self.backup_cluster_host)
                 self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
                 self._assert_cbbackupmgr_succeeded(output, error, "backup")
-            elif step == "record_timestamp" and self.cont_bkp_test:
-                self.sleep(60 * self.continuous_backup_interval * 2, "Sleep for a while before recording timestamp for continuous backup")
-                self.record_timestamp_for_continuous_backup(self.cluster,
-                                                            self.bucket_util,
-                                                            self.continuous_backup_timestamps)
-                self.sleep(60, "Sleep for a while after recording timestamp")
+            elif step == "record_timestamp":
+                if self.cont_bkp_test:
+                    self.sleep(cont_bkp_wait, "Sleep for a while before recording "
+                                              "timestamp for continuous backup")
+                    self.record_timestamp_for_continuous_backup(
+                        self.cluster, self.bucket_util,
+                        self.continuous_backup_timestamps)
+            else:
+                self.fail(f"Unknown backup step {step!r}, expected "
+                          f"'traditional_backup' or 'record_timestamp'")
+            if self.cont_bkp_test:
+                self.sleep(cont_bkp_wait, f"Sleep for a while after {step}")
