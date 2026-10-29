@@ -217,10 +217,12 @@ of `BestEffortRetryStrategy`.
 | `get_task_result()` | `POST /get_task_result` per task_id | Collects failures into `self.fail`; returns `bool ok` |
 | `end_task()` | `POST /end_task` per task_id | Stops running tasks gracefully |
 | `cancel_task()` | `POST /cancel_task` per task_id | Cancels tasks immediately |
-| `create_clients_in_pool(server, username, password, bucket_name, ...)` | `POST /create_clients` + `POST /reset_task_manager` | Static. Calls `reset_task_manager` first, then creates SDK clients in DocLoader's pool |
+| `create_clients_in_pool(server, username, password, bucket_name, ..., sirius_url=None)` | `POST /create_clients` + `POST /reset_task_manager` | Static. Calls `reset_task_manager` first, then creates SDK clients in DocLoader's pool. `sirius_url` targets a specific DocLoader instead of `SiriusSetup.sirius_url` |
 | `get_keys_from_sirius(prefix, size, type, start, end, mutate)` | `POST /get_doc_keys` | Fetches the key list DocLoader would generate for a given range |
 
 **Task lifecycle:** `create_doc_load_task()` → `add_new_task()` (calls `start_task()`) → `get_task_result()`
+
+**Per-loader endpoint:** `SiriusCouchbaseLoader(..., sirius_url=...)` pins every REST call of that loader to one DocLoader (`BaseSiriusLoader._make_api_request` falls back to the global `SiriusSetup.sirius_url` when unset). Used by the remote DocLoader fleet in `pytests/aGoodDoctor/fusion/docloader_fleet/`.
 
 ### `SiriusJavaMongoLoader`
 Same lifecycle as `SiriusCouchbaseLoader` but targets MongoDB via DocLoader's Mongo endpoint. Methods: `create_doc_load_task()`, `start_task()`, `get_task_result()`, `end_task()`, `cancel_task()`.

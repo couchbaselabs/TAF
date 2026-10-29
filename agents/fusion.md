@@ -24,6 +24,7 @@ All fusion test code lives in `pytests/aGoodDoctor/fusion/`. Key files:
 
 ### Layer 3 - Test Orchestration
 - `fusion_volume.py` - `VolumeTest` class: Main test class for fusion volume scaling (inherits BaseTestCase + hostedOPD). Orchestrates horizontal scaling (node add/remove), vertical scaling (disk/compute), and validation (cleanup, error scanning, log parsing)
+- `docloader_fleet/` - generic (not fusion-specific) package for loading through an EC2 ASG of Java DocLoader JVMs; see its AGENTS.md. `VolumeTest` uses `FleetDataLoader` for the Step 2 initial load when `loader_fleet=True` (one instance per cluster)
 
 ### Supporting Files
 - `download_accelerator_logs.sh` - Shell script for downloading accelerator logs from S3

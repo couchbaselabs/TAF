@@ -10,6 +10,8 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import boto3
+
 from membase.api.rest_client import RestConnection
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
@@ -17,6 +19,7 @@ from .fusion_aws_util import FusionAWSUtil, resolve_fusion_aws_credentials
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
 from .fusion_log_collector import FusionFailureLogsMixin
+from .docloader_fleet import FleetDataLoader
 from .awslib.cloudtrail_delete_setup import CloudTrailSetup
 from pytests.basetestcase import BaseTestCase
 from py_constants.cb_constants.CBServer import CbServer
@@ -220,6 +223,13 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
         # Pending-upload backpressure threshold (bytes); None leaves default.
         self.fusion_max_pending_upload_bytes = self.input.param("fusion_max_pending_upload_bytes", None)
 
+        # Remote DocLoader fleet (ASG) for the initial create load instead of
+        # the single local DocLoader. One instance per cluster unless
+        # loader_fleet_size overrides it (which also enables the fleet).
+        self.use_loader_fleet = self.input.param("loader_fleet", False) or \
+            bool(self.input.param("loader_fleet_size", 0))
+        self.loader_fleet = None
+
     def tearDown(self):
         if hasattr(self, "stop_run_event"):
             self.stop_run_event.set()
@@ -249,6 +259,9 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
                 self.task_manager.stop_task(task)
             except Exception:
                 pass  # Task may already be stopped
+
+        if getattr(self, "loader_fleet", None):
+            self.loader_fleet.teardown()
 
         # Stop all loader tasks and clean up cloudtrail
         if cloudtrail:
@@ -700,7 +713,22 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
             clusters, self.fusion_rebalances, access_key, secret_key,
             self.aws_region, session_token=session_token)
 
+    def start_loader_fleet(self):
+        """Launch the DocLoader ASG in the background (see docloader_fleet);
+        instance boot overlaps with fusion enable and bucket creation."""
+        session = self.aws_boto3_session or boto3.Session(
+            aws_access_key_id=self.aws_access_key,
+            aws_secret_access_key=self.aws_secret_key,
+            aws_session_token=self.aws_session_token, region_name=self.aws_region)
+        self.loader_fleet = FleetDataLoader.from_test_input(
+            self.input, self.log, region=self.aws_region,
+            boto3_session=session,
+            size=sum(len(tenant.clusters) for tenant in self.tenants)).start()
+
     def initial_setup(self):
+        if self.use_loader_fleet and not self.skip_init:
+            self.start_loader_fleet()
+
         # Enable fusion using Capella API
         for tenant in self.tenants:
             for cluster in tenant.clusters:
@@ -832,9 +860,17 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
         tasks = list()
         self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
         i = 0
+        if self.loader_fleet:
+            self.loader_fleet.load_initial_data(
+                [cluster for tenant in self.tenants for cluster in tenant.clusters])
         for tenant in self.tenants:
             for cluster in tenant.clusters:
-                if not self.skip_init:
+                if self.loader_fleet:
+                    if self.xdcr_remote_clusters > 0:
+                        self.drXDCR.set_up_replication(tenant, source_cluster=cluster, destination_cluster=tenant.xdcr_clusters[i],
+                                        source_bucket=cluster.buckets[0].name,
+                                        destination_bucket=tenant.xdcr_clusters[i].buckets[0].name,)
+                elif not self.skip_init:
                     cluster_tasks = JavaDocLoaderUtils.load_data(cluster=cluster,
                                         buckets=cluster.buckets,
                                         overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},

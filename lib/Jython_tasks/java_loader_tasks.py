@@ -112,7 +112,10 @@ class BaseSiriusLoader:
 
     def _make_api_request(self, api_endpoint, data, timeout=600):
         """Common method to make API requests"""
-        url = f"{SiriusSetup.sirius_url}/{api_endpoint}"
+        # A loader pinned to its own DocLoader (e.g. one JVM of a remote
+        # loader fleet) carries sirius_url; everything else uses the global.
+        sirius_url = getattr(self, "sirius_url", None) or SiriusSetup.sirius_url
+        url = f"{sirius_url}/{api_endpoint}"
         response = requests.post(url, data,
                                headers=self.get_headers(), timeout=timeout)
         json_response = None
@@ -190,7 +193,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                  num_vbuckets=CbServer.total_vbuckets,
                  target_vbuckets=None,
                  stall_timeout=600, progress_poll_interval=60,
-                 never_started_timeout=1800):
+                 never_started_timeout=1800,
+                 sirius_url=None):
         """
         Gateway to start doc loading using Java SDK.
         Have common params for both storage_tests and regular test.
@@ -200,6 +204,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
 
         self.task_ids = list()
         self.thread_name = None
+        # DocLoader endpoint for this task; None -> SiriusSetup.sirius_url
+        self.sirius_url = sirius_url
 
         # Server params
         self.ip = server_ip
@@ -384,7 +390,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
 
     @staticmethod
     def create_clients_in_pool(server, username, password, bucket_name,
-                              req_clients=1):
+                              req_clients=1, sirius_url=None):
         data = {
             "server_ip": server.ip,
             "server_port": server.memcached_port,
@@ -394,7 +400,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             "req_clients": req_clients
         }
         data = BaseSiriusLoader._flatten_param_to_str(data)
-        url = f"{SiriusSetup.sirius_url}/create_clients"
+        url = f"{sirius_url or SiriusSetup.sirius_url}/create_clients"
         response = requests.post(url, data,
                                headers=BaseSiriusLoader.get_headers(),
                                timeout=10)
@@ -608,6 +614,11 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         # has_started bypass so a task the pool never dequeues fails instead
         # of holding the caller here indefinitely.
         unstarted_since = dict()
+        # The poll can be every few seconds (remote DocLoader fleets) and a
+        # task group can hold dozens of workers, so the "still waiting" line
+        # is a periodic one-line summary rather than one per poll.
+        waiting_log_interval = 300
+        last_waiting_log_ts = time.time()
 
         while pending:
             for task_id in list(pending):
@@ -695,8 +706,16 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                                       pool_state=pool_state)
 
             if pending:
-                log.debug("Waiting for Sirius tasks %s to make progress"
-                    % sorted(pending))
+                if time.time() - last_waiting_log_ts >= waiting_log_interval:
+                    last_waiting_log_ts = time.time()
+                    log.debug("Waiting for %d/%d Sirius tasks %s* on %s:%s:%s, "
+                              "completed_ops=%d%s"
+                              % (len(pending), len(self.task_ids),
+                                 self.task_ids[0].rsplit("_", 1)[0],
+                                 self.bucket.name if self.bucket else "?",
+                                 self.scope, self.collection,
+                                 sum(last_ops.values()),
+                                 self._pool_state_str(pool_state)))
                 sleep(self.progress_poll_interval)
 
     def get_task_result(self):
