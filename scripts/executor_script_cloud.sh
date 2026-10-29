@@ -49,6 +49,7 @@ if [ "$cherrypick" != "None" ] && [ "$cherrypick" != "" ] ; then
    echo "###############################################"
    echo "########### GIT :: Fetching patch #############"
    echo "###############################################"
+   git config fetch.recurseSubmodules false
    echo "$cherrypick"
    sh -c "$cherrypick"
    echo "###############################################"
