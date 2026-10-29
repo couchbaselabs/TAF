@@ -39,8 +39,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -68,8 +68,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -97,8 +97,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -126,8 +126,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -155,8 +155,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -184,8 +184,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -213,8 +213,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -242,8 +242,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -271,8 +271,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -300,8 +300,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -329,8 +329,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -358,8 +358,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -387,8 +387,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -416,8 +416,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -445,8 +445,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -474,8 +474,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -503,8 +503,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -532,8 +532,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -561,8 +561,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -590,8 +590,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -641,8 +641,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -670,8 +670,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -699,8 +699,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -728,8 +728,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -757,8 +757,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -786,8 +786,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -815,8 +815,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -844,8 +844,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -873,8 +873,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -902,8 +902,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -931,8 +931,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -960,8 +960,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -989,8 +989,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1018,8 +1018,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1047,8 +1047,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1076,8 +1076,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1105,8 +1105,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1134,8 +1134,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1163,8 +1163,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1192,8 +1192,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1221,8 +1221,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1250,8 +1250,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1279,8 +1279,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1308,8 +1308,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1337,8 +1337,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1366,8 +1366,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1395,8 +1395,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1424,8 +1424,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"'
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1453,8 +1453,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1',
-                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5'
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
+                    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
@@ -1482,8 +1482,8 @@
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
-                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+                    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
+                    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
                 "queryParams": [{} for _ in range(4)],
                 "2i": {"num_queries": 4,
