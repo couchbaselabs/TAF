@@ -60,7 +60,7 @@ class AutoCompactionTests(CollectionBase):
 
             if end_time < time.time():
                 self.err = "Fragmentation level is not reached in %s sec" \
-                           % self.wait_timeout * 11
+                           % (self.wait_timeout * 11)
                 return
             # update docs to create fragmentation
             try:
@@ -280,7 +280,7 @@ class AutoCompactionTests(CollectionBase):
             bucket=self.bucket.name)
         compaction_task = self.task.async_monitor_compaction(self.cluster,
                                                              self.bucket)
-        self._monitor_DB_fragmentation(self.bucket)
+        self._monitor_DB_fragmentation(self.bucket, compaction_task)
         bucket_obj = self.bucket_util.get_bucket_obj(
             self.cluster.buckets, self.bucket.name)
         collections = self.bucket_util.get_random_collections(
@@ -423,7 +423,7 @@ class AutoCompactionTests(CollectionBase):
             bucket=self.bucket.name)
         compaction_task = self.task.async_monitor_compaction(self.cluster,
                                                              self.bucket)
-        self._monitor_DB_fragmentation(self.bucket)
+        self._monitor_DB_fragmentation(self.bucket, compaction_task)
         bucket_obj = self.bucket_util.get_bucket_obj(
             self.cluster.buckets, self.bucket.name)
         collections = self.bucket_util.get_random_collections(
@@ -570,7 +570,7 @@ class AutoCompactionTests(CollectionBase):
         while monitor_fragm.state != "FINISHED":
             if end_time < time.time():
                 self.fail("Fragmentation level is not reached in %s sec"
-                          % self.wait_timeout * 5)
+                          % (self.wait_timeout * 5))
             try:
                 monitor_fragm = \
                     self.task.async_monitor_disk_size_fragmentation(
@@ -737,7 +737,7 @@ class AutoCompactionTests(CollectionBase):
             while monitor_fragm.state != "FINISHED":
                 if end_time < time.time():
                     self.fail("Fragmentation level is not reached in %s sec"
-                              % self.wait_timeout * 30)
+                              % (self.wait_timeout * 30))
                 try:
                     self._load_all_buckets(self.gen_update, "update")
                 except Exception as ex:
@@ -750,7 +750,16 @@ class AutoCompactionTests(CollectionBase):
                 self.log.info("auto compaction run successfully")
         remote_client.disconnect()
 
-    def _monitor_DB_fragmentation(self, bucket):
+    def _monitor_DB_fragmentation(self, bucket, compaction_task=None):
+        """
+        Run doc updates until the bucket's fragmentation reaches
+        self.autocompaction_value.
+        :param compaction_task: Optional MonitorBucketCompaction task.
+            When auto-compaction is set to the same threshold, it can
+            compact the bucket before the sampled fragmentation stat ever
+            shows the threshold value. Passing this task treats the
+            auto-compaction trigger as the threshold being reached.
+        """
         monitor_fragm = self.task.async_monitor_db_fragmentation(
             self.cluster.master,
             bucket.name,
@@ -776,10 +785,14 @@ class AutoCompactionTests(CollectionBase):
             collection=collection_name,
             sdk_client_pool=self.sdk_client_pool)
 
+        auto_compaction_triggered = False
         while monitor_fragm.completed is False:
+            if compaction_task is not None and compaction_task.completed:
+                auto_compaction_triggered = True
+                break
             if end_time < time.time():
                 failure_msg = "Fragmentation level is not reached in %s sec" \
-                              % self.wait_timeout * 30
+                              % (self.wait_timeout * 30)
                 break
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
@@ -787,6 +800,12 @@ class AutoCompactionTests(CollectionBase):
         if failure_msg is not None:
             self.task_manager.stop_task(monitor_fragm)
             self.fail(failure_msg)
-        self.task_manager.get_task_result(monitor_fragm)
+        if auto_compaction_triggered:
+            self.log.info("Auto-compaction triggered on %s before "
+                          "fragmentation sample reached %s%%"
+                          % (bucket.name, self.autocompaction_value))
+            self.task_manager.stop_task(monitor_fragm)
+        else:
+            self.task_manager.get_task_result(monitor_fragm)
         if doc_update_task.fail:
             self.fail("Failures during doc updates")
