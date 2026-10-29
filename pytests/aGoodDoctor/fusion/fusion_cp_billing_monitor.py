@@ -82,7 +82,10 @@ class FusionCPBillingMonitor:
     # Billing domain constants
     # -------------------------------------------------------------------------
     BYTES_PER_GIB = 1024 * 1024 * 1024
-    FUSION_USAGE_CATEGORY = "Fusion 2"
+    # couchbase-cloud AV-148635 renamed the pager usageCategory
+    # "Fusion 2" -> "Express Scaling"; accept both so tasks written on
+    # either side of the rename validate.
+    FUSION_USAGE_CATEGORIES = ("Express Scaling", "Fusion 2")
     FUSION_FACTOR_CATEGORY = "Express Scaling (Fusion)"
     REQUIRED_FACTOR_NAMES = [
         "SSD Uplift",
@@ -393,7 +396,8 @@ class FusionCPBillingMonitor:
         Checks per task:
           - shardSizeInBytes >= 0
           - downloadCompletedAt is non-zero and after registeredAt
-          - usageCategory = "Fusion 2"
+          - usageCategory in FUSION_USAGE_CATEGORIES ("Express Scaling",
+            "Fusion 2" before AV-148635)
           - No duplicate nodeIDs within this rebalance (idempotency invariant)
           - TTL expiry is set (META.expiration != 0)
 
@@ -479,10 +483,10 @@ class FusionCPBillingMonitor:
                     f"downloadCompletedAt is zero/missing for nodeID={node_id}"
                 )
 
-            # usageCategory must be "Fusion 2"
-            if usage_cat != self.FUSION_USAGE_CATEGORY:
+            # usageCategory must be a fusion pager category
+            if usage_cat not in self.FUSION_USAGE_CATEGORIES:
                 failures.append(
-                    f"Expected usageCategory='{self.FUSION_USAGE_CATEGORY}', "
+                    f"Expected usageCategory in {self.FUSION_USAGE_CATEGORIES}, "
                     f"got '{usage_cat}' for nodeID={node_id}"
                 )
 

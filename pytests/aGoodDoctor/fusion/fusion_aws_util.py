@@ -138,6 +138,12 @@ class FusionAWSUtil:
         self.s3 = S3Lib(access_key, secret_key, session_token=session_token, region=region, boto3_session=boto3_session)
         self.secrets = SecretsManagerLib(access_key, secret_key, session_token=session_token, region=region, boto3_session=boto3_session)
         self.log = global_logger.get("infra")
+        # {cluster_id: {volume_id: EC2 State}} from the latest
+        # get_guest_volumes_for_cluster() call, for stall diagnostics.
+        self.last_guest_volume_states = {}
+        # {cluster_id: odd-state map last warned about}, so the warning
+        # below fires once per change rather than on every poll.
+        self._last_odd_guest_volume_states = {}
 
     def _cluster_filter(self, cluster_id, extra_tags=None):
         """Return an EC2 filter list scoped to a single cluster, with optional extra tag filters."""
@@ -1451,7 +1457,12 @@ class FusionAWSUtil:
         fusion_cp_resource_monitor.get_current_guest_volume_ids filter.
 
         Returns {instance_id: [volume_id, ...], ...}.
-        Unattached volumes map to key "unattached".
+        Unattached volumes map to key "unattached". That includes volumes in
+        a State other than available/in-use (e.g. stuck in creating/error);
+        those are logged as {volume_id: State} so they are visible — the
+        "unattached" key is kept because callers only exclude that key and
+        treat every other key as an instance id. The State of every volume
+        is also recorded in self.last_guest_volume_states[cluster_id].
         """
         self.log.info(
             "Fetching guest volumes for cluster {} via EC2 API".format(cluster_id))
@@ -1468,10 +1479,15 @@ class FusionAWSUtil:
                     cluster_id, e))
             return {}
         result = {}
+        states = {}
+        odd_states = {}
         for vol in volumes:
             if vol.get("State") == "deleting":
                 continue
             vol_id = vol.get("VolumeId")
+            states[vol_id] = vol.get("State")
+            if vol.get("State") not in ("available", "in-use"):
+                odd_states[vol_id] = vol.get("State")
             attachments = vol.get("Attachments", [])
             instance_id = (
                 attachments[0].get("InstanceId") if attachments else None)
@@ -1479,6 +1495,14 @@ class FusionAWSUtil:
                 result.setdefault(instance_id, []).append(vol_id)
             else:
                 result.setdefault("unattached", []).append(vol_id)
+        self.last_guest_volume_states[cluster_id] = states
+        if (odd_states and odd_states
+                != self._last_odd_guest_volume_states.get(cluster_id)):
+            self.log.warning(
+                "Cluster {} has guest volume(s) not available/in-use "
+                "(reported under 'unattached'): {}".format(
+                    cluster_id, odd_states))
+        self._last_odd_guest_volume_states[cluster_id] = odd_states
         self.log.info(
             "Found {} guest volumes across {} nodes on cluster {}".format(
                 sum(len(v) for v in result.values()), len(result), cluster_id))

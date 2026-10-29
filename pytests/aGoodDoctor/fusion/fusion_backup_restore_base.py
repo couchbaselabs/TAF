@@ -195,6 +195,18 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
         # outage instead of silently burning the whole convergence timeout.
         self._cp_poll_interval = int(_p("cp_poll_interval", 15))
         self._cp_error_limit = int(_p("cp_error_limit", 40))
+        # wait_for_rebalance_complete logs ONE stall warning (guest-volume ids
+        # + EC2 states) when the guest-volume snapshot is unchanged this long
+        # while the cluster is still scaling. Diagnostic only.
+        self.rebalance_stall_warn_secs = int(
+            _p("rebalance_stall_warn_secs", 600))
+        # Opt-in: after the target preload rebalance, wait for the target's
+        # pre-existing guest volumes to be torn down (background migration
+        # done) before restoring. Default False keeps the mid-migration
+        # restore scenario covered (see AV-149247).
+        self.settle_target_migration_before_restore = str(
+            _p("settle_target_migration_before_restore", False)
+        ).lower() == "true"
         self.preserve_clusters = _p("preserve_clusters", True)
         self.reuse_clusters = _p("reuse_clusters", True)
         # Cluster pooling (reuse across tests) is only safe when clusters are
@@ -1783,11 +1795,14 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
                     preload_bucket, present))
 
     def assert_guest_volumes_deleted(self, cluster_id, pre_vol_ids,
-                                     timeout=1800, aws_util=None):
+                                     timeout=1800, aws_util=None,
+                                     failure_reason="restore did not delete "
+                                                    "them"):
         """Verify the restore deleted the target's pre-existing guest volumes:
         none of pre_vol_ids may remain on the cluster. Hard fail otherwise.
         aws_util defaults to the source util; pass the target region's util for
-        a cross-region restore.
+        a cross-region restore. failure_reason words the failure for callers
+        waiting on something other than a restore.
         """
         aws_util = aws_util or self.fusion_aws_util
         if not pre_vol_ids:
@@ -1817,8 +1832,8 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
         if remaining:
             self.fail(
                 "Pre-restore guest volumes still present on {} after {}s — "
-                "restore did not delete them: {}".format(
-                    cluster_id, timeout, sorted(remaining)))
+                "{}: {}".format(
+                    cluster_id, timeout, failure_reason, sorted(remaining)))
         self.log.info(
             "All {} pre-restore guest volumes deleted on {} after "
             "restore".format(len(pre_vol_ids), cluster_id))
@@ -2661,6 +2676,12 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
         deadline = time.time() + self.rebalance_timeout
         seen = self._guest_vols_seen[cluster_id] = {}
         vol_node = {}
+        # Stall diagnostic: when the guest-volume snapshot stops changing for
+        # rebalance_stall_warn_secs while still scaling, warn once with the
+        # volume ids + EC2 states (e.g. a volume stuck in 'creating').
+        last_snapshot = None
+        snapshot_since = time.time()
+        stall_warned = False
 
         self.log.info(
             "Waiting for rebalance to complete on cluster {}".format(cluster_id))
@@ -2694,8 +2715,27 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
                 "Cluster {} state: {}".format(cluster_id, state))
             if aws_util:
                 try:
-                    for node, vols in aws_util.get_guest_volumes_for_cluster(
-                            cluster_id).items():
+                    guest = aws_util.get_guest_volumes_for_cluster(cluster_id)
+                    snapshot = {n: sorted(v) for n, v in guest.items()}
+                    if snapshot != last_snapshot:
+                        last_snapshot = snapshot
+                        snapshot_since = time.time()
+                    elif (not stall_warned and snapshot
+                          and state != self.CLUSTER_HEALTHY
+                          and time.time() - snapshot_since
+                          >= self.rebalance_stall_warn_secs):
+                        stall_warned = True
+                        vol_states = getattr(
+                            aws_util, "last_guest_volume_states",
+                            {}).get(cluster_id, {})
+                        self.log.warning(
+                            "Rebalance on {} looks STALLED: state '{}' and the "
+                            "guest-volume set unchanged for {}s. Volumes: {}; "
+                            "EC2 states: {}".format(
+                                cluster_id, state,
+                                int(time.time() - snapshot_since), snapshot,
+                                vol_states))
+                    for node, vols in guest.items():
                         if node != "unattached":
                             vol_node.update(dict.fromkeys(vols, node))
                     # A volume moves between instances mid-rebalance; count it
@@ -3098,6 +3138,20 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
                           "guest volumes) ===")
             _pre_bucket, pre_guest_vols = self.preload_target(
                 rebalance=True, aws_util=self._target_aws_util)
+            if self.settle_target_migration_before_restore and pre_guest_vols:
+                self.log.info(
+                    "Waiting for the target's {} pre-existing guest volume(s) "
+                    "to be torn down before restoring "
+                    "(settle_target_migration_before_restore=True)".format(
+                        len(pre_guest_vols)))
+                self.assert_guest_volumes_deleted(
+                    self.target_cluster_id, pre_guest_vols, timeout=free_to,
+                    aws_util=self._target_aws_util,
+                    failure_reason="the target's background migration did "
+                                   "not finish before the restore")
+                # Already gone, so the post-restore "deleted by restore"
+                # check would prove nothing — skip it.
+                pre_guest_vols = set()
         self.log.info("Target has {} pre-existing guest volume(s) before "
                       "restore".format(len(pre_guest_vols)))
 
@@ -3115,12 +3169,13 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
 
         # --- Restore ---
         self.log.info("=== Step 8: Restoring backup into target ===")
-        self.trigger_restore(
+        restore_id = self.trigger_restore(
             backup_id=backup_id, target_cluster_id=self.target_cluster_id,
             project_id=self.target_project_id)
         self.wait_for_restore_complete(
             self.target_cluster_id, project_id=self.target_project_id,
-            expected_bucket_names=self.source_bucket_names)
+            expected_bucket_names=self.source_bucket_names,
+            restore_id=restore_id)
         # Restore replaces the nodes and deletes DB users; re-create access.
         self._cluster_access_cache.pop(self.target_cluster_id, None)
 
@@ -3451,13 +3506,102 @@ class FusionBackupRestoreBase(FusionFailureLogsMixin, APIBase):
                 target_cluster_id, restore_id))
         return restore_id
 
+    def _get_restore_status(self, cluster_id, project_id, restore_id):
+        """Return (status, record) for restore_id from the target's v4
+        cloudsnapshotbackups/restores list (status is one of queued/
+        processing/complete/failed, lower-cased). Returns ("", None) when the
+        list has no entry for restore_id yet, and (None, reason) when the CP
+        call itself failed, so the caller applies its own CP-error tolerance."""
+        endpoint = (
+            "/v4/organizations/{}/projects/{}/clusters/{}"
+            "/cloudsnapshotbackups/restores".format(
+                self.organisation_id, project_id, cluster_id))
+        outcome, payload = self._cp_poll(
+            self.capellaAPI.cluster_ops_apis.api_get, endpoint,
+            params={"perPage": 100, "sortBy": "createdAt",
+                    "sortDirection": "desc"})
+        if outcome == "rate":
+            self.handle_rate_limit(int(payload.headers["Retry-After"]))
+            return None, "rate limited"
+        if outcome != "ok":
+            return None, payload
+        try:
+            records = payload.json().get("data", [])
+        except ValueError as exc:
+            return None, "unparseable restores list: {}".format(exc)
+        for record in records:
+            if record.get("id") == restore_id:
+                status = record.get("status") or record.get("currentState")
+                return str(status or "").lower(), record
+        return "", None
+
     def wait_for_restore_complete(self, target_cluster_id, project_id=None,
-                                  expected_bucket_names=None):
-        """Wait until target cluster is healthy after restore, then verify buckets."""
+                                  expected_bucket_names=None, restore_id=None):
+        """Wait until target cluster is healthy after restore, then verify buckets.
+
+        With restore_id, first poll the restore record itself and fail fast
+        on status 'failed' — otherwise a failed restore leaves the target
+        'healthy' with no buckets and the test burns restore_timeout waiting
+        for buckets that will never appear."""
         project_id = project_id or self.project_id
         self.log.info(
             "Waiting for restore to complete on cluster {}".format(
                 target_cluster_id))
+
+        if restore_id:
+            started = time.time()
+            deadline = started + self.restore_timeout
+            cp_errors = 0
+            last_status = None
+            while True:
+                if time.time() >= deadline:
+                    self.fail(
+                        "Restore {} on target {} did not complete within {}s "
+                        "(last status '{}')".format(
+                            restore_id, target_cluster_id,
+                            self.restore_timeout, last_status))
+                status, record = self._get_restore_status(
+                    target_cluster_id, project_id, restore_id)
+                if status is None:
+                    cp_errors += 1
+                    if cp_errors >= self._cp_error_limit:
+                        self.fail(self._cp_giveup_msg(
+                            "transient", "restore {} on target {}".format(
+                                restore_id, target_cluster_id),
+                            cp_errors, operation="restore")
+                            + "; last: {}".format(record))
+                    deadline += self._cp_poll_interval
+                    time.sleep(self._cp_poll_interval)
+                    continue
+                cp_errors = 0
+                if status != last_status:
+                    self.log.info(
+                        "Restore {} on target {} status: '{}' — record: "
+                        "{}".format(restore_id, target_cluster_id,
+                                    status or "not listed yet", record))
+                    last_status = status
+                if status == "failed":
+                    self.fail(
+                        "Restore {} on target {} FAILED — record: {}. If the "
+                        "target had guest volumes still in background "
+                        "migration when the restore started, this is "
+                        "AV-149247.".format(
+                            restore_id, target_cluster_id, record))
+                if status == "complete":
+                    break
+                if status == "" and time.time() - started > 600:
+                    # Never listed: the id we got back may not be the one the
+                    # list uses. Don't fail a possibly-good restore on that.
+                    self.log.warning(
+                        "Restore {} never appeared in the target's restores "
+                        "list after 600s — falling back to cluster-health + "
+                        "bucket waits".format(restore_id))
+                    break
+                time.sleep(self._cp_poll_interval)
+        else:
+            self.log.warning(
+                "No restoreId from trigger_restore — cannot poll the restore "
+                "record; falling back to cluster-health + bucket waits")
 
         time.sleep(30)
         self._wait_for_cluster_healthy(

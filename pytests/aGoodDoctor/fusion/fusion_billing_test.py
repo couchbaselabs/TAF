@@ -36,7 +36,8 @@ functional test-plan doc, which had stale names). Bucket = `capella`:
       debug.fusionBucketCosts.{credits,nodeCount}  (single per-cluster, nodeId="")
   billing.pagerTask: clusterId, fusionDetails.{nodeID,planUUID,shardSizeInBytes,
                                                downloadCompletedAt}
-  billing.variable:  databaseId, usageCategory="Fusion 2", creditQuantity,
+  billing.variable:  databaseId, usageCategory="Express Scaling" (was
+                     "Fusion 2" before AV-148635), creditQuantity,
                      billingBreakdown.{usage,usageUnit,uplift}
   billing.credit_factors: category="Express Scaling (Fusion)", name, multiplier
   SSD hourly = (diskSizeGb * EBSListPrice / 732) * SSDUplift
@@ -58,6 +59,12 @@ Params:
   keep_cluster=True       do NOT destroy the cluster at tearDown (default True)
   num_buckets=12          >10 to exercise bucket overage (default from base=1)
   create_end=2000000      docs to load per bucket
+  fusion_variable_categories="Express Scaling;Fusion 2"
+                          usageCategory names matched on billing.variable /
+                          pagerTask (renamed by AV-148635)
+  cp_query_timeout=30     per-statement CP-DB N1QL timeout (seconds)
+  fleet_lookback_days=7   pagerTask window for the fleet variable coverage scan
+                          (kept short so it never spans the AV-148635 rename)
 Run with the AWS profile that reaches the CP account (cbc-db default:
 dbaas-test-0005-temp).
 """
@@ -218,6 +225,10 @@ class FusionBillingTest(FusionBackupRestoreBase):
         self.log.info("[setUp] billing cluster(s)=%s regions=%s"
                       % (self.cluster_ids, self.cluster_regions))
 
+        # Per-statement CP-DB N1QL timeout (seconds) used by _n1ql unless a
+        # call passes its own (the fleet-wide scans pass a longer one).
+        self.cp_query_timeout = int(inp.param("cp_query_timeout", 30))
+
         # CP-DB connection (kubectl CP-DB util) for the granular N1QL billing-doc
         # reads. The HTTP hourly-records endpoint returns only the aggregate
         # sender.Summary, NOT the debug.fusionCosts breakdown the formulas need,
@@ -233,6 +244,17 @@ class FusionBillingTest(FusionBackupRestoreBase):
         self.TYPE_PAGER = "billing.pagerTask"
         self.TYPE_VARIABLE = "billing.variable"
         self.TYPE_FACTORS = "billing.credit_factors"
+
+        # usageCategory on billing.variable / billing.pagerTask. couchbase-cloud
+        # AV-148635 renamed it "Fusion 2" -> "Express Scaling"; match every
+        # listed name so the suite reads records written on either side of
+        # the rename. ';'-separated; rendered as a N1QL IN-list.
+        self.fusion_variable_categories = [
+            c.strip() for c in str(inp.param(
+                "fusion_variable_categories",
+                "Express Scaling;Fusion 2")).split(";") if c.strip()]
+        self.fusion_category_in = "[%s]" % ", ".join(
+            "\"%s\"" % c for c in self.fusion_variable_categories)
 
         # SSD disk defaults to the cluster's LIVE (auto-scaled) disk read at verify
         # time; pass ssd_gib_per_node only to override that expectation.
@@ -363,9 +385,23 @@ class FusionBillingTest(FusionBackupRestoreBase):
     # CP-DB helpers
     # ------------------------------------------------------------------
 
-    def _n1ql(self, statement):
-        self.log.info("CP-DB N1QL: %s" % statement)
-        return self.cp_db.run_n1ql_query(statement, namespace=self.cp_namespace)
+    def _n1ql(self, statement, timeout=None):
+        """Run a CP-DB N1QL statement. Retries (up to 2 times, 10s apart) only
+        when the query service itself flags the error as retryable
+        ('retry': True in the error body, e.g. a statement timeout under load)."""
+        timeout = timeout or getattr(self, "cp_query_timeout", 30)
+        self.log.info("CP-DB N1QL (timeout=%ss): %s" % (timeout, statement))
+        retries = 2
+        for attempt in range(retries + 1):
+            try:
+                return self.cp_db.run_n1ql_query(
+                    statement, namespace=self.cp_namespace, timeout=timeout)
+            except RuntimeError as exc:
+                if attempt >= retries or "'retry': True" not in str(exc):
+                    raise
+                self.log.warning("Retryable CP-DB N1QL error (%s/%s): %s"
+                                 % (attempt + 1, retries, exc))
+                time.sleep(10)
 
     def _get_factor(self, name):
         """credit_factors multiplier by name in the fusion category (keyed by name+category only)."""
@@ -1057,10 +1093,11 @@ class FusionBillingTest(FusionBackupRestoreBase):
         return plan_uuid, gib
 
     def _current_fusion_variable_credits(self, force_trigger=False):
-        """Latest billing.variable creditQuantity for usageCategory='Fusion 2'
-        on this cluster (by usageDate DESC, take the newest — the same
-        'most recent record' precedent test_variable_record_after_rebalance
-        already relies on). force_trigger=True re-runs BillPagerTasks for
+        """Total billing.variable creditQuantity for the fusion usageCategory
+        (fusion_variable_categories) on this cluster's newest usageDate.
+        Since AV-136563 the variable doc id includes planUUID, so a day can
+        hold one doc per plan — SUM them all rather than taking one row.
+        force_trigger=True re-runs BillPagerTasks for
         TODAY right now, so the record reflects the CURRENT global
         fusion-rebalances state before reading it — no second
         rebalance needed, since the pager biller reprices whatever
@@ -1072,11 +1109,13 @@ class FusionBillingTest(FusionBackupRestoreBase):
                 {"scheduled": False,
                  "time": time.strftime("%Y-%m-%dT00:00:00Z", time.gmtime())})
         rows = self._n1ql(
-            "SELECT v.creditQuantity FROM %s v WHERE v.`_type` = \"%s\" "
-            "AND v.databaseId = \"%s\" AND v.usageCategory = \"Fusion 2\" "
-            "ORDER BY v.usageDate DESC LIMIT 1"
-            % (self.KS, self.TYPE_VARIABLE, self.cluster_id))
-        return float(rows[0].get("creditQuantity") or 0) if rows else 0.0
+            "SELECT v.usageDate, SUM(v.creditQuantity) AS credits "
+            "FROM %s v WHERE v.`_type` = \"%s\" "
+            "AND v.databaseId = \"%s\" AND v.usageCategory IN %s "
+            "GROUP BY v.usageDate ORDER BY v.usageDate DESC LIMIT 1"
+            % (self.KS, self.TYPE_VARIABLE, self.cluster_id,
+               self.fusion_category_in))
+        return float(rows[0].get("credits") or 0) if rows else 0.0
 
     # ------------------------------------------------------------------
     # Tests
@@ -1496,8 +1535,9 @@ class FusionBillingTest(FusionBackupRestoreBase):
                 "v.billingBreakdown.usageUnit AS usageUnit "
                 "FROM %s v WHERE v.`_type` = \"%s\" "
                 "AND v.databaseId = \"%s\" "
-                "AND v.usageCategory = \"Fusion 2\" ORDER BY v.usageDate DESC"
-                % (self.KS, self.TYPE_VARIABLE, self.cluster_id))
+                "AND v.usageCategory IN %s ORDER BY v.usageDate DESC"
+                % (self.KS, self.TYPE_VARIABLE, self.cluster_id,
+                   self.fusion_category_in))
 
         variable = self._poll(_fetch_variable,
                              "the pager-biller job to write a variable record")
@@ -1610,20 +1650,17 @@ class FusionBillingTest(FusionBackupRestoreBase):
         planUUIDs, no cross-plan dedupe suppression) AND billing.variable-
         level.
 
-        billing.variable does NOT carry a per-record planUUID (verified
-        against variablerecord.BillingBreakdown, biller.go:220-227) — the
-        document is keyed by (tenant, cluster, category, region, day) with
-        no planUUID (record.go:95), and written via a plain
-        Create-else-Upsert (writer.go:122-127), so two rebalances on the
-        same cluster/day CAN legitimately collapse into fewer documents
-        than plans. What must still hold is the TOTAL: the sum of
+        Since AV-136563 the billing.variable document id includes planUUID,
+        so each plan gets its own document per day. The check is kept on
+        the TOTAL rather than a per-plan doc count: the sum of
         creditQuantity across whatever records exist must equal the sum of
-        both rebalances' independently-computed costs — if the second
-        Put() silently overwrote the first instead of both being billed,
-        the total falls short by exactly one plan's cost, which is
-        asserted explicitly. own_cluster=True (conf) is REQUIRED for this
-        check to be valid — a shared/pooled cluster with other same-day
-        billing activity would pollute the total."""
+        both rebalances' independently-computed costs — if one plan's
+        charge were lost (e.g. a regression back to a plan-less id where a
+        second write replaces the first), the total falls short by exactly
+        one plan's cost, which is asserted explicitly. own_cluster=True
+        (conf) is REQUIRED for this check to be valid — a shared/pooled
+        cluster with other same-day billing activity would pollute the
+        total."""
         self._setup_fusion_workload()               # load + 1st rebalance (data +1)
         # 2nd rebalance (one more KV node) -> a second pagerTask plan.
         _, cur_nodes = self._kv_spec()
@@ -1708,41 +1745,24 @@ class FusionBillingTest(FusionBackupRestoreBase):
                 "asserted here — absence of evidence, not evidence of absence."
                 % (len(plans), len(all_nodes)))
 
-        # ---- EMPIRICAL PROBE: does a SECOND same-day rebalance's variable
-        # record overwrite the first, instead of both being billed?
+        # ---- Is EACH same-day rebalance's variable charge billed?
         #
-        # An earlier version of this check assumed billing.variable carries
-        # a per-record planUUID (billingBreakdown.planUUID) and asserted one
-        # separate document per rebalance. That field DOES NOT EXIST on the
-        # persisted record — verified directly against the real struct,
-        # variable/record/variablerecord.BillingBreakdown (biller.go:
-        # 220-227): Usage, UsageUnit, Region, Provider, Uplift, BasePrice —
-        # no PlanUUID. PlanUUID only exists on the in-memory aggregation
-        # struct used to GROUP pagerTasks before pricing (biller.go:60-64);
-        # it is never written to CP-DB. So the old assertion always failed
-        # by construction, regardless of any real billing defect — that is
-        # a bug in this test, not evidence of one in the product.
-        #
-        # Tracing further surfaced a SEPARATE, real concern the old check
-        # was blind to either way: the record's own deterministic ID
-        # (variablerecord.GetVariableId — biller.go:213, record.go:95) is
-        # built from (tenantID, clusterID, category, region, day) — NOT
-        # planUUID — and the write path is Put = Create-else-Upsert
-        # (writer.go:122-127), a plain replace, not an accumulate. Two
-        # rebalances landing in the biller's aggregation on the SAME
-        # cluster/day therefore compute the SAME document ID, and the
-        # second Put() would silently overwrite the first: only the
-        # last-processed plan's cost would survive, under-billing the
-        # other. That is testable WITHOUT the nonexistent planUUID field:
-        # if it happens, the day's total creditQuantity will be short of
-        # the sum of both plans' independently-computed costs. ----
+        # The persisted BillingBreakdown has no planUUID field to match on,
+        # so per-plan docs cannot be asserted field-by-field. Since
+        # AV-136563, though, the variable doc id itself includes planUUID
+        # (one doc per plan per day), so two same-day rebalances write two
+        # documents. Before that change the id was plan-less and a second
+        # plan's write replaced the first; the total check below guards
+        # against any such regression: the day's summed creditQuantity
+        # must equal the sum of both plans' independently-computed costs. ----
         def _fetch_variable():
             self._maybe_trigger_billing_jobs()
             return self._n1ql(
                 "SELECT v.creditQuantity, v.usageDate "
                 "FROM %s v WHERE v.`_type` = \"%s\" AND v.databaseId = \"%s\" "
-                "AND v.usageCategory = \"Fusion 2\""
-                % (self.KS, self.TYPE_VARIABLE, self.cluster_id))
+                "AND v.usageCategory IN %s"
+                % (self.KS, self.TYPE_VARIABLE, self.cluster_id,
+                   self.fusion_category_in))
 
         variable_recs = self._poll(
             _fetch_variable, "the pager-biller job to write a variable record")
@@ -1764,12 +1784,11 @@ class FusionBillingTest(FusionBackupRestoreBase):
             one_plan_only,
             "UNDER-BILLING: exactly one billing.variable record exists for "
             "cluster %s (creditQuantity=%s) and it matches only ONE plan's "
-            "cost, not the sum of both (%s) — the second same-day "
-            "rebalance's Put() overwrote the first's record instead of "
-            "both being billed. GetVariableId (record.go:95) keys the "
-            "document by (tenant, cluster, category, region, day) with no "
-            "planUUID, and Put (writer.go:122-127) is a plain "
-            "Create-else-Upsert, not an accumulate."
+            "cost, not the sum of both (%s) — one same-day rebalance's "
+            "charge is missing. Since AV-136563 the variable doc id "
+            "includes planUUID (one doc per plan per day), so a single "
+            "matching doc means the other plan was never billed or its "
+            "doc was replaced."
             % (self.cluster_id, actual_total, expected_total))
         self.assertAlmostEqual(
             actual_total, expected_total, delta=tol,
@@ -1852,9 +1871,17 @@ class FusionBillingTest(FusionBackupRestoreBase):
             "needs num_buckets > freeTier or the bucket checks below prove "
             "nothing" % self.num_buckets)
         variable_before = self._current_fusion_variable_credits(force_trigger=True)
+        if variable_before <= 0:
+            # The job-run endpoint returns 202 and BillPagerTasks runs
+            # async, so the first read can land before the record is
+            # written — re-read (no re-trigger) for a short while.
+            variable_before = self._poll(
+                self._current_fusion_variable_credits,
+                "the pager biller to write the baseline variable record",
+                interval=30, timeout=600) or 0.0
         self.assertGreater(
             variable_before, 0,
-            "No non-zero Fusion 2 variable credits at baseline — cannot prove "
+            "No non-zero fusion variable credits at baseline — cannot prove "
             "variable billing drops to 0 without a non-zero starting point")
         latest = max((r.get("billingPeriod") or "") for r in records)
         enabled_ssd = max(s for _, s, _ in enabled)
@@ -1933,9 +1960,10 @@ class FusionBillingTest(FusionBackupRestoreBase):
             # empty, so the loop that calls variableWriter.Put() never runs at
             # all: the flag stops NEW charges being written, it does not erase
             # a charge already on record. And GetVariableId keys the record by
-            # DAY (record.go, date.Format(time.DateOnly)), so the record
-            # written during this test's own baseline — while the flag was
-            # still on — survives untouched for the rest of the day.
+            # DAY (record.go, date.Format(time.DateOnly)) plus planUUID
+            # (since AV-136563), so the record(s) written during this test's
+            # own baseline — while the flag was still on — survive untouched
+            # for the rest of the day.
             #
             # Expecting 0 therefore asserted something the product will never
             # do, and failed every run (observed: 0.1726712463237345,
@@ -1949,7 +1977,7 @@ class FusionBillingTest(FusionBackupRestoreBase):
             variable_off = self._current_fusion_variable_credits(force_trigger=True)
             self.assertAlmostEqual(
                 variable_off, variable_before, delta=self.credit_tolerance,
-                msg="OVER-BILLING: Fusion 2 variable credits moved from %s to "
+                msg="OVER-BILLING: fusion variable credits moved from %s to "
                     "%s while %s was disabled on cluster %s. With the flag off "
                     "the pager biller skips every task, so nothing should be "
                     "written and the day's existing record should be exactly "
@@ -2025,7 +2053,7 @@ class FusionBillingTest(FusionBackupRestoreBase):
             variable_back = self._current_fusion_variable_credits(force_trigger=True)
             self.assertGreaterEqual(
                 variable_back, variable_off - self.credit_tolerance,
-                "Fusion 2 variable credits DROPPED from %s to %s after "
+                "Fusion variable credits DROPPED from %s to %s after "
                 "re-enabling %s — the day's record should never decrease, so "
                 "this points at the record being rewritten downward or "
                 "replaced rather than at a flag problem."
@@ -2858,10 +2886,16 @@ class FusionBillingTest(FusionBackupRestoreBase):
         # the accelerator) but NO billing.variable record is exactly what
         # that silent skip looks like. That needs no CP-DB schema guessing
         # and catches any other cause of a dropped variable charge too.
+        # Both fleet scans are shaped to hit the CP indexes — billing.variable
+        # [databaseId, usageCategory, usageDate] and pagerTask [usageCategory,
+        # createdAt] — since an unindexed fleet-wide scan times out on a
+        # busy sandbox CP-DB.
         priced = {r.get("databaseId") for r in self._n1ql(
             "SELECT DISTINCT v.databaseId FROM %s v "
-            "WHERE v.`_type` = \"%s\" AND v.usageCategory = \"Fusion 2\""
-            % (self.KS, self.TYPE_VARIABLE)) if r.get("databaseId")}
+            "WHERE v.`_type` = \"%s\" AND v.databaseId IS NOT NULL "
+            "AND v.usageCategory IN %s"
+            % (self.KS, self.TYPE_VARIABLE, self.fusion_category_in),
+            timeout=180) if r.get("databaseId")}
         # The pager biller runs daily at 18:30 UTC for the previous day, so
         # only pagerTasks created before the last billed day can be checked.
         now = time.time()
@@ -2869,19 +2903,26 @@ class FusionBillingTest(FusionBackupRestoreBase):
         if time.gmtime(now)[3:5] < (18, 30):
             billed_until -= 86400
         cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(billed_until))
+        lookback_days = int(self.input.param("fleet_lookback_days", 7))
+        since = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime(billed_until - lookback_days * 86400))
         moved = {r.get("clusterId") for r in self._n1ql(
             "SELECT DISTINCT p.clusterId FROM %s p "
             "WHERE p.`_type` = \"%s\" "
-            "AND p.createdAt < \"%s\" "
+            "AND p.usageCategory IN %s "
+            "AND p.createdAt >= \"%s\" AND p.createdAt < \"%s\" "
             "AND p.fusionDetails.downloadCompletedAt IS NOT NULL "
             "AND p.fusionDetails.downloadCompletedAt != \"\" "
             "AND p.fusionDetails.downloadCompletedAt != \"0001-01-01T00:00:00Z\""
-            % (self.KS, self.TYPE_PAGER, cutoff)) if r.get("clusterId")}
+            % (self.KS, self.TYPE_PAGER, self.fusion_category_in, since,
+               cutoff), timeout=180) if r.get("clusterId")}
         unpriced = sorted(moved - priced)
         self.log.info(
-            "[fleet-variable-coverage] %s cluster(s) moved accelerator data; "
-            "%s have a priced Fusion 2 billing.variable record"
-            % (len(moved), len(moved & priced)))
+            "[fleet-variable-coverage] %s cluster(s) moved accelerator data "
+            "in the last %s day(s); %s have a priced %s billing.variable "
+            "record" % (len(moved), lookback_days, len(moved & priced),
+                        "/".join(self.fusion_variable_categories)))
         self.assertFalse(
             unpriced,
             "UNDER-BILLING: %s cluster(s) have COMPLETED pagerTask(s) — data "
