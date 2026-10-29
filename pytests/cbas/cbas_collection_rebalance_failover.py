@@ -29,6 +29,14 @@ class CBASRebalance(CBASBaseTest):
 
         self.cluster.exclude_nodes.extend(
             [self.cluster.master, self.cluster.cbas_cc_node])
+        # find_orchestrator() can move cluster.master off servers[0] during the
+        # setUp rebalance. Keep servers[0] in the cluster too, because removing
+        # it breaks the next test's setUp ("Joining node to itself"). Skip
+        # this only when it is the last KV node that can be removed.
+        if [node for node in self.cluster.kv_nodes
+                if node not in self.cluster.exclude_nodes
+                and node is not self.cluster.servers[0]]:
+            self.cluster.exclude_nodes.append(self.cluster.servers[0])
 
         self.run_parallel_kv_query = self.input.param(
             "run_kv_queries", False)

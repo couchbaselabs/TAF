@@ -4847,7 +4847,7 @@ class CbasUtil(CBOUtil):
                     if not self.drop_dataverse(cluster, dv):
                         self.log.error("Unable to drop Dataverse {0}".format(dv))
         except Exception as e:
-            self.log.info(e.message)
+            self.log.info(str(e))
 
     def get_replica_number_from_settings(
             self, node, method="GET", param="", username=None, password=None,

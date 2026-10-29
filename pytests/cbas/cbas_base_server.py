@@ -337,6 +337,11 @@ class CBASBaseTest(BaseTestCase):
                         break
 
             if "cbas" in cluster.master.services:
+                # cluster.master is the orchestrator, which can be a CBAS node
+                # that is still UNUSABLE right after the setUp rebalance
+                if not self.cbas_util.is_analytics_running(cluster):
+                    self.fail("Analytics service did not come up after the "
+                              "setUp rebalance")
                 self.cbas_util.cleanup_cbas(cluster, retry=1)
 
             cluster.otpNodes = self.cluster_util.get_otp_nodes(cluster.master)
@@ -606,7 +611,7 @@ class CBASBaseTest(BaseTestCase):
                 metrics[name] = metrics.get(name, 0) + float(rest.split()[0])
         return metrics
 
-    def start_dcp_stream_metrics_sampler(self, interval=30):
+    def start_dcp_stream_metrics_sampler(self, interval=5):
         """
         Analytics drops a link's stream metrics once its datasets/links go
         away, so a teardown-only read misses tests that drop everything
