@@ -799,8 +799,11 @@ class OPD:
         # File-driven vector loaders (siftBigANN / MSMARCO) don't go through
         # generate_docs, so the crud-stat attrs (initial_items, *_start/_end)
         # aren't populated at initial_setup -> skip the crud stats table.
-        if self.val_type not in ("siftBigANN", "MSMARCOEmbeddingProduct",
-                                  "MSMARCOSiftEmbeddingProduct"):
+        # Every workload_template bucket is loaded that way too.
+        if not getattr(self, "workload_template", None) \
+                and self.val_type not in ("siftBigANN",
+                                          "MSMARCOEmbeddingProduct",
+                                          "MSMARCOSiftEmbeddingProduct"):
             self.print_crud_stats(cluster.buckets)
         for bucket in cluster.buckets:
             self.get_bucket_dgm(cluster, bucket)
@@ -1952,7 +1955,10 @@ class OPD:
                     Cbepctl(shell).persistence(bucket.name, "stop")
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["key_prefix"] = "rollback_docs_%s-" % (rollbacks)
-            if self.val_type == "siftBigANN":
+            if getattr(self, "workload_template", None):
+                # Each bucket with its own valType's loader
+                self.template_rollback_load(mem_only_items)
+            elif self.val_type == "siftBigANN":
                 JavaDocLoaderUtils.load_sift_data(cluster=self.cluster,
                                 buckets=self.cluster.buckets,
                                 overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},

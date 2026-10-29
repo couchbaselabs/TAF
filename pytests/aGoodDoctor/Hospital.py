@@ -34,10 +34,11 @@ from membase.api.rest_client import RestConnection
 from .n1ql import DoctorN1QL
 from .n1ql import QueryLoad
 from .opd import OPD
+from .workload_template import WorkloadTemplateMixin
 from .xdcr import DoctorXDCR
 
 
-class Murphy(BaseTestCase, OPD):
+class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
     """
     On-prem volume tests.
 
@@ -49,6 +50,10 @@ class Murphy(BaseTestCase, OPD):
 
     Either param needs a backup node (`backup_nodes=1`, or 'backup' in
     `services_init`) to run the CLI tools on. See setup_backup_locations().
+
+    The buckets' workloads come from `val_type`, which gives every bucket the
+    same workloads.py workload, or from `workload_template`, which names the
+    buckets and gives each its own. See workload_template.py.
     """
 
     def setUp(self):
@@ -135,7 +140,14 @@ class Murphy(BaseTestCase, OPD):
             self.esAPIKey = "".join(self.esAPIKey.split(","))
 
         self.load_defn = list()
-        if self.val_type == "Hotel":
+        # A workload template names the buckets and gives each its own
+        # workload. Without one, every bucket shares the val_type workload.
+        self.workload_template = self.input.param("workload_template", None)
+        if self.workload_template:
+            self.load_defn = self.load_workload_template(
+                self.workload_template)
+            self.num_buckets = len(self.load_defn)
+        elif self.val_type == "Hotel":
             if self.vector:
                 self.load_defn.append(hotel_vector)
             else:
@@ -246,6 +258,8 @@ class Murphy(BaseTestCase, OPD):
             # are created.
             self.create_encryption_at_rest_key(self.cluster)
             self.create_required_buckets(self.cluster)
+        elif self.workload_template:
+            self.bind_template_to_existing_buckets()
         else:
             for i, bucket in enumerate(self.cluster.buckets):
                 bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
@@ -434,6 +448,14 @@ class Murphy(BaseTestCase, OPD):
         self.setup_backup_tools(cluster_rest.base_url)
         self.enable_continuous_backup_on_buckets()
 
+        # initial_setup() builds FTS indexes / analytics datasets whenever such
+        # nodes exist, from workload keys that only the val_type workloads
+        # have. Fail before any data is loaded rather than after.
+        if self.workload_template and (self.cluster.fts_nodes
+                                       or self.cluster.cbas_nodes):
+            self.fail("workload_template drives GSI query loads only, but "
+                      "the cluster has FTS or analytics nodes")
+
         if self.cluster.index_nodes:
             self.drIndex = DoctorN1QL(self.bucket_util)
         if self.cluster.cbas_nodes:
@@ -476,6 +498,12 @@ class Murphy(BaseTestCase, OPD):
         self.teardown_backup_encryption()
 
         BaseTestCase.tearDown(self)
+
+    def create_required_collections(self, cluster, buckets=None):
+        # A template names the collections after their collection_id
+        if self.workload_template:
+            return self.create_template_collections(cluster, buckets)
+        return OPD.create_required_collections(self, cluster, buckets)
 
     def _sync_bucket_from_server(self, bucket):
         """
@@ -601,10 +629,13 @@ class Murphy(BaseTestCase, OPD):
             deletes: 0 - 10M
             Final Docs = 0
             '''
-            for bucket in self.cluster.buckets:
-                JavaDocLoaderUtils.generate_docs(bucket=bucket)
-            JavaDocLoaderUtils.perform_load(self.cluster, self.cluster.buckets,
-                                            validate_data=True)
+            if self.workload_template:
+                self.template_steady_state_wave()
+            else:
+                for bucket in self.cluster.buckets:
+                    JavaDocLoaderUtils.generate_docs(bucket=bucket)
+                JavaDocLoaderUtils.perform_load(self.cluster, self.cluster.buckets,
+                                                validate_data=True)
 
             # Taking incremental backups and recording timestamps for PITR
             self.traditional_backup_and_record_timestamp_for_continuous_backup()
@@ -666,7 +697,10 @@ class Murphy(BaseTestCase, OPD):
             self.drEventing.create_eventing_function(self.cluster, file="pytests/aGoodDoctor/vector_xattr.json")
             self.drEventing.lifecycle_operation_for_all_functions(self.cluster, "deploy", "deployed")
 
-        if self.val_type == "siftBigANN":
+        if self.workload_template:
+            # Each bucket with its own valType's loader and rates
+            self.template_initial_load()
+        elif self.val_type == "siftBigANN":
             if not self.skip_init:
                 JavaDocLoaderUtils.load_sift_data(self.cluster, self.cluster.buckets,
                                                   overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
@@ -691,6 +725,9 @@ class Murphy(BaseTestCase, OPD):
                         create_end=bucket.loadDefn.get("num_items"),
                         bucket=bucket)
         for bucket in self.cluster.buckets:
+            if self.workload_template:
+                self.record_template_collection_items(bucket)
+                continue
             per_coll_items = bucket.loadDefn.get("num_items", 0)
             for scope_name, scope_obj in bucket.scopes.items():
                 if scope_name == CbServer.system_scope:
@@ -765,8 +802,10 @@ class Murphy(BaseTestCase, OPD):
             self.trigger_rollback()
 
         normal_mutation = self.input.param("normal_mutation", True)
-        if self.val_type in ("siftBigANN", "MSMARCOEmbeddingProduct",
-                             "MSMARCOSiftEmbeddingProduct"):
+        # Every template bucket holds a file-driven vector dataset
+        if self.workload_template or self.val_type in (
+                "siftBigANN", "MSMARCOEmbeddingProduct",
+                "MSMARCOSiftEmbeddingProduct"):
             self.mutations = True
             self.mutation_th = threading.Thread(target=self.vector_file_mutations)
             self.mutation_th.start()
@@ -1725,8 +1764,9 @@ class Murphy(BaseTestCase, OPD):
         self.mutations = False
         if self.mutation_th is not None:
             self.mutation_th.join()
-        if self.val_type not in ("siftBigANN", "MSMARCOEmbeddingProduct",
-                                 "MSMARCOSiftEmbeddingProduct") \
+        if not self.workload_template \
+                and self.val_type not in ("siftBigANN", "MSMARCOEmbeddingProduct",
+                                          "MSMARCOSiftEmbeddingProduct") \
                 and self.track_failures:
             tasks = list()
             self.doc_loading_tm.getAllTaskResult()
@@ -2148,6 +2188,9 @@ class Murphy(BaseTestCase, OPD):
         that varies per dataset is the load helper (and hence the DocLoader
         endpoint) used to replay them.
         """
+        if self.workload_template:
+            # Picks the loader per bucket, at the template's rates
+            return self.template_vector_mutations()
         if self.val_type == "siftBigANN":
             load_vector_data = JavaDocLoaderUtils.load_sift_data
         else:

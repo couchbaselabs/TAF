@@ -6,6 +6,7 @@ Created on 24-Apr-2021
 
 import json
 import random
+import re
 from threading import Thread
 import threading
 import time
@@ -21,6 +22,7 @@ from py_constants.cb_constants.CBServer import CbServer
 from connections.Rest_Connection import RestConnection
 import struct
 from .workloads import siftBigANN
+from .workload_template import TEMPLATE_KEY
 import os
 from threading import Lock
 from TestInput import TestInputSingleton
@@ -32,6 +34,20 @@ from couchbase.options import QueryOptions
 from elasticsearch import Elasticsearch, ConnectionTimeout
 
 letters = ascii_uppercase + ascii_lowercase + digits
+
+_PLAIN_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def n1ql_identifier(name):
+    """
+    `name` ready for a bucket.scope.collection path. A plain identifier is
+    returned as-is; anything else is backtick-escaped. Workload template
+    collections are named after their collection_id, and ids like "8M" start
+    with a digit, which N1QL only accepts escaped. Every name the val_type
+    workloads create is a plain identifier, so their statements don't change.
+    """
+    return name if _PLAIN_IDENTIFIER.match(name) else f"`{name}`"
+
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None,
                               query_params=None, validate=True):
@@ -164,6 +180,11 @@ class DoctorN1QL():
             b.queries = list()
             b.query_map = dict()
             vector_defn_counter = 0
+            # A workload template collection is named after its definition
+            template_defns = None
+            if b.loadDefn.get(TEMPLATE_KEY):
+                template_defns = {defn["collection_id"]: defn
+                                  for defn in b.loadDefn["collections_defn"]}
             self.log.info("Creating GSI indexes on {}".format(b.name))
             # prev_valType = None
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
@@ -178,11 +199,22 @@ class DoctorN1QL():
                 for collection_num, c in enumerate(sorted(collections)):
                     if c == CbServer.default_collection:
                         continue
-                    workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
-                    coll_order = TestInputSingleton.input.param("coll_order", 1)
-                    if coll_order == -1:
-                        workloads = list(reversed(workloads))
-                    workload = workloads[collection_num % len(workloads)]
+                    if template_defns is not None:
+                        workload = template_defns.get(c)
+                        if workload is None:
+                            self.log.warning(f"{b.name}.{s}.{c} is not in the "
+                                             f"workload template; no indexes "
+                                             f"for it")
+                            continue
+                    else:
+                        workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
+                        coll_order = TestInputSingleton.input.param("coll_order", 1)
+                        if coll_order == -1:
+                            workloads = list(reversed(workloads))
+                        workload = workloads[collection_num % len(workloads)]
+                    bucket_id = n1ql_identifier(b.name)
+                    scope_id = n1ql_identifier(s)
+                    coll_id = n1ql_identifier(c)
                     valType = workload.get("valType") or b.loadDefn.get("valType")
                     indexType = workload.get("indexes")
                     queryType = workload.get("queries")
@@ -211,9 +243,14 @@ class DoctorN1QL():
                             if workload.get("vector"):
                                 vector_defn = workload.get("vector")[vector_defn_counter % len(workload.get("vector"))]
                                 dim = workload.get("dim")
-                                similarity = TestInputSingleton.input.param(
-                                    "similarity",
-                                    random.choice(["L2_SQUARED", "EUCLIDEAN_SQUARED", "COSINE", "DOT"]))
+                                if template_defns is not None \
+                                        and vector_defn.get("similarity"):
+                                    # A template prescribes the similarity
+                                    similarity = vector_defn["similarity"]
+                                else:
+                                    similarity = TestInputSingleton.input.param(
+                                        "similarity",
+                                        random.choice(["L2_SQUARED", "EUCLIDEAN_SQUARED", "COSINE", "DOT"]))
                                 nProbe = vector_defn["nProbe"]
                                 description = vector_defn.get("description", "IVF,%s" % vector_defn.get("quantization", "SQ8"))
                                 vector_fields = "'dimension': {}, 'description': '{}', 'similarity': '{}', 'scan_nprobes': {}".format(
@@ -223,13 +260,13 @@ class DoctorN1QL():
                                 if partitions:
                                     vector_fields = "'num_partition': {}, ".format(partitions) + vector_fields
                                     self.idx_q = indexType[i % len(indexType)].format(
-                                        index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
+                                        index_name=idx_name, bucket=bucket_id, scope=scope_id, collection=coll_id, vector=vector_fields)
                                 else:
                                     self.idx_q = indexType[i % len(indexType)].format(
-                                        index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
+                                        index_name=idx_name, bucket=bucket_id, scope=scope_id, collection=coll_id, vector=vector_fields)
                                     self.idx_q = self.idx_q.replace('PARTITION BY HASH(meta().id)', "")
                             else:
-                                self.idx_q = indexType[i % len(indexType)].format(index_name=idx_name, bucket=b.name, scope=s, collection=c)
+                                self.idx_q = indexType[i % len(indexType)].format(index_name=idx_name, bucket=bucket_id, scope=scope_id, collection=coll_id)
                             b.indexes.update({idx_name: (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             b.scopes[s].collections[c].secondary_indexes[idx_name] = self.idx_q
                             retry = 5
@@ -252,10 +289,10 @@ class DoctorN1QL():
                             unformatted_q = queryType[q % len(queryType)]
                             if workload.get("vector"):
                                 gt = workload.get("groundTruths")
-                                query = unformatted_q.format(bucket=b.name, scope=s, collection=c,
+                                query = unformatted_q.format(bucket=bucket_id, scope=scope_id, collection=coll_id,
                                                              similarity=similarity, nProbe=nProbe)
                             else:
-                                query = unformatted_q.format(bucket=b.name, scope=s, collection=c)
+                                query = unformatted_q.format(bucket=bucket_id, scope=scope_id, collection=coll_id)
                             print (query)
                             if query not in b.query_map.keys():
                                 b.query_map[query] = {"identifier": "C%s_Q%s" % (collection_num, q)}
@@ -308,7 +345,8 @@ class DoctorN1QL():
                         details = bucket.indexes[d.get(collection)[0]]
                         build = True
                         build_query = "BUILD INDEX on %s.%s.%s(%s) USING GSI" % (
-                            bucket.name, s, collection, ",".join(sorted(d.get(collection))))
+                            n1ql_identifier(bucket.name), n1ql_identifier(s),
+                            n1ql_identifier(collection), ",".join(sorted(d.get(collection))))
                         # time.sleep(1)
                         start = time.time()
                         while time.time() < start + 600:
@@ -408,7 +446,8 @@ class DoctorN1QL():
         for bucket in cluster.buckets:
             for idx_name, idx_details in bucket.indexes.items():
                 update_q = "UPDATE STATISTICS FOR INDEX {3} on {0}.{1}.{2}".format(
-                    idx_details[2], idx_details[3], idx_details[4], idx_name)
+                    n1ql_identifier(idx_details[2]), n1ql_identifier(idx_details[3]),
+                    n1ql_identifier(idx_details[4]), idx_name)
                 try:
                     execute_statement_on_n1ql(self.sdkClients[idx_details[2]+idx_details[3]], update_q)
                 except CouchbaseException as e:
@@ -446,11 +485,15 @@ class QueryLoad:
             self.float_buf_length = len(self.float_buf)
         if self.valType == "siftBigANN":
             for meta in self.queries_meta:
+                # A workload template collection may come without ground
+                # truth; its queries then skip the recall/accuracy check
+                if "gt" not in meta:
+                    continue
                 gt = meta["gt"][0]
                 if gt not in QueryLoad.groundTruths.keys():
                     self.log.info("Reading gt file in memory: %s" % gt)
-                    QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(siftBigANN.get("baseFilePath"), gt))})
-            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0] for idx, query in enumerate(self.queries)}
+                    QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(self._sift_base_path(), gt))})
+            self.query_stats = {query: [0, 0, 0, 0, self._gt_label(idx), Lock(), 0, 0] for idx, query in enumerate(self.queries)}
         else:
             self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0] for idx, query in enumerate(self.queries)}
         self.failed_count = itertools.count()
@@ -468,9 +511,23 @@ class QueryLoad:
         self.esClient = esClient
         self.log_fail = log_fail
 
+    def _sift_base_path(self):
+        """
+        Directory holding the siftBigANN query and ground-truth files. A
+        workload template bucket names its own; the val_type workload's is
+        the siftBigANN workload dict's.
+        """
+        if self.bucket.loadDefn.get(TEMPLATE_KEY):
+            return self.bucket.loadDefn.get("baseFilePath")
+        return siftBigANN.get("baseFilePath")
+
+    def _gt_label(self, idx):
+        meta = self.queries_meta[idx]
+        return meta["gt"][1] if "gt" in meta else "None"
+
     def start_query_load(self):
         if self.bucket.loadDefn.get("valType") == "siftBigANN":
-            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0, []] for idx, query in enumerate(self.queries)}
+            self.query_stats = {query: [0, 0, 0, 0, self._gt_label(idx), Lock(), 0, 0, []] for idx, query in enumerate(self.queries)}
         else:
             self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0, []] for idx, query in enumerate(self.queries)}
         self.stop_run = False
@@ -488,7 +545,7 @@ class QueryLoad:
         if self.valType == "siftBigANN":
             method = self._run_vector_query
             if not QueryLoad.queryVectors:
-                QueryLoad.queryVectors = self.read_query_vecs(siftBigANN.get("baseFilePath") + "/bigann_query.bvecs")
+                QueryLoad.queryVectors = self.read_query_vecs(self._sift_base_path() + "/bigann_query.bvecs")
                 count = 1000
         for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
@@ -524,10 +581,14 @@ class QueryLoad:
                         es_params.append(term)
                 vector_float = []
                 index = self.query_stats[query][1] % len(QueryLoad.queryVectors)
-                gt = query_tuple["gt"][0]
                 expected_count = 10
                 embedding = QueryLoad.queryVectors[index]
-                groudtruth = QueryLoad.groundTruths[gt][index][:expected_count]
+                # None for a query without ground truth: it still runs, with
+                # no recall/accuracy check
+                groudtruth = None
+                if "gt" in query_tuple:
+                    gt = query_tuple["gt"][0]
+                    groudtruth = QueryLoad.groundTruths[gt][index][:expected_count]
 
                 for value in embedding:
                     vector_float.append(float(value))
@@ -544,7 +605,7 @@ class QueryLoad:
                     if len(self.query_stats[query][8]) > 1000:
                         self.query_stats[query][8].pop(0)
                 if status == QueryStatus.SUCCESS:
-                    if self.esClient:
+                    if self.esClient and groudtruth is not None:
                         recall_es, latency_es = performKNNSearchES(self.esClient, query_tuple["collection"], vector_float, 100, groudtruth, es_params)
                         self.query_stats[query][6] += latency_es
                         self.query_stats[query][7] += recall_es
@@ -555,9 +616,10 @@ class QueryLoad:
                             next(self.failed_count)
                         else:
                             next(self.success_count)
-                            accuracy, recall = self.compare_result(results, groudtruth)
-                            self.query_stats[query][2] += accuracy
-                            self.query_stats[query][3] += round(100.0 * recall//len(results), 2)
+                            if groudtruth is not None:
+                                accuracy, recall = self.compare_result(results, groudtruth)
+                                self.query_stats[query][2] += accuracy
+                                self.query_stats[query][3] += round(100.0 * recall//len(results), 2)
                     else:
                         next(self.success_count)
                 else:
@@ -610,7 +672,10 @@ class QueryLoad:
                     # Sparse vector search needs $vector as [[indices],[values]],
                     # not a dense float array.
                     q_param["vector"] = self._get_sparse_query_vector()
-                elif query_tuple.get("dim"):
+                elif query_tuple.get("dim") and "$vector" in query:
+                    # Only a query that references $vector gets one. The
+                    # scalar queries of a vector collection carry its dim
+                    # too, and would otherwise need mockVector=True.
                     index = random.randint(0, self.float_buf_length-query_tuple.get("dim"))
                     q_param["vector"] = self.float_buf[index:index+query_tuple.get("dim")]
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
