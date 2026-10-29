@@ -1,9 +1,13 @@
 from com.jcraft.jsch import JSch
 from org.python.core.util import FileUtil
+import json
+import re
 import sys
 import time
 import traceback
+import urllib2
 from datetime import date
+from fnmatch import fnmatch
 
 failed = []
 skipped = []
@@ -34,6 +38,26 @@ SLAVE_PHASE_BUDGET_SECS = 8 * 60 * 60
 # it is not fresh, and a node keeps its dumps until it is reimaged. Seven
 # days was short enough that real dumps aged out before anyone saw them.
 CRASH_MTIME_DAYS = 30
+
+# The slaves used to be a hardcoded IP list, and it went stale: by the time
+# it was replaced, 80 of its 147 hosts were no longer agents on either
+# instance and over a hundred live agents were missing from it. Ask both
+# Jenkins instances for the agents carrying these labels instead, the same
+# way test_infra_runner's jenkins_slave_cleanup.py selects them. Labels may
+# be glob patterns.
+JENKINS_URLS = [
+    "http://qa.sc.couchbase.com/",
+    "http://qe-jenkins1.sc.couchbase.com/",
+]
+SLAVE_LABELS = [
+    "P0", "jython_slave", "deb12_jython_slave", "deb12_P0_slave",
+    "magma_slave", "magma_sdk2", "magma_sdk3", "dndmagma_slave",
+    "fusion_slave", "volume_slave", "bhive_slave", "xattr-subdoc-andrei",
+    "rqg_testing", "deb12_rqg_slave", "eventing", "fts_vector_search",
+]
+JENKINS_TIMEOUT_SECS = 60
+NODE_TREE = "computer[displayName,description,assignedLabels[name]]"
+IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
 
 class CommandTimeout(Exception):
@@ -221,42 +245,73 @@ def give_up(server, phase):
     skipped.append("%s (%s)" % (server, phase))
 
 
+def fetch_agents(jenkins_url):
+    url = "%scomputer/api/json?tree=%s" % (jenkins_url.rstrip("/") + "/",
+                                          urllib2.quote(NODE_TREE))
+    response = urllib2.urlopen(url, timeout=JENKINS_TIMEOUT_SECS)
+    try:
+        return json.loads(response.read()).get("computer", [])
+    finally:
+        response.close()
+
+
+def agent_host(agent):
+    # Both instances describe an agent as "<ip> (<hostname>)". Cloud agents
+    # with no IP in the description or name have nothing to SSH to.
+    match = IPV4_RE.search(agent.get("description") or "")
+    if match:
+        return match.group(0)
+    name = (agent.get("displayName") or "").strip()
+    if IPV4_RE.match(name) and IPV4_RE.match(name).group(0) == name:
+        return name
+    return None
+
+
+def label_matches(labels, wanted):
+    return [pattern for pattern in wanted
+            if any(label == pattern or fnmatch(label, pattern)
+                   for label in labels)]
+
+
+def slaves_by_label():
+    print("Selecting slaves labelled %s on %s"
+          % (", ".join(SLAVE_LABELS), ", ".join(JENKINS_URLS)))
+    # One host can carry several of the labels, or be an agent on both
+    # instances, so scan it once.
+    hosts = []
+    seen = set()
+    for jenkins_url in JENKINS_URLS:
+        try:
+            agents = fetch_agents(jenkins_url)
+        except:
+            print("%s : could not list agents: %s"
+                  % (jenkins_url, sys.exc_info()[1]))
+            failed.append(jenkins_url)
+            continue
+        matched = 0
+        for agent in agents:
+            if agent.get("_class", "").endswith("MasterComputer"):
+                continue
+            name = agent.get("displayName", "")
+            labels = [label.get("name") for label in agent.get("assignedLabels") or []
+                      if label.get("name") and label.get("name") != name]
+            if not label_matches(labels, SLAVE_LABELS):
+                continue
+            host = agent_host(agent)
+            if host is None:
+                print("%s : agent %s has no IP to scan" % (jenkins_url, name))
+                continue
+            matched += 1
+            if host not in seen:
+                seen.add(host)
+                hosts.append(host)
+        print("%s : %s of %s agents matched" % (jenkins_url, matched, len(agents)))
+    return hosts
+
+
 def scan_all_slaves():
-    all_slaves = ["172.23.123.80","172.23.107.117","172.23.107.116","172.23.107.120","172.23.106.136","172.23.121.65",
-                  "172.23.105.66","172.23.108.94","172.23.104.254",
-                  "172.23.120.172","172.23.100.195","172.23.109.166","172.23.122.36","172.23.122.37",
-                  "172.23.122.38","172.23.99.156","172.23.120.106","172.23.123.184","172.23.120.84",
-                  "172.23.120.223","172.23.120.26","172.23.120.85","172.23.120.90","172.23.120.103",
-                  "172.23.120.104","172.23.120.105","172.23.105.131","172.23.106.231","172.23.105.170",
-                  "172.23.98.7","172.23.105.169","172.23.106.94","172.23.96.83","172.23.109.38",
-                  "172.23.106.41","172.23.106.43","172.23.106.34","172.23.105.209","172.23.107.165",
-                  "172.23.104.30","172.23.108.6","172.23.106.230","172.23.96.110","172.23.107.166",
-                  "172.23.109.52","172.23.104.35","172.23.105.174","172.23.211.37","172.23.106.193",
-                  "172.23.107.226","172.23.106.162","172.23.105.95","172.23.105.40","172.23.108.33",
-                  "172.23.105.135","172.23.105.136","172.23.96.232","172.23.96.246","172.23.96.248",
-                  "172.23.96.255","172.23.97.0","172.23.96.206","172.23.105.248","172.23.107.249",
-                  "172.23.107.21","172.23.107.68","172.23.121.16","172.23.120.254","172.23.120.31",
-                  "172.23.120.228","172.23.108.27","172.23.104.76","172.23.105.144","172.23.108.222",
-                  "172.23.107.238","172.23.106.205","172.23.105.131","172.23.105.131","172.23.105.115",
-                  "172.23.123.88","172.23.123.91","172.23.123.69","172.23.123.69","172.23.123.71",
-                  "172.23.123.72","172.23.123.75","172.23.123.73","172.23.123.74","172.23.123.70",
-                  "172.23.123.77","172.23.123.76","172.23.123.78","172.23.123.80",
-                  "172.23.123.79","172.23.97.128","172.23.99.156","172.23.104.136","172.23.97.128",
-                  "172.23.99.156","172.23.97.101","172.23.107.216","172.23.104.34",
-                  "172.23.222.77","172.23.222.78","172.23.222.79","172.23.222.80","172.23.222.81","172.23.222.82",
-                  "172.23.120.173","172.23.120.174","172.23.120.175","172.23.120.178",
-                  "172.23.104.235",
-                  "172.23.104.73","172.23.104.80","172.23.104.103","172.23.104.105","172.23.104.121","172.23.104.167",
-                  "172.23.104.193","172.23.104.201","172.23.105.10",
-                  "172.23.105.32","172.23.105.109","172.23.105.125",
-                  "172.23.104.248","172.23.104.249","172.23.104.250","172.23.105.0",
-                  "172.23.221.187","172.23.221.188","172.23.221.189","172.23.221.190",
-                  "172.23.218.190","172.23.218.191","172.23.218.192","172.23.218.193","172.23.218.194","172.23.218.195",
-                  "172.23.219.59","172.23.219.60","172.23.219.61","172.23.219.62","172.23.219.63","172.23.219.64",
-                  "172.23.219.65","172.23.219.66",
-                  "172.23.104.171","172.23.104.176","172.23.105.208",
-                  "172.23.104.219","172.23.104.241","172.23.105.152","172.23.105.154"
-                  ]
+    all_slaves = slaves_by_label()
+    print("%s unique slaves to scan" % len(all_slaves))
     count = 1
     deadline = time.time() + SLAVE_PHASE_BUDGET_SECS
     for server in all_slaves:
