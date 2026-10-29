@@ -183,6 +183,16 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
         # (accelerator.download.rateLimit, see couchbase-cloud PR #54025,
         # AV-134867). 0/None (default) = unlimited, untouched.
         self.fusion_download_rate_limit = self.input.param("fusion_download_rate_limit", None)
+        # Tenant accelerator vCPU limit (accelerator.vcpuLimit, CP default
+        # 14000 -- AV-148509/AV-148511). Each fusion rebalance reserves
+        # desired data nodes x maxSlots x 16 vCPUs for the whole deployment
+        # and the CP defers a cluster's deployment in 5m steps while its
+        # tenant has no headroom, so multiple clusters in one tenant
+        # rebalance one at a time once their reservations add up past the
+        # limit (e.g. 3 clusters at 27 nodes need 3 x 27 x 22 x 16 = 28512).
+        # Set per cluster since the CP resolves it from each cluster's
+        # config. None (default) = untouched.
+        self.fusion_vcpu_limit = self.input.param("fusion_vcpu_limit", None)
         self.fusion_config_override_resources = list()
         # {cluster.id: {instance_id: max_guest_volume_count_seen}}
         self.peak_guest_volume_slot_counts = dict()
@@ -336,14 +346,15 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
     def apply_fusion_cp_settings(self, tenant, cluster):
         """
         Apply fusion_min_split_size_mb/fusion_max_slots_override/
-        fusion_download_rate_limit via the CP config API. Per-cluster
-        resource setting, not per-node -- applied once per cluster ever
+        fusion_download_rate_limit/fusion_vcpu_limit via the CP config API.
+        Per-cluster resource setting, not per-node -- applied once per cluster ever
         (guarded via self.fusion_config_override_resources), safe to call
         repeatedly across restores/clones.
         """
         if (self.fusion_min_split_size_mb is None
                 and self.fusion_max_slots_override is None
-                and self.fusion_download_rate_limit is None):
+                and self.fusion_download_rate_limit is None
+                and self.fusion_vcpu_limit is None):
             return
         already_applied = any(
             cid == cluster.id for _, cid, _ in self.fusion_config_override_resources)
@@ -367,7 +378,8 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
             f"(pre-override config: {original_config}): "
             f"min_split_size={min_split_size_bytes} bytes, "
             f"max_slots={max_slots}, "
-            f"download_rate_limit={self.fusion_download_rate_limit}")
+            f"download_rate_limit={self.fusion_download_rate_limit}, "
+            f"vcpu_limit={self.fusion_vcpu_limit}")
         if original_config is None:
             # PATCH merges into an existing config and 500s if the
             # resource has none yet (confirmed against a live cluster) --
@@ -377,13 +389,15 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
                 self.pod, tenant, cluster.id,
                 min_split_size=min_split_size_bytes,
                 max_slots=max_slots,
-                download_rate_limit=self.fusion_download_rate_limit)
+                download_rate_limit=self.fusion_download_rate_limit,
+                vcpu_limit=self.fusion_vcpu_limit)
         else:
             CapellaAPI.patch_fusion_config(
                 self.pod, tenant, cluster.id,
                 min_split_size=min_split_size_bytes,
                 max_slots=max_slots,
-                download_rate_limit=self.fusion_download_rate_limit)
+                download_rate_limit=self.fusion_download_rate_limit,
+                vcpu_limit=self.fusion_vcpu_limit)
         self.fusion_config_override_resources.append((tenant, cluster.id, original_config))
 
         applied_config = CapellaAPI.get_fusion_config(self.pod, tenant, cluster.id)
@@ -411,6 +425,12 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
                 f"{cluster.id}: expected {self.fusion_download_rate_limit}, "
                 f"got {accelerator.get('download', {}).get('rateLimit')} "
                 f"({applied_config})")
+        if self.fusion_vcpu_limit is not None:
+            self.assertEqual(
+                accelerator.get("vcpuLimit"), self.fusion_vcpu_limit,
+                f"Fusion config vcpu_limit not applied for cluster "
+                f"{cluster.id}: expected {self.fusion_vcpu_limit}, "
+                f"got {accelerator.get('vcpuLimit')} ({applied_config})")
 
     def apply_fusion_memcached_settings(self, tenant, cluster, wait_for_new_instances=False,
                                          old_instance_ids=None):

@@ -1271,7 +1271,8 @@ class CapellaUtils(object):
 
     @staticmethod
     def _build_fusion_config(min_split_size=None, max_slots=None,
-                             iops=None, throughput=None, download_rate_limit=None):
+                             iops=None, throughput=None, download_rate_limit=None,
+                             vcpu_limit=None):
         config = {}
         if min_split_size is not None or max_slots is not None:
             config["manifest"] = {}
@@ -1279,7 +1280,8 @@ class CapellaUtils(object):
                 config["manifest"]["minSplitSize"] = min_split_size
             if max_slots is not None:
                 config["manifest"]["maxSlots"] = max_slots
-        if iops is not None or throughput is not None or download_rate_limit is not None:
+        if (iops is not None or throughput is not None
+                or download_rate_limit is not None or vcpu_limit is not None):
             config["accelerator"] = {}
             if iops is not None or throughput is not None:
                 config["accelerator"]["guestVolumes"] = {}
@@ -1289,12 +1291,14 @@ class CapellaUtils(object):
                     config["accelerator"]["guestVolumes"]["throughput"] = throughput
             if download_rate_limit is not None:
                 config["accelerator"]["download"] = {"rateLimit": download_rate_limit}
+            if vcpu_limit is not None:
+                config["accelerator"]["vcpuLimit"] = vcpu_limit
         return config
 
     @staticmethod
     def set_fusion_config(pod, tenant, resource_id, min_split_size=None,
                           max_slots=None, iops=None, throughput=None,
-                          download_rate_limit=None):
+                          download_rate_limit=None, vcpu_limit=None):
         """PUT /internal/support/configs/{resource_id}/fusion.
 
         Replaces the entire fusion config for the resource.
@@ -1306,11 +1310,17 @@ class CapellaUtils(object):
         download_rate_limit: aggregate S3 download throttle in bytes/sec for
             the accelerator-cli downloader on accelerator nodes (0/unset =
             unlimited; see couchbase-cloud PR #54025, AV-134867).
+        vcpu_limit: vCPUs a tenant's concurrent fusion accelerations may
+            reserve at once (accelerator.vcpuLimit, default 14000; see
+            AV-148509/AV-148511). Each rebalance reserves desired data
+            nodes x maxSlots x 16, so this gates how many of a tenant's
+            clusters can accelerate in parallel.
         """
         config = CapellaUtils._build_fusion_config(
             min_split_size=min_split_size, max_slots=max_slots,
             iops=iops, throughput=throughput,
-            download_rate_limit=download_rate_limit)
+            download_rate_limit=download_rate_limit,
+            vcpu_limit=vcpu_limit)
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
@@ -1355,7 +1365,7 @@ class CapellaUtils(object):
     @staticmethod
     def patch_fusion_config(pod, tenant, resource_id, min_split_size=None,
                             max_slots=None, iops=None, throughput=None,
-                            download_rate_limit=None):
+                            download_rate_limit=None, vcpu_limit=None):
         """PATCH /internal/support/configs/{resource_id}/fusion.
 
         Merges the provided fields into the existing fusion config.
@@ -1369,11 +1379,17 @@ class CapellaUtils(object):
         download_rate_limit: aggregate S3 download throttle in bytes/sec for
             the accelerator-cli downloader on accelerator nodes (0/unset =
             unlimited; see couchbase-cloud PR #54025, AV-134867).
+        vcpu_limit: vCPUs a tenant's concurrent fusion accelerations may
+            reserve at once (accelerator.vcpuLimit, default 14000; see
+            AV-148509/AV-148511). Each rebalance reserves desired data
+            nodes x maxSlots x 16, so this gates how many of a tenant's
+            clusters can accelerate in parallel.
         """
         config = CapellaUtils._build_fusion_config(
             min_split_size=min_split_size, max_slots=max_slots,
             iops=iops, throughput=throughput,
-            download_rate_limit=download_rate_limit)
+            download_rate_limit=download_rate_limit,
+            vcpu_limit=vcpu_limit)
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
