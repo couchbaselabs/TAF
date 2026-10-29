@@ -50,11 +50,13 @@ class N2nEncryptionX509(CollectionBase):
         self.delimeters = self.input.param('delimeter', '.:.:.').split(":")
         self.setup_once = self.input.param("setup_once", True)
         self.client_ip = self.input.param("client_ip", "172.16.1.174")
+        # memcached rejects RSA keys < 2048 bits ("ee key too small")
+        self.key_length = self.input.param("key_length", 2048)
 
         copy_servers = copy.deepcopy(self.cluster.servers)
         x509main(self.cluster.master)._generate_cert(copy_servers, type='openssl',
                                                      encryption='',
-                                                     key_length=1024,
+                                                     key_length=self.key_length,
                                                      client_ip=self.client_ip)
 
     def upload_x509_certs(self, servers=None):
@@ -194,7 +196,11 @@ class N2nEncryptionX509(CollectionBase):
                     CbServer.use_https = False
                 for server in self.cluster.servers:
                     self.set_ports_for_server(server, "non_ssl")
-                self.upload_x509_certs(servers=add_nodes)
+                cert_setup_nodes = list(self.nodes_in_cluster)
+                for node in add_nodes:
+                    if node not in cert_setup_nodes:
+                        cert_setup_nodes.append(node)
+                self.upload_x509_certs(servers=cert_setup_nodes)
             if level in ["strict", "control", "all"]:
                 self.set_n2n_encryption_level_on_nodes(nodes=[self.cluster.master],
                                                        level=level)

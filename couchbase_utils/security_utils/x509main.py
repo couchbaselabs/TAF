@@ -13,6 +13,7 @@ import random
 import os
 import copy
 import subprocess
+import time
 
 
 class ServerInfo():
@@ -301,11 +302,43 @@ class x509main:
         return status, content
 
     #Upload Cluster or root cert
-    def _upload_cluster_ca_certificate(self,username,password):
+    # Copies the root CA into the node's inbox/CA folder and loads it via
+    # loadTrustedCAs. The REST /controller/uploadClusterCA path is rejected
+    # with "API is accessible from localhost only" on nodes which do not have
+    # allowNonLocalCACertUpload set (e.g. nodes not yet added to the cluster)
+    def _upload_cluster_ca_certificate(self, username, password):
         rest = RestConnection(self.host)
-        url = "controller/uploadClusterCA"
-        api = rest.baseUrl + url
-        self._rest_upload_file(api,x509main.CACERTFILEPATH + "/" + x509main.CACERTFILE,"Administrator",'password')
+        shell = RemoteMachineShellConnection(self.host)
+
+        inbox_dir = self.install_path + x509main.CHAINFILEPATH
+        ca_dir = inbox_dir + "/CA"
+        shell.create_directory(inbox_dir)
+        shell.create_directory(ca_dir)
+
+        dest_pem = ca_dir + "/root_ca.pem"
+        src_crt = x509main.CACERTFILEPATH + "/" + x509main.CACERTFILE
+
+        shell.copy_file_local_to_remote(src_crt, dest_pem)
+        shell.disconnect()
+
+        time.sleep(2)
+
+        status, content = rest.load_trusted_CAs()
+        if not status:
+            raise Exception("Failed to load trusted CAs on {0}. Error: {1}"
+                            .format(self.host.ip, content))
+
+        time.sleep(3)
+
+        for _ in range(5):
+            trusted_status, trusted_content = rest.get_trusted_CAs()
+            if trusted_status and "My Company Root CA" in str(trusted_content):
+                return
+            time.sleep(1)
+
+        raise Exception("Trusted CA verification failed on {0}. "
+                        "'My Company Root CA' not found in trustedCAs"
+                        .format(self.host.ip))
 
     #Upload security setting for client cert
     def _upload_cluster_ca_settings(self,username,password,data=None):
