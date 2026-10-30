@@ -1,3 +1,4 @@
+import os
 import time
 from random import randint
 
@@ -34,8 +35,8 @@ class Molo17(ColumnarBaseTest):
         self.dynamo_lib = DynamoDB(self.aws_access_key, self.aws_secret_key, self.aws_region, self.aws_session_token)
         self.glueSync_lib = Molo17APIs(self.glueSync_url, self.glueSync_username, self.glueSync_password)
         self.confluent_util = ConfluentUtils(
-            cloud_access_key=self.input.param("confluent_cloud_access_key"),
-            cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+            cloud_access_key=os.getenv("CONFLUENT_CLOUD_ACCESS_KEY"),
+            cloud_secret_key=os.getenv("CONFLUENT_CLOUD_SECRET_KEY"))
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"

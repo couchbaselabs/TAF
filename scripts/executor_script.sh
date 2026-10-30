@@ -274,6 +274,8 @@ if [[ "$component" = "analytics" || "$component" = "columnar" ]]; then
       --output text)
 
   export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  export CONFLUENT_CLOUD_ACCESS_KEY CONFLUENT_CLOUD_SECRET_KEY
+  export SCHEMA_REGISTRY_API_KEY SCHEMA_REGISTRY_SECRET_KEY
   parameters="${parameters}"
 fi
 

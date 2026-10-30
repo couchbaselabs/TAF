@@ -1,3 +1,4 @@
+import os
 import json
 import random
 import string
@@ -1040,8 +1041,8 @@ class CopyToKv(ColumnarBaseTest):
         self.mongo_util = MongoUtil(
             task_manager=self.task_manager,
             hostname=self.input.param("mongo_hostname"),
-            username=self.input.param("mongo_username"),
-            password=self.input.param("mongo_password")
+            username="Administrator",
+            password="password"
         )
 
         # Initialize variables for Kafka
@@ -1049,8 +1050,8 @@ class CopyToKv(ColumnarBaseTest):
 
         # Initializing Confluent util and Confluent cluster object.
         self.confluent_util = ConfluentUtils(
-            cloud_access_key=self.input.param("confluent_cloud_access_key"),
-            cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+            cloud_access_key=os.getenv("CONFLUENT_CLOUD_ACCESS_KEY"),
+            cloud_secret_key=os.getenv("CONFLUENT_CLOUD_SECRET_KEY"))
         self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
             kafka_cluster_id=self.input.param("confluent_cluster_id"),
             topic_prefix=self.kafka_topic_prefix)
