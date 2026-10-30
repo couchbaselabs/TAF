@@ -11,7 +11,7 @@
         # Capped at DocLoader's MSMARCO STEPS upper bound (8,841,823).
         "num_items":  8841823,
         "ops": 50000,
-        "rebl_ops_rate": 10000,
+        "rebl_ops_rate": 1000,
         "doc_size": 1024,
         "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
         "2iQPS": 10,
@@ -66,7 +66,7 @@
         # Capped at DocLoader's MSMARCO STEPS upper bound (8,841,823).
         "num_items":  8841823,
         "ops": 50000,
-        "rebl_ops_rate": 10000,
+        "rebl_ops_rate": 1000,
         "doc_size": 1024,
         "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
         "2iQPS": 10,
@@ -121,7 +121,7 @@
         "scopes": 1,
         "collections": 1,
         "ops":  50000,
-        "rebl_ops_rate": 10000,
+        "rebl_ops_rate": 1000,
         "doc_size": 1024,
         "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
         "2iQPS": 50,
