@@ -493,9 +493,13 @@ class QueryLoad:
                 if gt not in QueryLoad.groundTruths.keys():
                     self.log.info("Reading gt file in memory: %s" % gt)
                     QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(self._sift_base_path(), gt))})
-            self.query_stats = {query: [0, 0, 0, 0, self._gt_label(idx), Lock(), 0, 0] for idx, query in enumerate(self.queries)}
-        else:
-            self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0] for idx, query in enumerate(self.queries)}
+        # Per query: [total exec ms, count, accuracy, recall, ground-truth
+        # label, lock, ES exec ms, ES recall, latest exec ms]. Built once for
+        # the whole run, like the counters below. start_query_load() doesn't
+        # reset them, so the per-query counts stay in step with the totals.
+        sift = self.valType == "siftBigANN"
+        self.query_stats = {query: [0, 0, 0, 0, self._gt_label(idx) if sift else "None", Lock(), 0, 0, []]
+                            for idx, query in enumerate(self.queries)}
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
         self.rejected_count = itertools.count()
@@ -526,10 +530,8 @@ class QueryLoad:
         return meta["gt"][1] if "gt" in meta else "None"
 
     def start_query_load(self):
-        if self.bucket.loadDefn.get("valType") == "siftBigANN":
-            self.query_stats = {query: [0, 0, 0, 0, self._gt_label(idx), Lock(), 0, 0, []] for idx, query in enumerate(self.queries)}
-        else:
-            self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0, []] for idx, query in enumerate(self.queries)}
+        # Starts the worker threads only. A restart (restart_query_load,
+        # resume after a pause) keeps the run's stats from __init__
         self.stop_run = False
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         th = threading.Thread(target=self._run_concurrent_queries)

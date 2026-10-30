@@ -1329,18 +1329,13 @@ class OPD:
         """
         Restart the query loads recorded by pause_query_workload().
 
-        QueryLoad.start_query_load() re-initialises query_stats, which would
-        reset the per-query latency/count tables printed by
-        monitor_query_status() every time a restore runs. Carry the previous
-        dict over so those tables stay cumulative for the whole run. The
-        other two loaders do not touch their stats on start, so re-assigning
-        the same object back is a no-op for them.
+        start_query_load() restarts only the worker threads. Every loader
+        builds its stats once, at construction, so the tables printed by
+        monitor_query_status() stay cumulative for the whole run across
+        pauses and restarts.
         """
         for ql in self._resumable_query_loads:
-            query_stats = getattr(ql, "query_stats", None)
             ql.start_query_load()
-            if query_stats is not None:
-                ql.query_stats = query_stats
         self.log.info("Query workload: resumed %s query load(s)"
                       % len(self._resumable_query_loads))
         self._resumable_query_loads = list()

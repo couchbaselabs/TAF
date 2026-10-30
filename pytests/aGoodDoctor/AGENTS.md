@@ -269,6 +269,11 @@ GleamBookUsers1 the `(sparse)` index pairs with the unfiltered query, and
 6. **`QueryLoad.queryVectors` is a process-wide class cache**, which is why all siftBigANN buckets must share one `baseFilePath`.
 7. **Vector dataset files are opened read-only** (`'rb'`).
 8. **Template loads and mutations never overwrite `loadDefn["ops"]`.** The val_type `vector_file_mutations` does, which is fine there.
+9. **Query stats belong to the whole run.** Every query loader (`n1ql.QueryLoad`, `fts.FTSQueryLoad`, `cbas.CBASQueryLoad`, goldfish's `CBASQueryLoad`) builds its stats once, in `__init__`:
+   - `n1ql.QueryLoad`: `query_stats` plus the `itertools.count` totals;
+   - the other loaders: their counters, and `query_stats` where they have one.
+
+   `start_query_load()` must only restart worker threads. `restart_query_load()` and `resume_query_workload()` rely on that, and the per-query `Count` in "N1QL Performance Stats" only adds up to "N1QL Results Stats"' `Success` while it holds. `Total` and `Success` differ only by the queries in flight.
 
 ---
 
