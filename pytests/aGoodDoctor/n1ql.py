@@ -732,7 +732,9 @@ class QueryLoad:
             File: bigann_query.bvecs
         '''
         groundTruths = []
-        f = open(filename, '+rb')
+        # Read-only on purpose: the dataset usually sits on an NFS share
+        # that squashes root, which refuses read-write ('+rb') opens
+        f = open(filename, 'rb')
 
         for _ in range(10000):
             # Read the dimension (4 bytes)
@@ -752,7 +754,8 @@ class QueryLoad:
             File: idx_10M.ivecs
         '''
         gtVectors = []
-        f = open(filename, '+rb')
+        # Read-only, as in read_query_vecs()
+        f = open(filename, 'rb')
 
         for _ in range(10000):
             # Read the dimension (4 bytes)
