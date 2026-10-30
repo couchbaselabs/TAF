@@ -340,28 +340,36 @@ class ContinuousBackupTest(ContinuousBackupBase):
         """
         Takes 5 continuous backups, then restores them haphazardly.
         The final doc count should match the latest restore point.
+
+        Every restore goes into a flushed, continuous-backup-free restore
+        bucket rather than the source bucket. Restoring into the source
+        bucket while continuous backup is on writes the restored data back
+        into the log, so the same data then sits in two timelines and a later
+        restore fails with "overlapping histories for target time"
+        (MB-71777, MB-73520: Not a Bug).
         """
         self._verify_continuous_backup_params()
+        self.restore_bucket_name = "restore_bucket_haphazard"
+        self._create_restore_bucket(self.restore_bucket_name)
         num_intervals = 5
         timestamps, item_counts = self._create_backup_intervals(num_intervals)
 
-        self._reset_bucket_and_restore_from_backup(self._get_total_docs())
-
         restore_order = random.sample(range(num_intervals), num_intervals)
         self.log.info(f"Restore order: {restore_order}")
-        max_restored_interval = -1
         for i in restore_order:
-            timestamp = timestamps[i]
-            if i > max_restored_interval:
-                max_restored_interval = i
-            self._perform_continuous_restore(timestamp)
-            self.log.info(f"Max restored interval is {max_restored_interval + 1}")
+            # cbcontbk restore needs an empty target to produce the full
+            # expected count; the first iteration's bucket is already empty.
+            self._flush_restore_bucket(self.restore_bucket_name)
+            self._restore_entire_bucket(timestamps[i], self.restore_bucket_name)
+            self.log.info(f"Restored interval {i + 1}")
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-            self._verify_doc_count(item_counts[max_restored_interval])
+            self._verify_doc_count(item_counts[i], bucket_name=self.restore_bucket_name)
 
-        self.log.info("Final doc count check after all restores")
+        self.log.info("Final restore to the latest interval")
+        self._flush_restore_bucket(self.restore_bucket_name)
+        self._restore_entire_bucket(timestamps[4], self.restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(item_counts[4])
+        self._verify_doc_count(item_counts[4], bucket_name=self.restore_bucket_name)
         self.log.info("Test completed successfully")
 
     def test_pitr_restore_before_mutation(self):
@@ -975,6 +983,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60)
         ts_after_flush = self.cont_bk_mgr.get_cluster_timestamp()
 
+        # The load validates stats across all buckets, which fails on the
+        # restore bucket while it still holds the restored docs.
+        self._flush_restore_bucket(restore_bucket_name)
+
         # Load some new data
         mutation_time = time.time()
         self._load_data_tolerating_stat_validation()
@@ -1180,6 +1192,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
                                                 continuous_backup_location=self.continuous_backup_location)
         self.continuous_backup_interval = new_interval
 
+        # The restore bucket still holds the last toggle cycle's restored
+        # docs. load_data_from_spec_file validates item counts across every
+        # bucket in the cluster, and the restore bucket never matches the
+        # spec, so the stat check polled ~40 min and raised "Unable to get
+        # expected stats for bucket restore_bucket_params_*" (8.5.0-1392).
+        # Empty it first, as each toggle cycle does.
+        self._flush_restore_bucket(restore_bucket_name)
         mutation_time = time.time()
         self._load_data_tolerating_stat_validation()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
@@ -1348,8 +1367,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
                    "Waiting for continuous backup to capture the scope drop")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
-        count_t2 = self.bucket_util.get_buckets_item_count(
-            self.cluster, self.bucket.name)
+        # REST item counts still include part of the dropped scope for
+        # minutes after the drop (read 185000 where 180000 remained), so
+        # use the SDK-tracked total, which already excludes the dropped scope.
+        count_t2 = self.bucket_util.get_expected_total_num_items(self.bucket)
         self.log.info(f"T2 (post-scope-drop) count: {count_t2}")
         # T2 is the latest state with no mutation after it, so a captured
         # wall-clock timestamp would land one interval past the newest
@@ -1745,6 +1766,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # CRUD results when more than one bucket is passed at once ('update'
         # KeyError in task:__wait_for_task_completion) -- run the same
         # count-preserving update spec against each bucket separately instead.
+        # load_using must be passed explicitly: without it run_scenario_from_spec
+        # falls back to "default_loader", which issued no mutations here (build
+        # 8.5.0-1392: sentinel returned in ~0s), leaving the log with nothing
+        # newer than the traditional backup.
         sentinel_spec = CollectionBase.get_history_retention_load_spec(
             self, update_percent=10, update_itrs=1)
         CollectionBase.over_ride_doc_loading_template_params(self, sentinel_spec)
@@ -1753,7 +1778,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             sentinel_task = self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, [b], sentinel_spec,
                 mutation_num=0, batch_size=500, process_concurrency=1,
-                validate_task=True)
+                load_using=self.load_docs_using, validate_task=True)
             self.assertTrue(sentinel_task.result,
                             f"Hist retention sentinel load failed for {b.name}")
         self._wait_for_history_upload("the post-backup sentinel update")
@@ -1880,6 +1905,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # CRUD results when more than one bucket is passed at once ('update'
         # KeyError in task:__wait_for_task_completion) -- run the same
         # count-preserving update spec against each bucket separately instead.
+        # load_using must be passed explicitly: without it run_scenario_from_spec
+        # falls back to "default_loader", which issued no mutations here (build
+        # 8.5.0-1392: sentinel returned in ~0s), leaving the log with nothing
+        # newer than the traditional backup.
+        sentinel_time = time.time()
         sentinel_spec = CollectionBase.get_history_retention_load_spec(
             self, update_percent=10, update_itrs=1)
         CollectionBase.over_ride_doc_loading_template_params(self, sentinel_spec)
@@ -1888,10 +1918,16 @@ class ContinuousBackupTest(ContinuousBackupBase):
             sentinel_task = self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, [b], sentinel_spec,
                 mutation_num=0, batch_size=500, process_concurrency=1,
-                validate_task=True)
+                load_using=self.load_docs_using, validate_task=True)
             self.assertTrue(sentinel_task.result,
                             f"Hist retention sentinel load failed for {b.name}")
-        self._wait_for_history_upload("the post-backup sentinel update")
+        # A fixed one-interval sleep is not enough here: cbcontbk's range.end
+        # lags the data and was still short of the sentinel when the restore
+        # ran, so "everything" failed with "traditional backup has the same or
+        # newer data than the log backup". Wait on cbcontbk info per bucket.
+        for b in (bucket1, bucket2):
+            self._wait_for_continuous_backup_catchup(
+                sentinel_time, bucket_name=b.name)
 
         restore_b1_name = f"restore_b1_intv_{int(time.time())}"
         # Restore buckets sequentially to avoid RAM exhaustion on small clusters.
@@ -2135,8 +2171,9 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.fail("Delete doc_loading scenario failed")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
-        count_t1 = self.bucket_util.get_buckets_item_count(
-            self.cluster, self.bucket.name)
+        # A REST item count read right after the deletes can lag (read
+        # 160450 where 160000 remained); use the SDK-tracked total.
+        count_t1 = self.bucket_util.get_expected_total_num_items(self.bucket)
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before subdoc phase")
@@ -2199,12 +2236,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Subdoc mutations must not change item count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
-        count_after_subdoc = self.bucket_util.get_buckets_item_count(
-            self.cluster, self.bucket.name)
-        self.assertEqual(
-            count_t1, count_after_subdoc,
-            f"Item count changed after subdoc mutations "
-            f"(expected {count_t1}, got {count_after_subdoc})")
+        self._verify_doc_count(count_t1)
+        count_after_subdoc = count_t1
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval to capture subdoc mutations")

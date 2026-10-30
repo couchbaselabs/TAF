@@ -90,11 +90,13 @@ class ContinuousBackupBase(CollectionBase):
 
     def _wait_for_continuous_backup_catchup(self, since_timestamp,
                                             timeout=1200, poll_interval=15,
-                                            quiet_checkpoints=2):
+                                            quiet_checkpoints=2,
+                                            bucket_name=None):
         """
         Wait for the continuous-backup log to actually cover
         `since_timestamp` (unix epoch seconds) before attempting an
-        "everything" (latest) restore.
+        "everything" (latest) restore. `bucket_name` selects which bucket's
+        range.end to track (default: self.bucket).
 
         Polls `cbcontbk info -l <location> --json`, which reports
         range.end -- cbcontbk's own authoritative bookkeeping of how far
@@ -133,7 +135,8 @@ class ContinuousBackupBase(CollectionBase):
         quiet_since = None
         while time.time() < deadline:
             info = self.cont_bk_mgr.info(self.continuous_backup_location)
-            bucket_info = (info or {}).get(self.bucket.name, {})
+            bucket_info = (info or {}).get(
+                bucket_name or self.bucket.name, {})
             range_end_str = bucket_info.get("range", {}).get("end")
             if range_end_str:
                 range_end_dt = self._parse_cbcontbk_timestamp(range_end_str)
