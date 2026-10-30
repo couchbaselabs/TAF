@@ -305,3 +305,5 @@ If the subdirectory also has an AGENTS.md (e.g. `buckets/AGENTS.md`), read that 
   - Component background: [docs/agent-context/ns-server/AGENTS.md](docs/agent-context/ns-server/AGENTS.md), [couchbase_utils/AGENTS.md](couchbase_utils/AGENTS.md)
 - If asked about **Sirius Java SDK**, **DocLoader**, **SiriusCouchbaseLoader**, `java_loader_tasks.py`, or `load_docs_using=sirius_java_sdk`: refer to [lib/Jython_tasks/AGENTS.md](lib/Jython_tasks/AGENTS.md)
   - Utility layer: [couchbase_utils/AGENTS.md](couchbase_utils/AGENTS.md)
+- If asked about the **aGoodDoctor volume tests** (`Hospital.Murphy`: **SteadyStateVolume**, **ClusterOpsVolume**, **SystemTestIndexer**), **workload templates** (`workload_template`, `pytests/aGoodDoctor/templates/`), or the volume mutation/query loads: refer to [pytests/aGoodDoctor/AGENTS.md](pytests/aGoodDoctor/AGENTS.md)
+  - Loader layer: [lib/Jython_tasks/AGENTS.md](lib/Jython_tasks/AGENTS.md)
