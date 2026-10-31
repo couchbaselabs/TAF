@@ -1753,7 +1753,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 if self.loop < self.iterations:
                     self.sleep(600)
                     if len(self.cluster.kv_nodes) > self.nodes_init:
-                        rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes) + 1 - self.nodes_init),
+                        rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes) - self.nodes_init),
                                                         services=["kv"])
                         self.task.jython_task_manager.get_task_result(rebalance_task)
                         self.assertTrue(rebalance_task.result, "Rebalance Failed")
