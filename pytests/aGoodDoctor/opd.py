@@ -1492,6 +1492,9 @@ class OPD:
                          "Restore failed within %ss: %s"
                          % (self.restore_timeout, ", ".join(failed)))
 
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.check_index_pending_mutations(self.cluster)
+
         # Print stats after restore
         self.print_stats(self.cluster)
 
@@ -1584,6 +1587,10 @@ class OPD:
                 failed,
                 "Restore failed for backup with timestamp %s: %s"
                 % (timestamp, ", ".join(failed)))
+
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+        self.check_index_pending_mutations(self.cluster)
 
         for bucket in self.cluster.buckets:
             self.toggle_continuous_backup(bucket, enable=True)
