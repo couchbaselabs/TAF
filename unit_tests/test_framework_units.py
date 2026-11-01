@@ -1637,5 +1637,104 @@ class TestMarkAbortedTests(unittest.TestCase):
         self.assertTrue(error, "no error text -> no rerun scheduled")
 
 
+class TestSiriusStallDetector(unittest.TestCase):
+    """
+    SiriusCouchbaseLoader._wait_for_completion_or_stall() against scripted
+    DocLoader /get_task_progress answers and a simulated clock, so neither
+    DocLoader nor a cluster is needed.
+    """
+
+    POLL = 60
+    STALL_TIMEOUT = 600
+
+    @classmethod
+    def setUpClass(cls):
+        import types
+        sys.path.insert(0, os.path.join(PROJECT_ROOT, "py_constants"))
+        # The detector never uses these. Stub them only where they're
+        # missing, so the test runs without TAF's full requirements.
+        for name in ("requests", "yaml"):
+            try:
+                __import__(name)
+            except ImportError:
+                sys.modules[name] = types.ModuleType(name)
+        import Jython_tasks.java_loader_tasks as java_loader_tasks
+        cls.jlt = java_loader_tasks
+
+    def wait(self, timeline, never_started_timeout=-1):
+        """
+        Run the detector over `timeline`, {task_id: f(now)}, where f returns
+        (has_started, is_running, completed_ops) for the simulated time.
+        Returns the simulated time at which the wait returned or raised,
+        and the exception, if any.
+        """
+        import re
+        from unittest import mock
+        clock = [0.0]
+
+        def progress(api_endpoint, data, timeout):
+            # data is BaseSiriusLoader._flatten_param_to_str()'s JSON string
+            task_id = re.search(r'"task_id":\s*"([^"]+)"', data).group(1)
+            started, running, ops = timeline[task_id](clock[0])
+            return True, {"status": True, "has_started": started,
+                          "is_running": running, "completed_ops": ops}
+
+        def sleep(seconds, *args, **kwargs):
+            clock[0] += seconds
+            self.assertLess(clock[0], 100000, "the wait never ended")
+
+        loader = self.jlt.SiriusCouchbaseLoader.__new__(
+            self.jlt.SiriusCouchbaseLoader)
+        loader.task_ids = list(timeline)
+        loader.stall_timeout = self.STALL_TIMEOUT
+        loader.progress_poll_interval = self.POLL
+        loader.never_started_timeout = never_started_timeout
+        loader._make_api_request = progress
+        loader._make_task_request = lambda *args, **kwargs: (True, None)
+        with mock.patch.object(self.jlt.time, "time", lambda: clock[0]), \
+                mock.patch.object(self.jlt, "sleep", sleep):
+            try:
+                loader._wait_for_completion_or_stall()
+            except Exception as e:
+                return clock[0], e
+        return clock[0], None
+
+    def test_task_scheduled_after_long_queue_is_not_a_stall(self):
+        """A task that waited in the queue longer than stall_timeout, and is
+        polled after it got a thread but before its first batch landed, is
+        not hung. On a big load this happens whenever a load's workers had
+        all finished and its next one was still queued."""
+        timeline = {
+            # Runs from the start and finishes at t=300
+            "sibling": lambda now: (True, now < 300, int(now)),
+            # Queued until t=2010, first batch counted at t=2050 (the poll
+            # at t=2040 sees it started with no ops), finishes at t=2400
+            "late": lambda now: (now >= 2010, now < 2400,
+                                 max(0, int(now) - 2050)),
+        }
+        ended_at, error = self.wait(timeline)
+        self.assertIsNone(error, f"false stall at t={ended_at}: {error}")
+        self.assertEqual(2400, ended_at)
+
+    def test_started_task_without_progress_still_stalls(self):
+        """A task that gets a thread and then never advances is still a
+        stall, stall_timeout after it was seen starting."""
+        timeline = {"hung": lambda now: (now >= 2010, True, 0)}
+        ended_at, error = self.wait(timeline)
+        self.assertIsNotNone(error, "a hung task was not reported")
+        self.assertIn("no forward progress", str(error))
+        # First seen started at the t=2040 poll
+        self.assertEqual(2040 + self.STALL_TIMEOUT, ended_at)
+
+    def test_never_started_timeout_still_fires(self):
+        """A task the pool never dequeues still fails at
+        never_started_timeout when one is set."""
+        timeline = {"queued": lambda now: (False, True, 0)}
+        ended_at, error = self.wait(timeline, never_started_timeout=1800)
+        self.assertIsNotNone(error, "a never-scheduled task was not reported")
+        self.assertIn("queued but never scheduled", str(error))
+        self.assertEqual(1800, ended_at)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

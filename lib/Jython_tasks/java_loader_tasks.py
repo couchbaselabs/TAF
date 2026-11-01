@@ -594,7 +594,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         siblings drain the generator. Timing each worker separately reports
         that as a stall and kills a load that was progressing fine. What
         actually indicates a hung load is *no* worker in the group advancing,
-        so any sibling advancing (or finishing) resets the clock.
+        so any sibling advancing, finishing or getting a thread resets the
+        clock.
         """
 
         if self.stall_timeout == -1 or self.progress_poll_interval == -1:
@@ -692,7 +693,12 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                             timeout=self.never_started_timeout)
                     continue
 
-                unstarted_since.pop(task_id, None)
+                if unstarted_since.pop(task_id, None) is not None:
+                    # Seen queued at an earlier poll, so it got a thread since
+                    # then: forward progress for the load. Without this, its
+                    # time in the queue counts as no progress, and a poll that
+                    # lands before its first batch reports a false stall.
+                    group_last_change_ts = now
 
                 stalled_for = now - group_last_change_ts
                 if stalled_for >= self.stall_timeout:
