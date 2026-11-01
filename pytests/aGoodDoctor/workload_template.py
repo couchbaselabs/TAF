@@ -426,7 +426,10 @@ class WorkloadTemplateMixin:
         JavaDocLoaderUtils.load_sift_data / load_msmarco_data send, except:
           - ops is this collection's own rate;
           - the definition was found by collection name;
-          - the credentials come from the cluster.
+          - the credentials come from the cluster;
+          - a task may stay queued in DocLoader for as long as it takes.
+            siftBigANN's stall_timeout=-1, as in load_sift_data, turns stall
+            detection off altogether.
         """
         workload = bucket.loadDefn
         val_type = defn["valType"]
@@ -475,6 +478,14 @@ class WorkloadTemplateMixin:
             "mockVector": workload.get("mockVector"),
             "dim": defn.get("dim", 128),
             "base64": workload.get("base64"),
+            # No limit on how long a task may wait in DocLoader's queue. A
+            # template load sends DocLoader one task per collection, step
+            # range and pc worker -- about 3,000 for sparse_dense_1B at pc=20
+            # -- for only threads_to_use (default 60) threads, so a task can
+            # wait many hours. Stall detection stays on otherwise: a task
+            # that starts and then makes no progress still fails, and
+            # get_task_result() keeps polling until every task finishes.
+            "never_started_timeout": -1,
         }
         if val_type in SIFT_VAL_TYPES:
             kwargs.update(

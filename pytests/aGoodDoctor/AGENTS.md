@@ -135,6 +135,14 @@ Every resolved rate must be **≥ the `pc` param**. DocLoader paces each of its
 The `ops_rate` and `rebl_ops_rate` **test params are not used** in template
 mode.
 
+**How long a load takes.**
+- DocLoader splits each collection's request into `pc` tasks per step range. MSMARCO has 3 step ranges up to 8,841,823 items; siftBigANN has one per step of 1M/2M/5M/10M/… items.
+- Each task runs at `rate // pc` docs/s, and only `threads_to_use` tasks (default 60) run at once.
+- So a load takes **at least about Σ(num_items × pc ÷ collection rate) ÷ threads_to_use seconds**, even if the cluster keeps up. For `sparse_dense_1B` at the shipped rates and `pc=20`, that's about 22 h for the initial load.
+- To shorten it, raise `threads_to_use`, lower `pc`, or raise the template rates.
+- **Waiting in DocLoader's queue.** Template tasks pass `never_started_timeout=-1`, so they may wait as long as it takes; the `SiriusCouchbaseLoader` default fails a task after 1800s in the queue. The rest of stall detection stays on: an MSMARCO task that starts and then makes no progress for 600s still fails.
+- **Don't use `stall_timeout=-1` to avoid stalls.** It turns off the progress polling in `get_task_result()`. What's left is one blocking DocLoader `get_task_result` call per task with a **600s HTTP timeout**, and a timeout is caught, printed and treated as success. So a task still queued or running after 600s counts as finished. siftBigANN tasks already work this way, because `load_sift_data` passes `-1` and `_template_loader` mirrors it: a long siftBigANN load can be reported done before it is.
+
 ### What happens in each phase
 
 | Phase | Function(s) | Template behaviour |
