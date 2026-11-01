@@ -6,10 +6,14 @@ Every endpoint gets `chunks_per_jvm` worker threads; each pulls the next chunk
 when its current one finishes, so faster JVMs do more. By default every JVM
 runs one chunk at a time with `num_workers` (40) DocLoader threads, and the
 chunk size is chosen so all slots get equal work in full waves (see
-auto_chunk_size). Creates are bulkUpsert
-in DocLoader, so a failed chunk is simply re-run (up to max_chunk_retries). A
-JVM that stops answering /check-online is dropped and its chunk is requeued
-without consuming a retry.
+auto_chunk_size). Creates are bulkInsert in DocLoader, so a re-run chunk hits
+DocumentExists for every key already loaded; chunks therefore run with
+track_failures off by default (DocLoader would otherwise hold every failed
+document in memory and run the JVM out of heap) and a re-run simply fills in
+the missing keys. Every re-run - including one caused by a JVM dying -
+consumes one of max_chunk_retries, so a chunk that kills JVMs cannot walk
+through the whole fleet. A JVM that stops answering /check-online, or fails
+max_jvm_failures chunks in a row, is dropped from the fleet.
 """
 
 import copy
@@ -76,8 +80,9 @@ class FleetLoadDispatcher(object):
     def __init__(self, log, loader_urls, server_name=None,
                  chunk_size=None, chunks_per_jvm=1, num_workers=40,
                  process_concurrency=None, ops_per_chunk=None,
-                 max_chunk_retries=3, stall_timeout=1800,
-                 progress_interval=300):
+                 max_chunk_retries=3, stall_timeout=600,
+                 progress_interval=300, track_failures=False,
+                 max_jvm_failures=2):
         self.log = log
         self.loader_urls = list(loader_urls)
         self.server_name = server_name
@@ -91,6 +96,13 @@ class FleetLoadDispatcher(object):
             if process_concurrency else max(1, self.num_workers // self.chunks_per_jvm)
         self.ops_per_chunk = ops_per_chunk
         self.max_chunk_retries = int(max_chunk_retries)
+        # Off: re-runs of partly loaded chunks fail every existing key with
+        # DocumentExists, and DocLoader keeps each failed doc in heap.
+        self.track_failures = str(track_failures).lower() == "true"
+        # Consecutive failed chunks after which a JVM that still answers
+        # /check-online (e.g. its executor died on OOM) is dropped anyway.
+        self.max_jvm_failures = int(max_jvm_failures)
+        self._jvm_failures = dict()
         self.stall_timeout = stall_timeout
         self.progress_interval = progress_interval
 
@@ -280,26 +292,36 @@ class FleetLoadDispatcher(object):
                 with self._lock:
                     self._done_items += chunk.end - chunk.start
                     self._done_chunks += 1
+                    self._jvm_failures[url] = 0
                 continue
+            with self._lock:
+                self._jvm_failures[url] = self._jvm_failures.get(url, 0) + 1
+                jvm_failures = self._jvm_failures[url]
+            drop_reason = None
             if not is_loader_online(url, self.server_name):
+                drop_reason = "is unreachable"
+            elif jvm_failures >= self.max_jvm_failures:
+                drop_reason = "failed %s chunks in a row" % jvm_failures
+            self._retry_or_fail(chunk, url, error)
+            if drop_reason:
                 with self._lock:
                     self._dead.add(url)
-                self.log.critical("DocLoader %s is unreachable, dropping it "
-                                  "from the fleet; requeuing %s"
-                                  % (url, chunk.label))
-                self._queue.put(chunk)
+                self.log.critical("DocLoader %s %s, dropping it from the "
+                                  "fleet" % (url, drop_reason))
                 return
-            chunk.attempts += 1
-            if chunk.attempts > self.max_chunk_retries:
-                self.log.critical("Chunk %s failed %s times, giving up: %s"
-                                  % (chunk.label, chunk.attempts, error))
-                with self._lock:
-                    self._failed.append("%s: %s" % (chunk.label, error))
-            else:
-                self.log.warning("Chunk %s failed on %s (attempt %s), "
-                                 "requeuing: %s"
-                                 % (chunk.label, url, chunk.attempts, error))
-                self._queue.put(chunk)
+
+    def _retry_or_fail(self, chunk, url, error):
+        chunk.attempts += 1
+        if chunk.attempts > self.max_chunk_retries:
+            self.log.critical("Chunk %s failed %s times, giving up: %s"
+                              % (chunk.label, chunk.attempts, error))
+            with self._lock:
+                self._failed.append("%s: %s" % (chunk.label, error))
+        else:
+            self.log.warning("Chunk %s failed on %s (attempt %s), "
+                             "requeuing: %s"
+                             % (chunk.label, url, chunk.attempts, error))
+            self._queue.put(chunk)
 
     def _run_chunk(self, chunk, url):
         loader = copy.copy(chunk.template)
@@ -318,6 +340,7 @@ class FleetLoadDispatcher(object):
         # A JVM sits idle from its chunk finishing until this poll notices,
         # so keep it short: a few cheap REST calls vs. minutes of idle JVMs.
         loader.progress_poll_interval = 5
+        loader.track_failures = self.track_failures
         if self.ops_per_chunk:
             loader.ops = int(self.ops_per_chunk)
             loader.gtm = False

@@ -57,14 +57,16 @@ class FleetDataLoader(object):
             taf_path=os.path.dirname(os.path.abspath(sys.argv[0])),
             size=param("size", size),
             instance_type=param("instance_type", "c8g.8xlarge"),
-            jvms_per_instance=param("jvms_per_instance", 4),
+            jvms_per_instance=param("jvms_per_instance", 2),
             base_port=param("base_port", 8080),
             subnet_ids=csv("subnet_ids"),
             ami_id=param("ami"),
             key_name=param("key_name"),
             ingress_cidrs=csv("ingress_cidrs"),
             s3_bucket=param("s3_bucket"),
-            launch_template=param("launch_template"))
+            launch_template=param("launch_template"),
+            stack_env=param("stack_env", cls._stack_env(test_input)),
+            tags=cls._tags(param("tags")))
         dispatcher_kwargs = dict(
             # None -> sized automatically (dispatcher.auto_chunk_size)
             chunk_size=param("chunk_size"),
@@ -73,9 +75,30 @@ class FleetDataLoader(object):
             # None -> workers_per_jvm / chunks_per_jvm
             process_concurrency=param("process_concurrency"),
             ops_per_chunk=param("ops_per_chunk"),
-            max_chunk_retries=param("chunk_retries", 3))
+            max_chunk_retries=param("chunk_retries", 3),
+            track_failures=param("track_failures", False),
+            max_jvm_failures=param("max_jvm_failures", 2),
+            stall_timeout=int(param("stall_timeout", 600)))
         return cls(log, fleet, dispatcher_kwargs,
                    keep_fleet=not param("teardown", True))
+
+    @staticmethod
+    def _stack_env(test_input):
+        """'qe-7' from a pod like cloudapi.qe-7.sandbox.nonprod-...com."""
+        pod = (getattr(test_input, "capella", None) or dict()).get("pod") or ""
+        labels = pod.replace("https://", "").split(".")
+        return labels[1] if len(labels) > 2 else None
+
+    @staticmethod
+    def _tags(value):
+        """loader_fleet_tags=key1:value1;key2:value2 (',' separates test
+        params, so ';' separates tags)."""
+        tags = dict()
+        for pair in (value or "").split(";"):
+            if ":" in pair:
+                key, val = pair.split(":", 1)
+                tags[key.strip()] = val.strip()
+        return tags
 
     def start(self):
         """Launch the fleet in the background so instance boot overlaps with

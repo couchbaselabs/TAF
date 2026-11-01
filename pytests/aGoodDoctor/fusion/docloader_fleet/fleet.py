@@ -22,11 +22,23 @@ import tempfile
 import time
 import uuid
 from base64 import b64encode
+from datetime import datetime, timezone
 
 import requests
 from botocore.exceptions import ClientError
 
 FLEET_TAG_KEY = "taf-docloader-fleet"
+# Value of FLEET_TAG_KEY on resources shared across runs (baked AMI, named
+# launch template and its security group) - per-run resources carry run_id.
+BAKED_AMI_TAG_VALUE = "ami"
+PERSISTENT_TAG_VALUE = "persistent"
+# Mirrors the tags Capella puts on a qe-7 Couchbase Server instance, so fleet
+# resources are attributable alongside the clusters they load.
+DEFAULT_TAGS = {
+    "stack-service": "taf-docloader-fleet",
+    "couchbase-cloud-function": "docloader",
+    "user-createdby": "ritesh.agarwal",
+}
 UBUNTU_AMI_SSM_PARAM = \
     "/aws/service/canonical/ubuntu/server/24.04/stable/current/{arch}/hvm/ebs-gp3/ami-id"
 
@@ -78,7 +90,8 @@ class DocLoaderFleet(object):
                  size=1, instance_type="c8g.8xlarge", jvms_per_instance=3,
                  base_port=8080, subnet_ids=None, ami_id=None, key_name=None,
                  ingress_cidrs=None, s3_bucket=None, root_volume_gb=30,
-                 launch_timeout=1200, launch_template=None):
+                 launch_timeout=1200, launch_template=None, stack_env=None,
+                 tags=None):
         self.log = log
         self.session = boto3_session
         self.region = region
@@ -101,6 +114,14 @@ class DocLoaderFleet(object):
         self.launch_template = launch_template
 
         self.run_id = "taf-dl-%s" % uuid.uuid4().hex[:10]
+        # Same keys/format as a Capella-provisioned server instance
+        # (stack-env=qe-7, user-createdat=2026-10-30-16-56-40--0000-utc).
+        self.common_tags = dict(DEFAULT_TAGS)
+        if stack_env:
+            self.common_tags["stack-env"] = stack_env
+        self.common_tags["user-createdat"] = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%d-%H-%M-%S--0000-utc")
+        self.common_tags.update(tags or dict())
         # Name reported by /check-online, so a stray DocLoader that happens to
         # answer on a recycled IP is never mistaken for one of ours. Baked
         # AMIs report the SERVER_NAME from their /etc/docloader/env.
@@ -129,6 +150,7 @@ class DocLoaderFleet(object):
                       "region %s" % (self.run_id, self.size, self.instance_type,
                                      self.jvms_per_instance, self.region))
         if self.launch_template:
+            self._ensure_launch_template()
             lt_spec = self._use_launch_template()
             subnets = self.subnet_ids or self._default_subnets()
         else:
@@ -149,9 +171,106 @@ class DocLoaderFleet(object):
                       % (self.run_id, self.urls))
         return self.urls
 
-    def _tags(self, name):
-        return [{"Key": "Name", "Value": name},
-                {"Key": FLEET_TAG_KEY, "Value": self.run_id}]
+    def _tags(self, name, fleet_value=None):
+        tags = dict(self.common_tags, Name=name)
+        tags[FLEET_TAG_KEY] = fleet_value or self.run_id
+        return [{"Key": k, "Value": v} for k, v in sorted(tags.items())]
+
+    # ------------------------------------------- shared (named) template
+    def _ensure_launch_template(self):
+        """Recreate a named launch template that has gone missing (e.g.
+        removed by an account cleanup job) from the newest baked AMI, so a
+        run never depends on it surviving between runs. lt- ids are only
+        looked up, never created."""
+        if self.launch_template.startswith("lt-"):
+            return
+        try:
+            self.ec2.describe_launch_templates(
+                LaunchTemplateNames=[self.launch_template])
+            return
+        except ClientError as e:
+            if "InvalidLaunchTemplateName.NotFoundException" not in str(e):
+                raise
+        ami = self._latest_baked_ami()
+        sg_id = self._persistent_security_group()
+        name = self.launch_template
+        self.log.warning("Launch template %s not found; recreating it from %s "
+                         "(%s), %s, SG %s"
+                         % (name, ami["ImageId"], ami["Name"],
+                            self.instance_type, sg_id))
+        root = ami["BlockDeviceMappings"][0]
+        data = {
+            "ImageId": ami["ImageId"],
+            "InstanceType": self.instance_type,
+            "NetworkInterfaces": [{"DeviceIndex": 0,
+                                   "AssociatePublicIpAddress": True,
+                                   "Groups": [sg_id],
+                                   "DeleteOnTermination": True}],
+            "BlockDeviceMappings": [{
+                "DeviceName": ami.get("RootDeviceName", root["DeviceName"]),
+                "Ebs": {"VolumeSize": max(self.root_volume_gb,
+                                          root["Ebs"]["VolumeSize"]),
+                        "VolumeType": "gp3",
+                        "DeleteOnTermination": True}}],
+            "TagSpecifications": [
+                {"ResourceType": rtype,
+                 "Tags": self._tags(name, PERSISTENT_TAG_VALUE)}
+                for rtype in ("instance", "volume")],
+        }
+        try:
+            self.ec2.create_launch_template(
+                LaunchTemplateName=name, LaunchTemplateData=data,
+                VersionDescription="recreated by %s" % self.run_id,
+                TagSpecifications=[{
+                    "ResourceType": "launch-template",
+                    "Tags": self._tags(name, PERSISTENT_TAG_VALUE)}])
+        except ClientError as e:
+            # A concurrent run recreated it first; use theirs.
+            if "AlreadyExists" not in str(e):
+                raise
+
+    def _latest_baked_ami(self):
+        """Newest available AMI built by bake.sh (FLEET_TAG_KEY=ami)."""
+        images = self.ec2.describe_images(Owners=["self"], Filters=[
+            {"Name": "tag:%s" % FLEET_TAG_KEY,
+             "Values": [BAKED_AMI_TAG_VALUE]},
+            {"Name": "state", "Values": ["available"]}])["Images"]
+        if not images:
+            raise Exception(
+                "Launch template %s is missing and no baked DocLoader AMI "
+                "(tag %s=%s) exists in %s to recreate it from; re-bake with "
+                "bake.sh or drop loader_fleet_launch_template"
+                % (self.launch_template, FLEET_TAG_KEY, BAKED_AMI_TAG_VALUE,
+                   self.region))
+        return max(images, key=lambda image: image["CreationDate"])
+
+    def _persistent_security_group(self):
+        """The shared template's SG in the default VPC: reused if it
+        survived, created otherwise. It has no standing ingress; each run
+        adds and revokes its own rule (_use_launch_template/teardown)."""
+        vpc_id = self.ec2.describe_vpcs(Filters=[
+            {"Name": "is-default", "Values": ["true"]}])["Vpcs"][0]["VpcId"]
+        groups = self.ec2.describe_security_groups(Filters=[
+            {"Name": "vpc-id", "Values": [vpc_id]},
+            {"Name": "group-name", "Values": [self.launch_template]}])[
+            "SecurityGroups"]
+        if groups:
+            return groups[0]["GroupId"]
+        try:
+            return self.ec2.create_security_group(
+                GroupName=self.launch_template, VpcId=vpc_id,
+                Description="TAF DocLoader fleet (shared launch template)",
+                TagSpecifications=[{
+                    "ResourceType": "security-group",
+                    "Tags": self._tags(self.launch_template,
+                                       PERSISTENT_TAG_VALUE)}])["GroupId"]
+        except ClientError as e:
+            if "InvalidGroup.Duplicate" not in str(e):
+                raise
+            return self.ec2.describe_security_groups(Filters=[
+                {"Name": "vpc-id", "Values": [vpc_id]},
+                {"Name": "group-name", "Values": [self.launch_template]}])[
+                "SecurityGroups"][0]["GroupId"]
 
     def _account_id(self):
         return self.session.client("sts").get_caller_identity()["Account"]
@@ -338,6 +457,22 @@ class DocLoaderFleet(object):
             HealthCheckType="EC2",
             Tags=[dict(tag, PropagateAtLaunch=True)
                   for tag in self._tags(self.run_id)])
+        # The ASG is only a launcher. Left alone it terminates loaders
+        # mid-load: AZRebalance evens out zones once capacity returns in an
+        # AZ that failed launches (fusion_volume #1063 lost a loader that
+        # way), and the replacement would never be registered with the
+        # dispatcher anyway. Launch stays enabled so the initial capacity
+        # still comes up; the dispatcher handles any lost loader.
+        try:
+            self.asg.suspend_processes(
+                AutoScalingGroupName=self.asg_name,
+                ScalingProcesses=["AZRebalance", "ReplaceUnhealthy",
+                                  "HealthCheck", "AlarmNotification",
+                                  "ScheduledActions"])
+        except ClientError as e:
+            self.log.warning("Could not suspend ASG processes on %s (loaders "
+                             "may be rebalanced across AZs mid-load): %s"
+                             % (self.asg_name, e))
 
     def _wait_for_asg_in_service(self):
         end_time = time.time() + self.launch_timeout
