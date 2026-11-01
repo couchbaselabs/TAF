@@ -60,12 +60,15 @@ Pass `workload_template=<value>`. The value can be:
 - a path, relative to where testrunner runs or absolute.
 
 ```bash
-python testrunner.py -i <ini> -t aGoodDoctor.Hospital.Murphy.ClusterOpsVolume,workload_template=sparse_dense_500M,iterations=2,pc=20,load_docs_using=sirius_java_sdk,<cluster/backup/encryption params> --launch_java_doc_loader --sirius_url http://localhost:<port>
+python testrunner.py -i <ini> -t aGoodDoctor.Hospital.Murphy.ClusterOpsVolume,workload_template=sparse_dense_500M,iterations=2,threads_to_use=120,load_docs_using=sirius_java_sdk,<cluster/backup/encryption params> --launch_java_doc_loader --sirius_url http://localhost:<port>
 ```
 
 setUp logs `Using workload template <path>` and one summary line per bucket:
-valType, collection count, items, per-collection initial and mutation rates,
-and 2iQPS. Grep the test log for these.
+valType, collection count, items, per-collection initial and mutation rates
+and pcs, and 2iQPS. It then logs how many DocLoader tasks the initial load
+and the mutation waves ask for against `threads_to_use`, as a warning when
+some must wait for a thread (see [Process concurrency](#process-concurrency)).
+Grep the test log for these.
 
 ### Template file format
 
@@ -88,10 +91,12 @@ order.
 | `baseFilePath` | siftBigANN | SIFT directory. DocLoader reads `bigann_base.bvecs` from it, and `QueryLoad` reads `bigann_query.bvecs` and the ground-truth files from it on the **testrunner host**. All siftBigANN buckets in a template must use the **same** value |
 | `ops` | yes, unless every collection sets it | Initial-load rate, split across the bucket's collections |
 | `rebl_ops_rate` | yes, unless every collection sets it | Rate of every later load, split across the bucket's collections |
+| `process_concurrency` | no (int ≥ 1) | DocLoader workers per step range of each collection's initial load. Falls back to the `pc` param |
+| `rebl_process_concurrency` | no (int ≥ 1) | DocLoader workers per step range of each collection's later loads. Falls back to `process_concurrency`, then the `pc` param |
 | `2iQPS` | no (default 0) | Number of query threads for this bucket. Each thread cycles through **all** the bucket's queries. Needs ≥ 1 query when > 0 |
 | `collections` | no | If given, must equal `len(collections_defn)`. It is overwritten with that value |
 | `collections_defn` | yes | Non-empty list of collection definitions (below) |
-| `num_items`, `doc_size`, `process_concurrency`, `ftsQPS`, `cbasQPS` | no | Not used by template loads. Workers come from the `pc` param; FTS/CBAS are rejected |
+| `num_items`, `doc_size`, `ftsQPS`, `cbasQPS` | no | Not used by template loads; FTS/CBAS are rejected |
 | `model`, `mockVector`, `base64` | no | Passed to DocLoader as-is (`None` when absent), like the framework loaders |
 
 **Collection-level keys** (`collections_defn` entries)
@@ -106,6 +111,7 @@ order.
 | `vector` | yes | Non-empty list of dicts with an int `nProbe`. Optional: `similarity`, `quantization`, `description`. Index `i` uses entry `counter % len`, where the counter runs across the whole bucket |
 | `dim` | no (DocLoader default 128) | Sent to DocLoader, and stored for each query |
 | `ops`, `rebl_ops_rate` | no | Override this collection's share of the bucket rate |
+| `process_concurrency`, `rebl_process_concurrency` | no (int ≥ 1) | Override the bucket's value of the same key for this collection |
 | `groundTruths` | no | `[(gt_file, label), ...]`, one per query. Without it, siftBigANN queries run but skip recall/accuracy |
 | `queryParams` | no | List of dicts, one per query. Ignored for siftBigANN buckets, where `create_indexes` gives each collection one shared `{}` |
 | `doc_size` | no (default 256) | Sent to DocLoader |
@@ -122,26 +128,109 @@ order.
 | | Initial load | Every later load |
 |---|---|---|
 | Template key | `ops` | `rebl_ops_rate` |
+| pc key ([Process concurrency](#process-concurrency)) | `process_concurrency` | `rebl_process_concurrency` |
 | Used by | `template_initial_load`, `template_rollback_load` | mutation thread (`template_vector_mutations`), `template_steady_state_wave` |
 
 The rule is `collection_rate()`:
 - A collection-level value wins.
 - Otherwise each collection gets `bucket_value // len(collections_defn)`.
 
-Every resolved rate must be **≥ the `pc` param**. DocLoader paces each of its
-`pc` workers at `ops // pc` docs/s and **loads nothing when that is 0**; see
+Every resolved rate must be **≥ the collection's pc for that load** (see
+[Process concurrency](#process-concurrency)). DocLoader paces each of its pc
+workers at `ops // pc` docs/s and **loads nothing when that is 0**; see
 `boundedBatchSize` in `DocLoader/src/main/java/utils/docgen/WorkLoadSettings.java`.
 
 The `ops_rate` and `rebl_ops_rate` **test params are not used** in template
 mode.
 
 **How long a load takes.**
-- DocLoader splits each collection's request into `pc` tasks per step range. MSMARCO has 3 step ranges up to 8,841,823 items; siftBigANN has one per step of 1M/2M/5M/10M/… items.
-- Each task runs at `rate // pc` docs/s, and only `threads_to_use` tasks (default 60) run at once.
-- So a load takes **at least about Σ(num_items × pc ÷ collection rate) ÷ threads_to_use seconds**, even if the cluster keeps up. For `sparse_dense_1B` at the shipped rates and `pc=20`, that's about 22 h for the initial load.
-- To shorten it, raise `threads_to_use`, lower `pc`, or raise the template rates.
+- DocLoader splits each collection's request at its step boundaries and runs pc tasks per step range. MSMARCO has 3 step ranges up to 8,841,823 items; siftBigANN has one per step of 1M/2M/5M/10M/… items.
+- Each step range runs at the collection's rate (pc tasks at `rate // pc` docs/s each). So a collection with every range running loads several times faster than its rate until its small ranges finish.
+- Only `threads_to_use` tasks (default 60) run at once. So a load takes **at least about Σ(num_items × pc ÷ collection rate) ÷ threads_to_use seconds**, and no less than the runner and cluster allow. [Process concurrency](#process-concurrency) has both limits and the resulting times.
 - **Waiting in DocLoader's queue.** Template tasks pass `never_started_timeout=-1`, so they may wait as long as it takes; the `SiriusCouchbaseLoader` default fails a task after 1800s in the queue. The rest of stall detection stays on: an MSMARCO task that starts and then makes no progress for 600s still fails.
 - **Don't use `stall_timeout=-1` to avoid stalls.** It turns off the progress polling in `get_task_result()`. What's left is one blocking DocLoader `get_task_result` call per task with a **600s HTTP timeout**, and a timeout is caught, printed and treated as success. So a task still queued or running after 600s counts as finished. siftBigANN tasks already work this way, because `load_sift_data` passes `-1` and `_template_loader` mirrors it: a long siftBigANN load can be reported done before it is.
+
+### Process concurrency
+
+**Which pc a load uses** (`collection_pc()`). For each key, the collection's
+value wins over the bucket's.
+- Initial and rollback loads: `process_concurrency`, else the `pc` param.
+- Every later load: `rebl_process_concurrency`, else `process_concurrency`, else the `pc` param.
+
+**What pc does in DocLoader** (d350d87: `RestServer/TaskRequest.java`,
+`couchbase/loadgen/WorkLoadGenerate.java`, `RankedThreadPoolExecutor.java`):
+- Each step range gets pc workers (MSMARCO: `min(pc, range size)`). Each worker gets a 1/pc slice of the range, paced at `rate // pc` docs/s. A step range runs at the collection's rate whatever pc is; pc only sets how many threads it takes.
+- A worker writes batches of at most 16,384 docs (4 MB ÷ the 256-byte `doc_size` it is sent), back to back until it has done `rate // pc`. It then sleeps 1s minus the **last** batch's time, so above 16,384 docs/s per worker the earlier batches' time is lost. One siftBigANN worker asked for 50,000/s does 27.8k/s; asked for 25,000/s, it does 22.4k/s.
+- A siftBigANN worker gets `range size // pc` docs and **the remainder is never loaded**. So a siftBigANN pc must divide every step range of the collection: any divisor of 1,000,000 does for whole-million `num_items`, and setUp rejects a pc that doesn't. An MSMARCO range's last worker takes its remainder.
+- The pool starts queued workers in (worker index, submission order) order: every collection's first worker before any second worker. A worker holds its thread until its slice is done, which is hours for an initial-load MSMARCO range and days for a mutation one.
+
+**Shipped values** in `sparse_dense_500M` and `sparse_dense_1B`:
+
+| Bucket | `process_concurrency` | `rebl_process_concurrency` | Why |
+|---|---|---|---|
+| GleamBookUsers0/1 (MSMARCO) | 1 | 1 | A collection's rate (≤ 5,000/s initial, ≤ 100/s later) is within what one worker holds (~9.5k/s). More workers only take more threads |
+| GleamBookUsers2 (siftBigANN) | 4 | 1 | 4 × 12,500/s is the fewest workers that reach the 50,000/s initial rate within the 16,384-doc batch, and 4 divides every step range. 1,000/s later needs 1 |
+
+`single_template` keeps `process_concurrency: 10` for every bucket.
+
+**Measured** on the volume runner (24 cores, Xen VM) against its cluster (2 KV
+nodes, magma, 1 replica), with the templates' own requests:
+
+| Load | Tasks running | docs/s |
+|---|---|---|
+| 1 MSMARCO worker asked for 2,500 / 5,000 / 10,000 | 1 | 2,496 / 4,991 / 9,648 |
+| 1 siftBigANN worker asked for 12,500 / 25,000 / 50,000 | 1 | 12,734 / 22,352 / 27,814 |
+| 1 siftBigANN step range at pc 4 (4 × 12,500) | 4 | 49,304 |
+| 20 MSMARCO collections at 2,500/s (1B GleamBookUsers0), pc 10, 60 threads | 60 of 600 | 15,155 |
+| The same at pc 1 | 60 | 67,191 |
+| Whole 1B initial load at the shipped pcs, 200 threads | 186 | 120,982 (MSMARCO 67,982, siftBigANN 53,001) |
+| Whole 500M initial load at the shipped pcs, 120 threads | 107 | 126,363 (MSMARCO 67,103, siftBigANN 59,260) |
+
+- MSMARCO tops out near 67.5k docs/s, however many tasks run.
+- siftBigANN gets what is left of the runner's ~243 MB/s of outbound traffic (about 3.2 KB per MSMARCO doc and 0.6 KB per siftBigANN doc).
+- The collections read the same MSMARCO records, so the page cache serves at least 98% of the MSMARCO file reads. The NFS share itself reads only 95–145 MB/s.
+- KV stayed under 45% CPU. DocLoader's GC took 3.5–5% of the time at pc 1, with Java 8's default 8.4 GB heap.
+
+**Initial load time.** These figures come from a model of the pool above,
+using the measured limits:
+
+| Template and pcs | 60 threads | 120 threads | 200 threads |
+|---|---|---|---|
+| 1B, pc 20 everywhere (the `pc` param's default) | 23.4 h | 12.3 h | 7.8 h |
+| 1B, pc 10 everywhere | 12.2 h | 6.7 h | 4.5 h |
+| 1B, shipped | 3.1 h | 2.65 h | 2.57 h |
+| 500M, pc 20 everywhere | 6.1 h | 3.3 h | 2.1 h |
+| 500M, pc 10 everywhere | 3.2 h | 1.8 h | 1.35 h |
+| 500M, shipped | 1.05 h | 1.01 h | 1.01 h |
+
+With the shipped values, 200 threads (1B) and 120 (500M) reach the floor.
+Until MSMARCO finishes (about 1.9 h into 1B), the runner's throughput sets
+it. After that, 1B's siftBigANN [200M, 500M) range runs alone at its 50,000/s
+for the last ~40 minutes. Only a higher `ops` for that bucket would shorten
+that; pc wouldn't. A siftBigANN pc of 5 or 8 is never faster than 4. A pc of 2
+leaves each range at 44.7k/s, and an MSMARCO pc of 2 only adds tasks.
+
+**Mutations.** Mutations run at a few docs/s per worker, so threads limit
+them, not throughput. Queued tasks wait behind running ones that take days.
+At the start of a 1B mutation wave with 60 threads, at pc 10:
+- GleamBookUsers0 runs at 10% of its rate;
+- GleamBookUsers1 and the siftBigANN bucket run at 0%. The siftBigANN bucket waits behind every MSMARCO task.
+
+At pc 1 with ≥ 159 threads, every bucket runs at 100%. A pc above 1 only
+multiplies the tasks, and `rate // pc` rounds rates down: a GleamBookUsers1
+range does 30 docs/s instead of 33 at pc 10.
+
+**Set `threads_to_use`** to at least the larger of the two task counts setUp
+logs:
+
+| Template | Initial-load tasks | Tasks per mutation wave | ClusterOpsVolume, SystemTestIndexer | SteadyStateVolume |
+|---|---|---|---|---|
+| `sparse_dense_1B` | 186 | 159 | 200 | 340 |
+| `sparse_dense_500M` | 107 | 83 | 120 | 170 |
+
+- SteadyStateVolume runs its own wave alongside the mutation thread's, so it needs twice the mutation tasks.
+- A wave's siftBigANN tasks count as done after 600s (see `stall_timeout=-1` above), so the next wave can start while the previous wave's [200M, 500M) range is still running. That's one extra task in 1B, which the margins above cover.
+- Mutation workers sleep most of each second, so the extra threads cost little.
 
 ### What happens in each phase
 
@@ -152,13 +241,13 @@ mode.
 | Collections | `Murphy.create_required_collections`, which calls `create_template_collections` | Created in `_default`, one thread per bucket, named by `collection_id`, in sorted order |
 | skip_init | `bind_template_to_existing_buckets` | Binds the server's buckets to template workloads **by name**; fails unless the bucket sets match exactly. `initial_setup` then returns early, as in the val_type path |
 | FTS/analytics check | end of `Murphy.setUp` | Fails if the cluster has FTS or analytics nodes |
-| Initial load | `initial_setup`, which calls `template_initial_load` | One DocLoader task per collection, create 100, `num_items`, at the collection's `ops` share. Waits for all tasks; fails if DocLoader refuses any |
+| Initial load | `initial_setup`, which calls `template_initial_load` | One DocLoader request per collection, create 100, `num_items`, at the collection's `ops` share and `process_concurrency`. Waits for all tasks; fails if DocLoader refuses any |
 | Item bookkeeping | `record_template_collection_items` | Sets each collection's own `num_items` / `doc_index` |
 | Indexes | `DoctorN1QL.create_indexes`, `build_indexes` | Definition looked up by collection name; the template's `similarity` is used; keyspaces escaped |
 | Query load | `QueryLoad`, one per bucket with `2iQPS > 0` | siftBigANN: real vectors from `<baseFilePath>/bigann_query.bvecs`, recall only with `groundTruths`. MSMARCO: random sparse `$vector` for `SPARSE_VECTOR_DISTANCE` queries; scalar queries get no vector |
-| Mutation thread | `vector_file_mutations`, which calls `template_vector_mutations` | Waves of every bucket's `doc_op_percentages` at the `rebl_ops_rate` share, with `mutate += 1` per wave so vectors change. Same pause handshake; `self.loader_tasks` holds the in-flight wave; every task is awaited; refused tasks are logged as critical |
+| Mutation thread | `vector_file_mutations`, which calls `template_vector_mutations` | Waves of every bucket's `doc_op_percentages` at the `rebl_ops_rate` share and `rebl_process_concurrency`, with `mutate += 1` per wave so vectors change. Same pause handshake; `self.loader_tasks` holds the in-flight wave; every task is awaited; refused tasks are logged as critical |
 | SteadyStateVolume iteration | `template_steady_state_wave` | One synchronous full pass at the `rebl_ops_rate` share; the mutation thread keeps running alongside |
-| Rollback (`rollback=True`) | `OPD.trigger_rollback`, which calls `template_rollback_load` | 1000 create-only docs per collection under `rollback_docs_<n>-`, at the `ops` share |
+| Rollback (`rollback=True`) | `OPD.trigger_rollback`, which calls `template_rollback_load` | 1000 create-only docs per collection under `rollback_docs_<n>-`, at the `ops` share and `process_concurrency` |
 | print_stats | `OPD.print_stats` | Crud table skipped; those attributes only exist after `generate_docs` |
 | ClusterOpsVolume end | end guard | Skips the val_type-only `doc_loading_tm.getAllTaskResult()` |
 | Backup / restore / PITR | `restore_with_workloads_paused` and the backup helpers | Unchanged; they work per bucket name |
@@ -211,7 +300,9 @@ the template passes.
 - `num_items` out of range;
 - a bad `2i`, missing statements, or a bad `vector`;
 - a `groundTruths` shorter than the queries, or `queryParams` that aren't a list of dicts;
-- a missing rate, a non-int rate, or a rate **below `pc`**;
+- a missing rate, a non-int rate, or a rate **below its pc**;
+- a `process_concurrency` / `rebl_process_concurrency` that isn't an int ≥ 1;
+- a siftBigANN pc that doesn't divide every step range of the collection (DocLoader would skip the remainder);
 - `2iQPS > 0` with no queries;
 - siftBigANN buckets with different `baseFilePath`s.
 
@@ -228,13 +319,15 @@ the template passes.
 |---|---|
 | **Must not be passed** (setUp rejects them) | `bhive=true` / `base64=true` (the shipped templates have no BHIVE/base64 statement lists; their statements already say which indexes are BHIVE), `fts_nodes`/`cbas_nodes` > 0, `collection_id`, `coll_order=-1` |
 | **Ignored** (the template defines these) | `val_type`, `num_buckets`, `bucket_names`, `collections`, `num_items`, `doc_size`, `key_size`, `ops_rate`, `rebl_ops_rate`, `2iQPS`, `2i_indexes`, `2i_queries`, `nProbe`, `dim`, `vecFilePath`, `baseFilePath`, `similarity` (used only when a template vector has no `similarity`) |
-| **Still honoured** | `pc` (DocLoader workers; the rate floor), `partitions` (adds `num_partition` to dense `{vector}` indexes; without it `PARTITION BY HASH(meta().id)` is stripped from every index of a collection, as before. `PARTITION BY HASH(<field>)` is kept), `mockVector`, `index_replica` and the indexer settings, bucket storage/type/eviction, backup / continuous-backup / encryption params, `iterations`, sleeps, `rebl_services`, `skip_init`, `rollback`, `crashes` |
+| **Still honoured** | `pc` (DocLoader workers for any load whose template sets no pc; the 500M/1B templates set them all), `threads_to_use` (DocLoader's thread pool; size it with [Process concurrency](#process-concurrency)), `partitions` (adds `num_partition` to dense `{vector}` indexes; without it `PARTITION BY HASH(meta().id)` is stripped from every index of a collection, as before. `PARTITION BY HASH(<field>)` is kept), `mockVector`, `index_replica` and the indexer settings, bucket storage/type/eviction, backup / continuous-backup / encryption params, `iterations`, sleeps, `rebl_services`, `skip_init`, `rollback`, `crashes` |
 
 ### Shipped templates
 
-All three use `ops: 50000` and `rebl_ops_rate: 10000` per bucket, and `2iQPS`
-10 / 10 / 50. The MSMARCO scalar queries end in `LIMIT 100`. The siftBigANN
-bucket has no `groundTruths`.
+All three use `ops: 50000` and `rebl_ops_rate: 1000` per bucket. `2iQPS` is
+100 per bucket in `sparse_dense_500M` / `sparse_dense_1B`, and 10 / 10 / 50 in
+`single_template`. The MSMARCO scalar queries end in `LIMIT 100`. The
+siftBigANN bucket has no `groundTruths`. For the pcs, see
+[Process concurrency](#process-concurrency).
 
 | Template | GleamBookUsers0 (MSMARCO sparse) | GleamBookUsers1 (MSMARCO sparse) | GleamBookUsers2 (siftBigANN dense) | Items |
 |---|---|---|---|---|
@@ -272,7 +365,7 @@ GleamBookUsers1 the `(sparse)` index pairs with the unfiltered query, and
    - Those loaders map collections to definitions by sorted position, and `_loader_dict` by insertion order, with `_default` taking index 0.
    - They give every collection the bucket's full `ops`.
    - The template path looks definitions up by name and uses per-collection rates.
-4. **Keep `_template_loader` in sync** with `load_sift_data` / `load_msmarco_data`. The intended differences are only per-collection `ops`, name lookup, and cluster credentials. If the framework loaders gain or change arguments, mirror them.
+4. **Keep `_template_loader` in sync** with `load_sift_data` / `load_msmarco_data`. The intended differences are only per-collection `ops` and `process_concurrency`, name lookup, cluster credentials, and `never_started_timeout=-1`. If the framework loaders gain or change arguments, mirror them.
 5. **`n1ql_identifier()` must leave plain identifiers unchanged**, so val_type statement text doesn't change. Use it for every keyspace part in any new N1QL built from bucket/scope/collection names.
 6. **`QueryLoad.queryVectors` is a process-wide class cache**, which is why all siftBigANN buckets must share one `baseFilePath`.
 7. **Vector dataset files are opened read-only** (`'rb'`).
@@ -313,9 +406,15 @@ Don't mistake them for template bugs.
 3. Set `vecFilePath` / `baseFilePath` for the dataset.
 4. Give every collection a unique, valid `collection_id`.
 5. Size `num_items` within the dataset limits.
-6. Set `ops` / `rebl_ops_rate` so every collection's share is ≥ `pc`. Add collection-level values to override individual shares.
-7. Keep `2i` counts consistent with the `indexes` / `queries` lists.
-8. Validate offline, without a cluster or TAF dependencies, from the repo root:
+6. Set `ops` / `rebl_ops_rate`. Add collection-level values to override individual shares.
+7. Set `process_concurrency` / `rebl_process_concurrency` as in [Process concurrency](#process-concurrency):
+   - the fewest workers for which one worker sustains `rate // pc` (MSMARCO: ~9.5k/s; siftBigANN: ≤ 16,384/s);
+   - a siftBigANN pc that divides every step range;
+   - every rate ≥ its pc.
+
+   Then size `threads_to_use` from the task counts the validation below prints.
+8. Keep `2i` counts consistent with the `indexes` / `queries` lists.
+9. Validate offline, without a cluster or TAF dependencies, from the repo root:
 
 ```bash
 python3 - <<'EOF'
@@ -338,11 +437,19 @@ for name in ("single_template", "sparse_dense_500M", "sparse_dense_1B"):
     errors = wt.template_errors(template, PC)
     print(f"{name}: {'OK' if not errors else errors}")
     if not errors:
+        tasks = {wt.INITIAL_RATE: 0, wt.MUTATION_RATE: 0}
         for bucket, workload in template.items():
             defns = workload["collections_defn"]
+            for rate_key in tasks:
+                tasks[rate_key] += sum(
+                    wt.docloader_tasks(workload["valType"], d["num_items"], wt.collection_pc(workload, d, rate_key, PC))
+                    for d in defns)
             print(f"  {bucket}: {workload['valType']}, {len(defns)} collections, "
                   f"ops/collection {sorted({wt.collection_rate(workload, d, wt.INITIAL_RATE) for d in defns})}, "
-                  f"rebl_ops_rate/collection {sorted({wt.collection_rate(workload, d, wt.MUTATION_RATE) for d in defns})}")
+                  f"rebl_ops_rate/collection {sorted({wt.collection_rate(workload, d, wt.MUTATION_RATE) for d in defns})}, "
+                  f"pc {sorted({wt.collection_pc(workload, d, wt.INITIAL_RATE, PC) for d in defns})} / "
+                  f"{sorted({wt.collection_pc(workload, d, wt.MUTATION_RATE, PC) for d in defns})}")
+        print(f"  DocLoader tasks: initial load {tasks[wt.INITIAL_RATE]}, mutation wave {tasks[wt.MUTATION_RATE]}")
 EOF
 ```
 

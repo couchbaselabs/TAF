@@ -15,7 +15,11 @@
         "doc_size": 1024,
         "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
         "2iQPS": 100,
-        "process_concurrency": 10,
+        # DocLoader workers per step range. 1 runs each collection at its full
+        # rate (one MSMARCO worker holds up to ~9.5k/s) on the fewest threads.
+        # See "Process concurrency" in pytests/aGoodDoctor/AGENTS.md.
+        "process_concurrency": 1,
+        "rebl_process_concurrency": 1,
         "collections_defn": [
             {
                 "collection_id": "GB0_C01",
@@ -327,7 +331,11 @@
         "2iQPS": 100,
         "ftsQPS": 0,
         "cbasQPS": 0,
-        "process_concurrency": 10,
+        # DocLoader workers per step range. 1 runs each collection at its full
+        # rate (one MSMARCO worker holds up to ~9.5k/s) on the fewest threads.
+        # See "Process concurrency" in pytests/aGoodDoctor/AGENTS.md.
+        "process_concurrency": 1,
+        "rebl_process_concurrency": 1,
         "collections_defn": [
             {
                 "collection_id": "GB1_C01",
@@ -780,7 +788,13 @@
         "doc_size": 1024,
         "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
         "2iQPS": 100,
-        "process_concurrency": 10,
+        # DocLoader workers per step range. 4 x 12,500/s is the fewest that
+        # reach the full 50000/s (one worker tops out near 27.8k/s, two near
+        # 2 x 22.4k/s) and it divides every step range, so no doc is skipped.
+        # Mutations at 1000/s need 1. See "Process concurrency" in
+        # pytests/aGoodDoctor/AGENTS.md.
+        "process_concurrency": 4,
+        "rebl_process_concurrency": 1,
         "collections_defn" : [
             {
                 "collection_id": "200M",

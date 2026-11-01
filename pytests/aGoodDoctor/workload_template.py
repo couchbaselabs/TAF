@@ -45,6 +45,24 @@ MAX_ITEMS = {"siftBigANN": 1000000000, "MSMARCOEmbeddingProduct": 8841823, "MSMA
 
 INITIAL_RATE = "ops"
 MUTATION_RATE = "rebl_ops_rate"
+# DocLoader workers per step range of a collection's load, one value per rate.
+# For each key the collection's value wins over the bucket's. With neither
+# level setting the mutation key, mutations use the initial one, and with
+# neither setting that, the pc test param.
+INITIAL_PC = "process_concurrency"
+MUTATION_PC = "rebl_process_concurrency"
+PC_KEYS = {INITIAL_RATE: (INITIAL_PC,), MUTATION_RATE: (MUTATION_PC, INITIAL_PC)}
+
+# DocLoader's step ranges (RestServer.TaskRequest.loadSIFTDataset /
+# loadMSMARCODataset). A load request gets pc workers for every step range it
+# covers, min(pc, range size) of them for MSMARCO, each paced at ops // pc
+# docs/s. A siftBigANN worker gets range size // pc docs and the remainder is
+# never loaded; an MSMARCO range's last worker takes its remainder.
+DOCLOADER_STEPS = {
+    "siftBigANN": (0, 10**6, 2 * 10**6, 5 * 10**6, 10**7, 2 * 10**7, 5 * 10**7, 10**8, 2 * 10**8, 5 * 10**8, 10**9),
+    "MSMARCOEmbeddingProduct": (0, 100000, 1000000, 8841823),
+    "MSMARCOSiftEmbeddingProduct": (0, 100000, 1000000, 8841823),
+}
 
 DOC_OPS = ("create", "read", "update", "delete", "expiry")
 CREATE_ONLY = {"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0}
@@ -107,6 +125,43 @@ def collection_rate(workload, defn, rate_key):
     return bucket_rate // len(workload["collections_defn"])
 
 
+def collection_pc(workload, defn, rate_key, default_pc):
+    """
+    DocLoader workers per step range for one collection's `rate_key` loads:
+    the collection's, then the bucket's, value of the first key in
+    PC_KEYS[rate_key] that either sets, else `default_pc` (the pc param).
+    """
+    for key in PC_KEYS[rate_key]:
+        for level in (defn, workload):
+            if level.get(key) is not None:
+                return level[key]
+    return default_pc
+
+
+def docloader_tasks(val_type, num_items, pc):
+    """How many tasks DocLoader makes for one 0..num_items load at `pc`."""
+    steps = DOCLOADER_STEPS[val_type]
+    tasks = 0
+    for low, high in zip(steps, steps[1:], strict=False):
+        if low >= num_items:
+            break
+        tasks += pc if val_type in SIFT_VAL_TYPES else min(pc, min(high, num_items) - low)
+    return tasks
+
+
+def docloader_skipped_docs(val_type, num_items, pc):
+    """How many docs of a 0..num_items load at `pc` DocLoader never loads."""
+    if val_type not in SIFT_VAL_TYPES:
+        return 0
+    steps = DOCLOADER_STEPS[val_type]
+    skipped = 0
+    for low, high in zip(steps, steps[1:], strict=False):
+        if low >= num_items:
+            break
+        skipped += (min(high, num_items) - low) % pc
+    return skipped
+
+
 def template_errors(template, process_concurrency):
     """
     Everything in `template` that would make the run fail later, or silently
@@ -164,6 +219,9 @@ def template_errors(template, process_concurrency):
         for rate_key in (INITIAL_RATE, MUTATION_RATE):
             if workload.get(rate_key) is not None and not _is_int(workload[rate_key]):
                 errors.append(f"{where}: {rate_key} must be an int")
+        for pc_key in (INITIAL_PC, MUTATION_PC):
+            if workload.get(pc_key) is not None and (not _is_int(workload[pc_key]) or workload[pc_key] < 1):
+                errors.append(f"{where}: {pc_key} must be an int >= 1")
 
         seen = set()
         num_queries_total = 0
@@ -220,23 +278,36 @@ def template_errors(template, process_concurrency):
             ):
                 errors.append(f"{c_where}: queryParams must be a list of dicts")
 
+            for pc_key in (INITIAL_PC, MUTATION_PC):
+                if defn.get(pc_key) is not None and (not _is_int(defn[pc_key]) or defn[pc_key] < 1):
+                    errors.append(f"{c_where}: {pc_key} must be an int >= 1")
             for rate_key in (INITIAL_RATE, MUTATION_RATE):
                 if defn.get(rate_key) is None and workload.get(rate_key) is None:
                     errors.append(f"{c_where}: no {rate_key} at bucket or collection level")
                     continue
                 rate = collection_rate(workload, defn, rate_key)
+                pc = collection_pc(workload, defn, rate_key, process_concurrency)
                 if not _is_int(rate):
                     # A bad bucket-level value is reported once, above
                     if defn.get(rate_key) is not None:
                         errors.append(f"{c_where}: {rate_key} must be an int")
-                elif rate < process_concurrency:
+                elif _is_int(pc) and pc >= 1 and rate < pc:
                     # DocLoader paces each of its pc workers at ops // pc
                     # docs/s and loads nothing when that comes to 0
                     errors.append(
                         f"{c_where}: {rate_key} comes to {rate} ops/s for "
-                        f"this collection, below pc={process_concurrency}; "
+                        f"this collection, below its pc of {pc}; "
                         f"DocLoader would load nothing at that rate"
                     )
+                if _is_int(pc) and pc >= 1 and _is_int(items) and 1 <= items <= MAX_ITEMS[val_type]:
+                    skipped = docloader_skipped_docs(val_type, items, pc)
+                    if skipped:
+                        errors.append(
+                            f"{c_where}: the pc of {pc} for its {rate_key} "
+                            f"loads doesn't divide every DocLoader step range "
+                            f"of its {items} items; {skipped} docs would never "
+                            f"be loaded"
+                        )
 
         if qps > 0 and num_queries_total == 0:
             errors.append(f"{where}: 2iQPS is {qps} but no collection has queries")
@@ -290,7 +361,8 @@ class WorkloadTemplateMixin:
             template = load_template(path)
         except Exception as e:
             self.fail(f"Could not read workload_template={name_or_path}: {e}")
-        errors = template_errors(template, self.input.param("pc", 20))
+        pc_param = self.input.param("pc", 20)
+        errors = template_errors(template, pc_param)
         if not errors:
             errors = self._template_param_errors(template)
         if errors:
@@ -302,13 +374,38 @@ class WorkloadTemplateMixin:
             defns = workload["collections_defn"]
             initial = sorted({collection_rate(workload, defn, INITIAL_RATE) for defn in defns})
             mutation = sorted({collection_rate(workload, defn, MUTATION_RATE) for defn in defns})
+            pc_initial = sorted({collection_pc(workload, defn, INITIAL_RATE, pc_param) for defn in defns})
+            pc_mutation = sorted({collection_pc(workload, defn, MUTATION_RATE, pc_param) for defn in defns})
             self.log.info(
                 f"  {workload['name']}: {workload['valType']}, "
                 f"{len(defns)} collection(s), "
                 f"{sum(defn['num_items'] for defn in defns)} items, "
                 f"ops/collection initial {initial} mutation {mutation}, "
+                f"pc initial {pc_initial} mutation {pc_mutation}, "
                 f"2iQPS {workload.get('2iQPS', 0)}"
             )
+        # DocLoader runs only threads_to_use tasks at once. The rest wait, and
+        # a mutation task at a few docs/s can hold its thread for days, so the
+        # collections behind it don't get mutated at all. SteadyStateVolume
+        # runs its own wave alongside the mutation thread's.
+        threads = self.input.param("threads_to_use", 60)
+        waves = 2 if getattr(self, "_testMethodName", None) == "SteadyStateVolume" else 1
+        for rate_key, copies, phase in (
+            (INITIAL_RATE, 1, "the initial load"),
+            (MUTATION_RATE, waves, "a mutation wave" if waves == 1 else f"{waves} concurrent mutation waves"),
+        ):
+            tasks = copies * sum(
+                docloader_tasks(
+                    workload["valType"], defn["num_items"], collection_pc(workload, defn, rate_key, pc_param)
+                )
+                for workload in load_defns
+                for defn in workload["collections_defn"]
+            )
+            message = f"  DocLoader tasks for {phase}: {tasks}, threads_to_use: {threads}"
+            if tasks > threads:
+                self.log.warning(f"{message}; {tasks - threads} of the tasks wait for a thread")
+            else:
+                self.log.info(message)
         return load_defns
 
     def _template_param_errors(self, template):
@@ -417,6 +514,7 @@ class WorkloadTemplateMixin:
         pattern,
         items,
         ops,
+        pc,
         mutate,
         suppress_error_table,
         track_failures,
@@ -424,7 +522,7 @@ class WorkloadTemplateMixin:
         """
         One DocLoader task for one collection. It sends the same arguments
         JavaDocLoaderUtils.load_sift_data / load_msmarco_data send, except:
-          - ops is this collection's own rate;
+          - ops and pc are this collection's own rate and process concurrency;
           - the definition was found by collection name;
           - the credentials come from the cluster;
           - a task may stay queued in DocLoader for as long as it takes.
@@ -467,7 +565,7 @@ class WorkloadTemplateMixin:
             "replace_end_index": 0,
             "expiry_start_index": 0,
             "expiry_end_index": items,
-            "process_concurrency": JavaDocLoaderUtils.process_concurrency,
+            "process_concurrency": pc,
             "task_identifier": "",
             "ops": ops,
             "suppress_error_table": suppress_error_table,
@@ -480,11 +578,12 @@ class WorkloadTemplateMixin:
             "base64": workload.get("base64"),
             # No limit on how long a task may wait in DocLoader's queue. A
             # template load sends DocLoader one task per collection, step
-            # range and pc worker -- about 3,000 for sparse_dense_1B at pc=20
-            # -- for only threads_to_use (default 60) threads, so a task can
-            # wait many hours. Stall detection stays on otherwise: a task
-            # that starts and then makes no progress still fails, and
-            # get_task_result() keeps polling until every task finishes.
+            # range and pc worker -- 186 for sparse_dense_1B's initial load,
+            # 3,180 at pc=20 -- for threads_to_use (default 60) threads, so
+            # with fewer threads than tasks a task can wait many hours. Stall
+            # detection stays on otherwise: a task that starts and then makes
+            # no progress still fails, and get_task_result() keeps polling
+            # until every task finishes.
             "never_started_timeout": -1,
         }
         if val_type in SIFT_VAL_TYPES:
@@ -542,6 +641,7 @@ class WorkloadTemplateMixin:
                         load_pattern,
                         override_num_items or defn["num_items"],
                         collection_rate(workload, defn, rate_key),
+                        collection_pc(workload, defn, rate_key, JavaDocLoaderUtils.process_concurrency),
                         mutate,
                         suppress_error_table,
                         track_failures,
