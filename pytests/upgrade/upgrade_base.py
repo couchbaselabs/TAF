@@ -984,9 +984,12 @@ class UpgradeBase(BaseTestCase):
             cbstats.disconnect()
 
             # Check vbuckets are shuffled or not
+            if not vb_details["active"]:
+                self.log_failure(f"No active vbuckets recorded on "
+                                 f"{node_to_upgrade.ip} before swap_rebalance")
             for vb_type in vb_types:
-                if vb_details[vb_type].sort() \
-                        != vb_verification[vb_type].sort():
+                if sorted(vb_details[vb_type]) \
+                        != sorted(vb_verification[vb_type]):
                     self.log_failure("%s vbuckets shuffled post swap_rebalance"
                                      % vb_type)
                     self.log.error("%s vbuckets before vs after: %s != %s"

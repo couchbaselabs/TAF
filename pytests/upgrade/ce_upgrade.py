@@ -221,6 +221,9 @@ class CEUpgradeTests(CEBaseTest):
         self.assertTrue(rebalance_passed,
                         "Rebalance-in of 6th EE node failed — CE limit may "
                         "have incorrectly blocked it")
+        # Added via raw REST, so refresh nodes_in_cluster / kv_nodes; the
+        # stats validation only queries nodes the framework knows about
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
 
         mixed_count = len(ClusterUtils.get_nodes(self.cluster.master))
         self.assertEqual(mixed_count, self.CE_NODE_LIMIT + 1,
@@ -244,6 +247,7 @@ class CEUpgradeTests(CEBaseTest):
             self.assertTrue(cleanup_passed,
                             "Cleanup rebalance-out of 6th EE node failed — "
                             "cluster left dirty")
+            self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         self.log.info("CE→EE mixed-mode sixth-node test validated")
 
     def test_ce_ee_all_restrictions_lifted_post_upgrade(self):
@@ -314,6 +318,9 @@ class CEUpgradeTests(CEBaseTest):
         self.assertTrue(rebalance_passed,
                         "Rebalance-in failed — CE restriction may still be "
                         "active after full EE upgrade")
+        # Added via raw REST, so refresh nodes_in_cluster / kv_nodes; the
+        # stats validation only queries nodes the framework knows about
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
 
         final_count = len(ClusterUtils.get_nodes(self.cluster.master))
         self.assertEqual(final_count, self.CE_NODE_LIMIT + 1,
