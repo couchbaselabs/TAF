@@ -1086,6 +1086,128 @@ class FusionCPResourceMonitor:
             self.log.error(f"Error listing in-use guest volumes for cluster {cluster.id}: {e}")
             return []
 
+    # EBS states in which a restored guest volume exists for this restore:
+    # from creation, through attach, to detach just before it is deleted.
+    RESTORED_GV_LIVE_STATES = ("creating", "available", "in-use")
+
+    def track_restored_guest_volumes(self, cluster, exclude_ids, stop_event,
+                                         created_after=None, interval: int = 5) -> dict:
+        """
+        Sample the cluster's guest volumes until *stop_event* is set and
+        record every guest volume this restore created.
+
+        A snapshot restore creates the guest volumes from the backup's
+        snapshots when the restored nodes register, and the restore job's
+        own post-step tears them down again as soon as Couchbase Server
+        reports their background migration complete. By the time the
+        restore job reports complete they are often already gone, and if
+        they drain at different times they may never all exist together.
+        So besides the peak seen at one time, this keeps the distinct set of
+        restored volumes seen at any sample ("seen_ids"), which is what the
+        caller should assert on. A volume counts from "creating" until it
+        starts "deleting".
+
+        Volumes that do not belong to this restore are never counted:
+        anything in *exclude_ids* (the guest volumes on the cluster before
+        the restore was triggered) and, when *created_after* is given, any
+        volume created before that time.
+
+        :param cluster: Cluster object with .id attribute
+        :param exclude_ids: guest-volume IDs present before the restore
+        :param stop_event: threading.Event; sampling stops once it is set
+            (one final sample is taken after it is set)
+        :param created_after: timezone-aware datetime; volumes created
+            earlier are ignored
+        :param interval: seconds between samples
+        :return: dict with "peak" (int), "peak_ids" (volume IDs at the peak
+            sample), "seen_ids" (every restored volume ID seen at any
+            sample), "snapshot_by_volume" (restored volume ID -> the EBS
+            snapshot it was created from), "first_seen" (volume ID -> ISO
+            time first seen) and "samples" (int)
+        """
+        excluded = set(exclude_ids or [])
+        result = {"peak": 0, "peak_ids": [], "seen_ids": [],
+                  "snapshot_by_volume": {}, "first_seen": {}, "samples": 0}
+
+        def sample():
+            try:
+                volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                    "couchbase-cloud-cluster-id": cluster.id,
+                    "couchbase-cloud-function": "fusion-accelerator",
+                    "couchbase-cloud-fusion-guest-volume": "true",
+                })
+            except Exception as e:
+                self.log.warning(
+                    f"Restored guest-volume sample failed for cluster {cluster.id}: {e}"
+                )
+                return
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            live = []
+            for v in volumes:
+                vol_id = v.get("VolumeId")
+                if not vol_id or vol_id in excluded \
+                        or v.get("State") not in self.RESTORED_GV_LIVE_STATES:
+                    continue
+                create_time = v.get("CreateTime")
+                if created_after is not None and create_time is not None \
+                        and create_time < created_after:
+                    continue
+                live.append(vol_id)
+                if v.get("SnapshotId"):
+                    result["snapshot_by_volume"][vol_id] = v["SnapshotId"]
+                if vol_id not in result["first_seen"]:
+                    result["first_seen"][vol_id] = now
+                    self.log.info(
+                        f"Restored guest volume {vol_id} seen on cluster {cluster.id} "
+                        f"(state={v.get('State')}, snapshot={v.get('SnapshotId')}); "
+                        f"{len(result['first_seen'])} distinct so far"
+                    )
+            result["samples"] += 1
+            if len(live) > result["peak"]:
+                result["peak"] = len(live)
+                result["peak_ids"] = sorted(live)
+
+        while not stop_event.is_set():
+            sample()
+            stop_event.wait(interval)
+        sample()
+
+        result["seen_ids"] = sorted(result["first_seen"])
+        self.log.info(
+            f"Restored guest-volume tracking on cluster {cluster.id} finished after "
+            f"{result['samples']} sample(s): distinct seen={len(result['seen_ids'])}, "
+            f"peak at one time={result['peak']}"
+        )
+        return result
+
+    def get_guest_volume_snapshot_sources(self, cluster, backup_id: str) -> dict:
+        """
+        Map each guest-volume EBS snapshot of *backup_id* on *cluster* to the
+        guest volume it was taken from.
+
+        Used to tie a restored guest volume (created from one of these
+        snapshots) back to the source cluster's guest volume.
+
+        :param cluster: source cluster (Cluster object with .id attribute)
+        :param backup_id: Backup ID from the completed backup
+        :return: dict of snapshot ID -> source volume ID (empty on error)
+        """
+        filters = [
+            {"Name": "tag:couchbase-cloud-guestvolume", "Values": ["true"]},
+            {"Name": "tag:couchbase-cloud-backup-id", "Values": [backup_id]},
+            {"Name": "tag:couchbase-cloud-cluster-id", "Values": [cluster.id]},
+        ]
+        snapshots = self.fusion_aws_util.ec2.list_snapshots_by_tags(filters)
+        sources = {
+            s["SnapshotId"]: s.get("VolumeId")
+            for s in snapshots if s.get("SnapshotId")
+        }
+        self.log.info(
+            f"Guest-volume snapshot sources for backup {backup_id} on cluster "
+            f"{cluster.id}: {sources}"
+        )
+        return sources
+
     def count_guest_volume_snapshots_for_backup(self, cluster, backup_id: str) -> int:
         """
         Return the count of guest-volume EBS snapshots tagged for *backup_id*

@@ -329,7 +329,8 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
         self.assertTrue(
             ok,
-            f"Snapshot backup {backup_id} did not complete on cluster {cluster.id}",
+            f"Snapshot backup {backup_id} failed or did not complete on cluster "
+            f"{cluster.id} (see the preceding backup state log line)",
         )
         self.log.info(f"{self._cluster_label(cluster)} Snapshot backup {backup_id} complete on {cluster.id}")
         return backup_id
@@ -371,6 +372,48 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
 
         restore_trigger_time = datetime.datetime.now(datetime.timezone.utc)
+
+        # Count the restored guest volumes while the restore runs. The CP
+        # creates them from the backup's snapshots when the restored nodes
+        # register, then the restore job's own post-step deletes them once
+        # their background migration is complete -- usually before the job
+        # reports complete -- so a count taken afterwards misses them. Keep
+        # every distinct guest volume the restore created, ignoring the guest
+        # volumes that were on the target before this restore.
+        gv_track_stop = threading.Event()
+        gv_track_result = {}
+        gv_track_thread = None
+        if target_is_fusion and self.verify_snapshots:
+            gv_track_thread = threading.Thread(
+                target=lambda: gv_track_result.update(
+                    self.cp_monitor.track_restored_guest_volumes(
+                        target_cluster, pre_restore_gv_ids or [], gv_track_stop,
+                        created_after=restore_trigger_time,
+                    )
+                ),
+                name="restored-gv-tracker",
+                daemon=True,
+            )
+            gv_track_thread.start()
+
+        try:
+            self._run_restore_and_waits(
+                backup_id, source_cluster, target_cluster, target_is_fusion,
+                pre_restore_gv_ids, tenant, project_id, primary,
+                src_label, tgt_label, old_instance_ids, restore_trigger_time,
+                gv_track_stop, gv_track_thread, gv_track_result,
+            )
+        finally:
+            gv_track_stop.set()
+
+    def _run_restore_and_waits(self, backup_id, source_cluster, target_cluster,
+                               target_is_fusion, pre_restore_gv_ids, tenant,
+                               project_id, primary, src_label, tgt_label,
+                               old_instance_ids, restore_trigger_time,
+                               gv_track_stop, gv_track_thread, gv_track_result):
+        """Trigger the restore and run the post-restore waits and checks
+        for _restore_snapshot_backup(). Split out so the restored
+        guest-volume tracker can be stopped on every exit path."""
         result = CapellaAPI.restore_cloud_snapshot_backup(
             self.pod, tenant, project_id, target_cluster.id, backup_id
         )
@@ -464,28 +507,47 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 )
 
             if target_is_fusion and self.verify_snapshots:
-                new_volume_ids = self.cp_monitor.get_in_use_guest_volume_ids(target_cluster)
+                # The restore job is complete, so every guest volume it
+                # created has been created (and possibly already torn down
+                # again). Stop the tracker and use every restored volume it
+                # saw: if they drained at different times, the count at any
+                # one moment can be lower than the number restored.
+                gv_track_stop.set()
+                if gv_track_thread is not None:
+                    gv_track_thread.join(timeout=300)
+                    self.assertFalse(
+                        gv_track_thread.is_alive(),
+                        f"{tgt_label} Restored guest-volume tracker on "
+                        f"{target_cluster.id} did not stop within 300s",
+                    )
+                new_volume_ids = gv_track_result.get("seen_ids", [])
                 self.log.info(
-                    f"{tgt_label} {target_cluster.id}: {len(new_volume_ids)} in-use "
-                    f"guest volumes restored: {new_volume_ids}"
+                    f"{tgt_label} {target_cluster.id}: {len(new_volume_ids)} guest "
+                    f"volume(s) restored during the restore "
+                    f"({gv_track_result.get('samples', 0)} samples, peak at one time "
+                    f"{gv_track_result.get('peak', 0)}): {new_volume_ids}. In use now: "
+                    f"{self.cp_monitor.get_in_use_guest_volume_ids(target_cluster)}"
                 )
                 tracked = self._backup_guest_volume_tracking.pop(backup_id, None)
                 if tracked is None:
                     self.log.warning(
                         f"No tracked in-use guest-volume data for backup {backup_id} "
-                        f"(likely verify_snapshots was off or no in-use volumes existed "
-                        f"when it was taken) -- skipping post-restore guest-volume count check"
+                        f"(likely verify_snapshots was off when it was taken) -- skipping "
+                        f"post-restore guest-volume count check"
                     )
                 else:
                     expected_ids = tracked["in_use_ids"]
                     num_snapshots = tracked["num_snapshots"]
+                    # Guest volumes restored during the restore vs the in-use
+                    # guest volumes recorded on primary just before the backup
+                    # was triggered.
                     self.assertEqual(
                         len(new_volume_ids), len(expected_ids),
                         f"{tgt_label} Restored guest-volume count on {target_cluster.id} "
                         f"({len(new_volume_ids)}) does not match the {len(expected_ids)} "
-                        f"in-use guest volume(s) present on {src_label} {primary.id} when "
-                        f"backup {backup_id} was triggered. Expected: {sorted(expected_ids)}. "
-                        f"Restored: {sorted(new_volume_ids)}.",
+                        f"in-use guest volume(s) recorded on {src_label} {primary.id} just "
+                        f"before backup {backup_id} was triggered. Expected: "
+                        f"{sorted(expected_ids)}. Restored: {sorted(new_volume_ids)}.",
                     )
                     self.assertLessEqual(
                         len(new_volume_ids), num_snapshots,
@@ -493,10 +555,39 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                         f"({len(new_volume_ids)}) exceeds the {num_snapshots} guest-volume "
                         f"snapshot(s) available for backup {backup_id}",
                     )
+                    # Same check by identity: each restored volume was created
+                    # from a backup snapshot, which names the primary volume it
+                    # was taken from. Together they must be exactly the volumes
+                    # recorded on primary.
+                    snapshot_sources = self.cp_monitor.get_guest_volume_snapshot_sources(
+                        primary, backup_id
+                    )
+                    snapshot_by_volume = gv_track_result.get("snapshot_by_volume", {})
+                    restored_from = {
+                        vol_id: snapshot_sources.get(snapshot_by_volume.get(vol_id))
+                        for vol_id in new_volume_ids
+                    }
+                    unmapped = sorted(v for v, src in restored_from.items() if not src)
+                    self.assertFalse(
+                        unmapped,
+                        f"{tgt_label} Restored guest volume(s) on {target_cluster.id} not "
+                        f"created from a guest-volume snapshot of backup {backup_id}: "
+                        f"{unmapped} (snapshot of each: "
+                        f"{ {v: snapshot_by_volume.get(v) for v in unmapped} })",
+                    )
+                    self.assertEqual(
+                        sorted(restored_from.values()), sorted(expected_ids),
+                        f"{tgt_label} Guest volumes restored on {target_cluster.id} do not "
+                        f"map back to the in-use guest volumes recorded on {src_label} "
+                        f"{primary.id} just before backup {backup_id}. Expected: "
+                        f"{sorted(expected_ids)}. Restored from: {sorted(restored_from.values())} "
+                        f"(restored volume -> source: {restored_from}).",
+                    )
                     self.log.info(
                         f"{tgt_label} Restored guest-volume count "
-                        f"({len(new_volume_ids)}) matches in-use count at backup time "
-                        f"({len(expected_ids)}) and is within the {num_snapshots} "
+                        f"({len(new_volume_ids)}) matches the {len(expected_ids)} in-use "
+                        f"guest volume(s) recorded on primary before backup {backup_id}, "
+                        f"each restored from its own snapshot, within the {num_snapshots} "
                         f"available snapshot(s)"
                     )
 
@@ -1212,7 +1303,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         backup_id = self._create_snapshot_backup(primary)
 
-        if self.verify_snapshots and in_use_ids:
+        if self.verify_snapshots:
             num_snapshots = self.cp_monitor.count_guest_volume_snapshots_for_backup(
                 primary, backup_id
             )

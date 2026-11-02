@@ -1888,6 +1888,12 @@ class CapellaUtils(object):
     def wait_for_cloud_snapshot_backup_to_complete(pod, tenant, project_id,
                                                    cluster_id, backup_id,
                                                    timeout=3600):
+        # "failed"/"invalid"/"deleted" are terminal backup states
+        # (couchbase-cloud: internal/backup/provisioned/cluster/backup/
+        # state.go) -- the CP has already exhausted its own job retries by
+        # the time the status flips to "failed", so fail fast instead of
+        # polling the full timeout for a backup that can never complete.
+        terminal_failure_states = ("failed", "invalid", "deleted")
         start_time = time.time()
         backup_state = None
         not_found_count = 0
@@ -1909,6 +1915,14 @@ class CapellaUtils(object):
             CapellaUtils.log.info(
                 "Waiting for cloud snapshot backup to complete, current "
                 "state: {}".format(backup_state))
+            if backup_state in terminal_failure_states:
+                CapellaUtils.log.error(
+                    "Cloud snapshot backup {} ended in state '{}' after {} "
+                    "seconds".format(backup_id, backup_state,
+                                     time.time() - start_time))
+                return False
+            if backup_state == "complete":
+                break
             time.sleep(60)
         if backup_state != "complete":
             CapellaUtils.log.error(
