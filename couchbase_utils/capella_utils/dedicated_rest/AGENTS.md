@@ -38,6 +38,7 @@ call sites, while exercising the Capella control plane where it exists.
 | `context.py` | `CapellaContext` - pod/tenant/cluster on the node. Never log tenant |
 | `bucket_param_translator.py` | Pure mapping of on-prem bucket params <-> Capella API fields. No HTTP |
 | `bucket_helper.py` | `CapellaBucketHelper` - create / delete / flush via `CapellaUtils`, wait till node reflects it, read back & compare |
+| `bucket_utils.py` | `CapellaBucketUtils` - BucketUtils twin used by the Capella base test; skips `add_rbac_user` (no RBAC admin) |
 | `cluster_rest.py` | `CapellaClusterRestAPI` - honest `cluster_tasks()`, raw `node_cluster_tasks()`, unsupported topology/failover calls |
 | `scale_spec.py` | `CapellaScaleSpec` - pure: current specs (GET) -> object-form scale payload (POST /specs), min 3 data nodes |
 | `rebalance_watcher.py` | `RebalanceWatcher` / `RebalanceReport` - follows a scale: Capella state + ns_server rebalance attempts and `rebalance_method` (FBR) from node tasks |

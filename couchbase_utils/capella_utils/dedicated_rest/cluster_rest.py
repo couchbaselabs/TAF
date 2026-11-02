@@ -108,6 +108,13 @@ class CapellaClusterRestAPI(ClusterRestAPI):
             "perform_graceful_failover",
             "no Capella control-plane API to fail over a specific node")
 
+    def update_auto_failover_settings(self, *args, **kwargs):
+        # Capella owns auto-failover; the DB user can't change it (403).
+        # Tests only toggle it as setup, so keep Capella's setting.
+        self.log.warning("CAPELLA-GAP update_auto_failover_settings skipped: "
+                         "auto-failover is managed by Capella")
+        return True, "managed by Capella"
+
     def _control_plane_state(self):
         context = CapellaContext.of(self.server)
         try:

@@ -53,6 +53,17 @@ class CollectionBase(ClusterSetup, FusionBase):
         "localstack": "s3://test-backup-taf/cont_bkp/{uid}",
     }
 
+    def __new__(cls, *args, **kwargs):
+        # Capella dedicated: same test class with the Capella twin overrides
+        if TestInputSingleton.input.param("runtype", "default").lower() \
+                == "dedicated":
+            from dedicatedbasetestcase import CapellaCollectionSetup
+            if not issubclass(cls, CapellaCollectionSetup):
+                cls = type(cls.__name__, (CapellaCollectionSetup, cls),
+                           {"__module__": cls.__module__,
+                            "__qualname__": cls.__qualname__})
+        return super(CollectionBase, cls).__new__(cls)
+
     def setUp(self):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
@@ -703,6 +714,8 @@ class CollectionBase(ClusterSetup, FusionBase):
                 cluster.sdk_client_pool.create_clients(
                     cluster, bucket=bucket, servers=[servers_to_connect],
                     req_clients=req_clients,
+                    username=servers_to_connect.rest_username,
+                    password=servers_to_connect.rest_password,
                     compression_settings=sdk_compression)
             elif load_using == "sirius_java_sdk":
                 SiriusCouchbaseLoader.create_clients_in_pool(

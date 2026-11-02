@@ -13,6 +13,7 @@ from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
 from capella_utils.dedicated import CapellaUtils
 from capella_utils.common_utils import Pod, Tenant
+from capella_utils.dedicated_rest.bucket_utils import CapellaBucketUtils
 from capella_utils.dedicated_rest.context import CapellaContext
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
@@ -56,6 +57,13 @@ class CapellaBaseTest(CouchbaseBaseTest):
         self.encryption_at_rest_dek_lifetime = self.input.param(
             "encryption_at_rest_dek_lifetime",
             CbServer.encryption_at_rest_dek_lifetime_interval)
+        # Read by CollectionBase / FusionBase (only OnPremBaseTest sets them)
+        self.continuous_backup_enabled = self.input.param(
+            "continuous_backup_enabled", False)
+        self.fusion_test = self.input.param("fusion_test", False)
+        self.fusion_enable = self.input.param("fusion_enable", True)
+        self.fusion_log_store_uri = self.input.param(
+            "fusion_log_store_uri", None)
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
         self.ipv4_only = self.input.param("ipv4_only", False)
@@ -406,7 +414,8 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 self.cluster = None
 
             self.cluster_util = ClusterUtils(self.task_manager)
-            self.bucket_util = BucketUtils(self.cluster_util, self.task)
+            self.bucket_util = CapellaBucketUtils(self.cluster_util,
+                                                  self.task)
             # Setting global_vars for future reference
             global_vars.cluster_util = self.cluster_util
             global_vars.bucket_util = self.bucket_util
@@ -728,3 +737,27 @@ class ClusterSetup(ProvisionedBaseTestCase):
 
     def tearDown(self):
         super(ClusterSetup, self).tearDown()
+
+
+class CapellaCollectionSetup(object):
+    """
+    Capella twin overrides for CollectionBase, mixed in by
+    CollectionBase.__new__ when runtype=dedicated.
+    Backup tooling (cbbackupmgr / cbcontbk) needs SSH to the nodes,
+    which Capella does not give, so its setup and teardown are skipped.
+    """
+    def _skip_backup_step(self, step):
+        self.log.warning("CAPELLA-GAP %s skipped: no SSH to Capella nodes"
+                         % step)
+
+    def setup_backup_locations(self):
+        self._skip_backup_step("setup_backup_locations")
+
+    def teardown_backup_locations(self):
+        self._skip_backup_step("teardown_backup_locations")
+
+    def setup_backup_encryption(self):
+        self._skip_backup_step("setup_backup_encryption")
+
+    def teardown_backup_encryption(self):
+        self._skip_backup_step("teardown_backup_encryption")
