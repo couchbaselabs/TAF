@@ -36,19 +36,17 @@
                 ],
                 "indexes": [
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C02",
@@ -64,20 +62,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C03",
@@ -93,20 +89,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C04",
@@ -122,20 +116,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C05",
@@ -152,19 +144,17 @@
                 ],
                 "indexes": [
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C06",
@@ -180,20 +170,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C07",
@@ -209,20 +197,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C08",
@@ -238,20 +224,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C09",
@@ -268,19 +252,17 @@
                 ],
                 "indexes": [
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C10",
@@ -296,20 +278,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C11",
@@ -325,20 +305,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C12",
@@ -354,20 +332,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C13",
@@ -384,19 +360,17 @@
                 ],
                 "indexes": [
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C14",
@@ -412,20 +386,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C15",
@@ -441,20 +413,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C16",
@@ -470,20 +440,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C17",
@@ -500,19 +468,17 @@
                 ],
                 "indexes": [
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C18",
@@ -528,20 +494,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C19",
@@ -557,20 +521,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100',
                     'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             },
             {
                 "collection_id": "GB0_C20",
@@ -586,20 +548,18 @@
                     }
                 ],
                 "indexes": [
-                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};',
                     'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};'
                 ],
                 "queries": [
-                    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
                     'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1 LIMIT 100',
                     'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5 LIMIT 100'
                 ],
-                "queryParams": [{} for _ in range(4)],
-                "2i": {"num_queries": 4,
-                       "num_indexes": 4}
+                "queryParams": [{} for _ in range(3)],
+                "2i": {"num_queries": 3,
+                       "num_indexes": 3}
             }
         ]
     },
@@ -1522,36 +1482,34 @@
         "rebl_process_concurrency": 1,
         "collections_defn" : [
             {
-              "collection_id": "500M",
-              "num_items": 500000000,
-              "valType": "siftBigANN",
-              "dim": 128,
-              "vector": [
-                  {
-                      "similarity":"L2_SQUARED",
-                      "quantization": "SQ8",
-                      "nProbe": 20
-                  }
+                "collection_id": "500M",
+                "num_items": 500000000,
+                "valType": "siftBigANN",
+                "dim": 128,
+                "vector": [
+                    {
+                        "similarity":"L2_SQUARED",
+                        "quantization": "SQ8",
+                        "nProbe": 20
+                    }
                 ],
-              "indexes": [
-                  'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                  'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                  'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                  'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                  'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                  ],
-                  "queries": [
-                      'SELECT id from {bucket}.{scope}.{collection} where size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
-                      'SELECT id from {bucket}.{scope}.{collection} where color="Green" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
-                      'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
-                      'SELECT id from {bucket}.{scope}.{collection} where country="USA" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
-                      'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
-                      ],
-                  "2i": {"num_queries": 5,
-                         "num_indexes": 5},
-                       
-        },
- 
+                "indexes": [
+                    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+                "queries": [
+                    'SELECT id from {bucket}.{scope}.{collection} where size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                    'SELECT id from {bucket}.{scope}.{collection} where color="Green" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                    'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                    'SELECT id from {bucket}.{scope}.{collection} where country="USA" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                    'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                ],
+                "2i": {"num_queries": 5,
+                       "num_indexes": 5},
+            },
         ]
     }
 }

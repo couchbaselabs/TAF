@@ -333,13 +333,15 @@ siftBigANN bucket has no `groundTruths`. For the pcs, see
 |---|---|---|---|---|
 | `single_template` | `8M` (7 indexes/7 queries) | `8M` (7/7) | `1M` (4/4) | 18,683,646 |
 | `sparse_dense_500M` | `GB0_C01..GB0_C10` (4/4 each) | `GB1_C01..GB1_C15` (4/4) | `200M` (8/8) | 421,045,575 |
-| `sparse_dense_1B` | `GB0_C01..GB0_C20` (4/4) | `GB1_C01..GB1_C30` (4/4) | `500M` (5/5) | 942,091,150 |
+| `sparse_dense_1B` | `GB0_C01..GB0_C20` (3/3) | `GB1_C01..GB1_C30` (4/4) | `500M` (5/5) | 942,091,150 |
 
-In the 500M/1B templates, each MSMARCO collection has 2 sparse vector and 2
-scalar indexes with their matching queries. These were distributed round
-robin from the bucket's original lists. Collection `k` (0-based) gets vector
-pairs `2k`, `2k+1` mod 4 and scalar pairs `2k`, `2k+1` mod 3. In
-GleamBookUsers1 the `(sparse)` index pairs with the unfiltered query, and
+The MSMARCO collections' indexes and matching queries were distributed round
+robin from the bucket's original lists: 4 sparse vector pairs and 3 scalar
+pairs. Collection `k` (0-based) gets scalar pairs `2k`, `2k+1` mod 3, and:
+- in `sparse_dense_1B`'s GleamBookUsers0, one sparse vector pair, `k` mod 4, so each of the 4 is in 5 collections;
+- in every other MSMARCO bucket of the 500M/1B templates, two sparse vector pairs, `2k`, `2k+1` mod 4.
+
+In GleamBookUsers1 the `(sparse)` index pairs with the unfiltered query, and
 `(size, sparse)` with `size = 5`.
 
 ### Runtime environment
