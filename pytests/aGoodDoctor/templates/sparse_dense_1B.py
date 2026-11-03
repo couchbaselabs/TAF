@@ -1486,10 +1486,33 @@
                 "num_items": 500000000,
                 "valType": "siftBigANN",
                 "dim": 128,
+                # Index i takes vector entry i (this is the bucket's only
+                # collection), so the composite indexes get SQ8, RaBitQ and
+                # PQ128x8 and the vector indexes SQ8 and RaBitQ.
                 "vector": [
                     {
                         "similarity":"L2_SQUARED",
                         "quantization": "SQ8",
+                        "nProbe": 20
+                    },
+                    {
+                        "similarity":"L2_SQUARED",
+                        "quantization": "SQ8",
+                        "nProbe": 20
+                    },
+                    {
+                        "similarity":"L2_SQUARED",
+                        "quantization": "RaBitQ",
+                        "nProbe": 20
+                    },
+                    {
+                        "similarity":"L2_SQUARED",
+                        "quantization": "RaBitQ",
+                        "nProbe": 20
+                    },
+                    {
+                        "similarity":"L2_SQUARED",
+                        "quantization": "PQ128x8",
                         "nProbe": 20
                     }
                 ],
