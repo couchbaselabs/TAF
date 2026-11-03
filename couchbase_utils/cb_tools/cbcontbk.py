@@ -41,6 +41,12 @@ class CbContBk(CbCmdBase):
                                 individual command, so it is normally set
                                 once here and overridden per call only when
                                 a command needs a different one
+        :param no_ssl_verify: skip verifying the cluster's certificate
+                              (--no-ssl-verify); defaults to
+                              CbServer.use_https. Only `restore` connects to
+                              the cluster (-c), so only `restore` passes it --
+                              `info` and `collect-logs` reject it as an
+                              unknown flag
 
         Every cbcontbk command touches both the archive and the continuous
         backup location, but the CLI takes only one set of object-store
@@ -273,8 +279,9 @@ class CbContBk(CbCmdBase):
 
         Returns None if the command fails or the output isn't valid JSON.
         """
+        # No cli_flags: `info` never connects to the cluster, and cbcontbk
+        # rejects --no-ssl-verify on it as an unknown flag.
         cmd = f"{self.cbstatCmd} info -l {location} --json"
-        cmd += self.cli_flags
         cmd = self._append_obj_store_flags(cmd, includes_archive_path=False)
 
         self.log.info(f"Executing command: {cmd}")
@@ -306,10 +313,10 @@ class CbContBk(CbCmdBase):
         :param obj_staging_dir: Object staging dir, appended as
                                 --obj-staging-dir
         """
+        # No cli_flags: `collect-logs` never connects to the cluster, and
+        # cbcontbk rejects --no-ssl-verify on it as an unknown flag.
         cmd = (f"{self.cbstatCmd} collect-logs -l {location} "
                f"-d {temp_dir}")
-
-        cmd += self.cli_flags
 
         cmd = self._append_obj_store_flags(cmd, obj_staging_dir,
                                            includes_archive_path=False)
