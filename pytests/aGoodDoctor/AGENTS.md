@@ -335,7 +335,7 @@ bucket: 100 in `sparse_dense_500M` / `sparse_dense_1B`, 10 / 10 / 50 in
 | Template | GleamBookUsers0 (MSMARCO sparse) | GleamBookUsers1 (MSMARCO sparse) | GleamBookUsers2 (siftBigANN dense) | Items |
 |---|---|---|---|---|
 | `single_template` | `8M` (7 indexes/7 queries) | `8M` (7/7) | `1M` (4/4) | 18,683,646 |
-| `sparse_dense_500M` | `GB0_C01..GB0_C10` (4/4 each) | `GB1_C01..GB1_C15` (4/4) | `200M` (8/8) | 421,045,575 |
+| `sparse_dense_500M` | `GB0_C01..GB0_C10` (3/3 each) | `GB1_C01..GB1_C15` (4/4) | `200M` (8/8) | 421,045,575 |
 | `sparse_dense_1B` | `GB0_C01..GB0_C20` (3/3) | `GB1_C01..GB1_C30` (4/4) | `500M` (5/5) | 942,091,150 |
 | `sparse_bhive_44M` | `GB0_C01..GB0_C05` (5/5) | — | — | 44,209,115 |
 
@@ -346,8 +346,8 @@ indexes on `sparse` (plain, and `INCLUDE (size)`, `(size, color)`,
 The MSMARCO collections' indexes and matching queries were distributed round
 robin from the bucket's original lists: 4 sparse vector pairs and 3 scalar
 pairs. Collection `k` (0-based) gets scalar pairs `2k`, `2k+1` mod 3, and:
-- in `sparse_dense_1B`'s GleamBookUsers0, one sparse vector pair, `k` mod 4, so each of the 4 is in 5 collections;
-- in every other MSMARCO bucket of the 500M/1B templates, two sparse vector pairs, `2k`, `2k+1` mod 4.
+- GleamBookUsers0: one sparse vector pair, `k` mod 4 (`sparse_dense_1B`: each of the 4 in 5 collections; `sparse_dense_500M`: first two in 3, last two in 2);
+- GleamBookUsers1: two sparse vector pairs, `2k`, `2k+1` mod 4.
 
 In GleamBookUsers1 the `(sparse)` index pairs with the unfiltered query, and
 `(size, sparse)` with `size = 5`.
