@@ -340,6 +340,10 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
 
         tombstone_count = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info(f"Tomstone count after Fusion Rebalance = {tombstone_count}")
+        # Every doc lives in _default, which has maxTTL=coll_ttl, and the
+        # expiry pager has run for 1.5x the TTL, so all docs have expired
+        # and been purged. The tearDown health check must expect 0.
+        self.num_items = 0
 
 
     def test_fusion_rebalance_during_expiry(self):
@@ -407,6 +411,11 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
         tombstone_count = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info(f"Tomstone count after complete expiration = {tombstone_count}")
 
+        # Every doc lives in _default, which has maxTTL=coll_ttl, and the
+        # expiry pager has run for 1.5x the TTL, so all docs have expired
+        # and been purged. The tearDown health check must expect 0.
+        self.num_items = 0
+
 
     def test_fusion_rebalance_before_expiry(self):
 
@@ -458,6 +467,11 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Every doc lives in _default, which has maxTTL=coll_ttl, and the
+        # expiry pager has run for 1.5x the TTL, so all docs have expired
+        # and been purged. The tearDown health check must expect 0.
+        self.num_items = 0
 
 
     def test_fusion_collection_drop_recreate(self):
@@ -546,6 +560,10 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
                                              coll_to_drop)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.sleep(30, "Wait after dropping collections")
+        # The only loaded collection was dropped, so the bucket is empty now.
+        # Keep the original count to size the reload after re-creation
+        # (otherwise the reload would be 0 * 0.75 = 0 docs).
+        orig_items = self.num_items
         self.num_items = 0
 
         if recreate_coll:
@@ -557,7 +575,7 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
                     CbServer.default_scope, {"name": coll_to_drop})
             self.sleep(30, "Wait after re-creating collections")
             self.log.info("Starting data load after re-creating the collection")
-            self.perform_workload(0, self.num_items * 0.75, "create", True, ops_rate=30000)
+            self.perform_workload(0, orig_items * 0.75, "create", True, ops_rate=30000)
             self.sleep(60, "Sleep after data loading")
             self.bucket_util.print_bucket_stats(self.cluster)
 

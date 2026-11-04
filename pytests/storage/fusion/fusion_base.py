@@ -1518,7 +1518,7 @@ class FusionBase(BaseTestCase):
         # Step 4: Validate item counts after fusion operations
         self.log.info("Starting post-fusion validation")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, int(self.num_items))
 
         # Step 5: Validate resource usage after fusion operations
         self.log.info("Validating post-fusion resource usage")
@@ -1627,6 +1627,12 @@ class FusionBase(BaseTestCase):
         ops_rate = ops_rate if ops_rate is not None else 20000
         process_concurrency = process_concurrency if process_concurrency is not None else self.process_concurrency
 
+        # Callers often scale ranges (e.g. num_items * 1.5). A float here would
+        # leak into self.num_items, and StatsWaitTask._compare only casts the
+        # stat to int when the expected value is an int, so a float expected
+        # count ("7500000" == 7500000.0) never matches.
+        start, end = int(start), int(end)
+
         self.reset_doc_params(doc_ops=doc_op)
         if doc_op == "create":
             self.create_start = start
@@ -1726,19 +1732,51 @@ class FusionBase(BaseTestCase):
             cbstats.disconnect()
         return total
 
+    def get_loaded_collection_count(self, bucket=None):
+        """Number of live collections that java_doc_loader / perform_batch_reads
+        load into for a bucket (system scope and, when
+        skip_load_to_default_collection is set, _default._default excluded).
+        Always returns at least 1."""
+        bucket = bucket or self.cluster.buckets[0]
+        count = 0
+        for scope_name, scope in bucket.scopes.items():
+            if scope_name == CbServer.system_scope or scope.is_dropped:
+                continue
+            for coll_name, collection in scope.collections.items():
+                if collection.is_dropped:
+                    continue
+                if self.skip_load_to_default_collection \
+                        and scope_name == CbServer.default_scope \
+                        and coll_name == CbServer.default_collection:
+                    continue
+                count += 1
+        return max(count, 1)
+
     def validate_fusion_health(self):
         self.log.info("FUSION HEALTH CHECK - START")
         failure_messages = list()
 
+        expected_items = int(self.num_items)
         self.log.info("Validating item count across all buckets")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, expected_items)
 
-        self.log.info("Validating data by reading back documents")
-        docs_to_validate = min(self.num_items, 1000000)
-        self.perform_batch_reads(num_docs_to_validate=docs_to_validate,
-                                 batch_size=500000, validate_docs=True,
-                                 start=self.deleted_upto)
+        # self.num_items is the bucket-wide count (what verify_stats compares
+        # against), while perform_batch_reads reads the same key range in
+        # every loaded collection, so the read count must be per collection.
+        loaded_collections = self.get_loaded_collection_count()
+        docs_to_validate = min(expected_items // loaded_collections, 1000000)
+        if docs_to_validate > 0:
+            self.log.info(f"Validating data by reading back {docs_to_validate} "
+                          f"docs per collection across {loaded_collections} "
+                          f"collection(s)")
+            self.perform_batch_reads(num_docs_to_validate=docs_to_validate,
+                                     batch_size=500000, validate_docs=True,
+                                     start=self.deleted_upto)
+        else:
+            # perform_batch_reads treats 0 as 'use the default' (1M reads),
+            # which would read keys that do not exist in an empty bucket.
+            self.log.info("No live docs expected, skipping doc read-back")
 
         self.log.info("Checking for migration/sync/read failures on all nodes")
         for node in self.cluster.servers:
