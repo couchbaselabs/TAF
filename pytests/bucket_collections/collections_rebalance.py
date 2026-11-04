@@ -1065,6 +1065,9 @@ class CollectionsRebalance(CollectionBase):
                     self.compact_all_buckets()
                     self.wait_for_compaction_to_complete()
                     self.sleep(60, "wait after compaction")
+                elif not self.disable_file_based_rebalance:
+                    self.compact_all_buckets()
+                    self.wait_for_compaction_to_complete()
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
