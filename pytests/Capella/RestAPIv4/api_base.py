@@ -1457,7 +1457,7 @@ class APIBase(CouchbaseBaseTest):
             self.update_auth_with_api_token(testcase)
 
     def wait_for_new_key_authorization(self, project_id, extra_check=None,
-                                       timeout=45, poll_interval=3):
+                                       timeout=90, poll_interval=3):
         """
         Poll a read-only project-info call (and, if given, an additional
         caller-supplied resource_ready_check) using the currently active
