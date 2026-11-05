@@ -17,6 +17,15 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y openjdk-17-jdk-headless maven git curl jq
 
+# No automatic updates on loaders: an unattended libc/systemd upgrade restarts
+# docloader@* mid-load (fusion_volume #1076). Run-time user data repeats this
+# for images baked before this change.
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF_APT'
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+EOF_APT
+systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service || true
+
 useradd --system --home-dir /opt/docloader --shell /usr/sbin/nologin docloader || true
 mkdir -p /opt/docloader /etc/docloader
 git clone https://github.com/couchbaselabs/DocLoader.git /opt/docloader/src

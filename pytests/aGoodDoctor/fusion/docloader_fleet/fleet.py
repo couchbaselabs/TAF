@@ -42,11 +42,23 @@ DEFAULT_TAGS = {
 UBUNTU_AMI_SSM_PARAM = \
     "/aws/service/canonical/ubuntu/server/24.04/stable/current/{arch}/hvm/ebs-gp3/ami-id"
 
+# Keep Ubuntu's automatic updates off the loaders: an unattended upgrade of
+# libc/systemd restarts services, including docloader@*, which kills the JVMs
+# mid-load (fusion_volume #1076). Turn them off in config too, so a run the
+# timers already triggered at boot installs nothing.
+DISABLE_AUTO_UPGRADES = """
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF_APT'
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+EOF_APT
+systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service || true
+"""
+
 USER_DATA_TEMPLATE = """#!/bin/bash
 set -euxo pipefail
 exec > /var/log/docloader-bootstrap.log 2>&1
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
+""" + DISABLE_AUTO_UPGRADES + """apt-get update -y
 apt-get install -y openjdk-17-jre-headless curl
 mkdir -p /opt/docloader
 curl -fsSL --retry 10 --retry-delay 5 -o /tmp/docloader.tgz '{artifact_url}'
@@ -74,7 +86,7 @@ for port in {ports}; do systemctl enable --now docloader@$port; done
 # bake.sh): run exactly the requested docloader@<port> units.
 LT_RUN_USER_DATA = """#!/bin/bash
 set -eux
-sed -i 's/^SERVER_NAME=.*/SERVER_NAME={server_name}/; s/^HEAP_PCT=.*/HEAP_PCT={heap_pct}/' /etc/docloader/env
+""" + DISABLE_AUTO_UPGRADES + """sed -i 's/^SERVER_NAME=.*/SERVER_NAME={server_name}/; s/^HEAP_PCT=.*/HEAP_PCT={heap_pct}/' /etc/docloader/env
 for unit in $(systemctl list-units --all --plain --no-legend 'docloader@*' | awk '{{print $1}}'); do
     systemctl disable --now "$unit"
 done
