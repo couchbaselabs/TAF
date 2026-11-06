@@ -4272,6 +4272,12 @@ class CRLTest(CRLBase):
         # padding encoding variance -- a serial whose top byte has the
         # high bit set requires a leading 0x00 padding byte in its
         # canonical DER encoding.
+        # Clears the resumption baseline first: "freshest CRL wins" is
+        # scoped per issuer, ordered by thisUpdate at one-second
+        # resolution, so an older same-CA CRL built in the same second
+        # (that doesn't revoke this serial) can tie and be consulted
+        # first, letting the revoked cert through.
+        self._cleanup_created_files()
         padded_serial = 0x80112233445566778899
         padded_cert, padded_key, _ = self.crl_utils.generate_leaf_cert(
             self.ca_cert, self.ca_key, "bypassPaddedSerial", serial=padded_serial
@@ -4293,7 +4299,9 @@ class CRLTest(CRLBase):
         self.log.info("Revoked-serial matching is robust to DER leading-zero padding")
 
         # Every CRL revocation-reason code rejects equally -- none is
-        # silently exempted.
+        # silently exempted. Clears the padded-serial CRL first, for the
+        # same same-second thisUpdate tie as above.
+        self._cleanup_created_files()
         reason_certs = []
         reason_serials = {}
         for reason, cn in [

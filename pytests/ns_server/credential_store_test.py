@@ -526,16 +526,16 @@ _VALIDATION_ROWS = (
 # time.  (id, offset_ms_or_literal, exp_status, exp_err, why) — a callable
 # offset is given the current epoch-ms; anything else is sent verbatim.
 #
-# The minimum is exclusive and the server uses its own clock, so a value near
-# the boundary is decided by clock skew rather than by the rule under test.
-# The accepted row sits well clear of it; do not tighten it.
+# The server checks expiresAt >= its own now + 300s, so a value near the
+# boundary is decided by client/server clock skew and request latency rather
+# than by the rule under test (an exact-300s row got 201 on a client clock
+# ~0.5s ahead).  Both the rejected and the accepted row sit 60s clear of it;
+# do not tighten them.
 _EXPIRES_AT_ROWS = (
     ("past", lambda now: now - 3600000, 400,
      "at least 5 minutes", "a past expiry is rejected"),
-    ("plus-299s", lambda now: now + 299000, 400,
-     "at least 5 minutes", "just under the minimum"),
-    ("exact-300s", lambda now: now + 300000, 400,
-     "at least 5 minutes", "the boundary itself is exclusive"),
+    ("plus-240s", lambda now: now + 240000, 400,
+     "at least 5 minutes", "under the minimum"),
     ("plus-360s", lambda now: now + 360000, 201,
      None, "comfortably past the minimum — the only accepted row"),
     ("zero", 0, 400, "at least 5 minutes", "epoch 0 is a valid integer but past"),
