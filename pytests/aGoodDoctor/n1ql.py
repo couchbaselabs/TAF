@@ -329,6 +329,12 @@ class DoctorN1QL():
                       wait=False, timeout=86400):
         build = True
         build_count = TestInputSingleton.input.param("build_count", 5)
+        # An indexer node builds at most 10 collections at once and fails the
+        # 11th BUILD INDEX ("Build Already In Progress for 10 collections").
+        # So each round is sent in batches of at most this many collections,
+        # each waited for before the next; capping the whole batch keeps
+        # every node within the limit.
+        build_batch_size = TestInputSingleton.input.param("build_batch_size", 10)
         i = 0
         results = dict()
         while build:
@@ -336,17 +342,23 @@ class DoctorN1QL():
             k = 0
             while buckets[k*10:(k+1)*10]:
                 _buckets = buckets[k*10:(k+1)*10]
+                # (bucket, scope, collection, index names) for this round
+                round_builds = []
                 for bucket in _buckets:
                     d = defaultdict(list)
                     for key, val in bucket.indexes.items():
                         _, _, _, s, c = val
                         d[c].append(key)
                     for collection in sorted(d.keys())[i:i+build_count]:
-                        details = bucket.indexes[d.get(collection)[0]]
+                        round_builds.append((bucket, s, collection, d.get(collection)))
+                for b in range(0, len(round_builds), build_batch_size):
+                    batch = round_builds[b:b+build_batch_size]
+                    for bucket, s, collection, index_names in batch:
+                        details = bucket.indexes[index_names[0]]
                         build = True
                         build_query = "BUILD INDEX on %s.%s.%s(%s) USING GSI" % (
                             n1ql_identifier(bucket.name), n1ql_identifier(s),
-                            n1ql_identifier(collection), ",".join(sorted(d.get(collection))))
+                            n1ql_identifier(collection), ",".join(sorted(index_names)))
                         # time.sleep(1)
                         start = time.time()
                         while time.time() < start + 600:
@@ -355,12 +367,7 @@ class DoctorN1QL():
                                 break
                             except Exception or InternalServerFailureException as e:
                                 raise(e)
-                if wait:
-                    for bucket in _buckets:
-                        d = defaultdict(list)
-                        for key, val in bucket.indexes.items():
-                            _, _, _, _, c = val
-                            d[c].append(key)
+                    if wait:
                         self.rest = GsiHelper(cluster.master, logger["test"])
                         ths = list()
 
@@ -369,9 +376,8 @@ class DoctorN1QL():
                             results[index_name] = result
                             return result
 
-                        for collection in sorted(d.keys())[i:i+build_count]:
-                            for index_name in sorted(d.get(collection)):
-                                details = bucket.indexes[index_name]
+                        for bucket, _, _, index_names in batch:
+                            for index_name in sorted(index_names):
                                 th = threading.Thread(target=polling_with_result,
                                                       name=index_name,
                                                       args=(bucket, index_name, timeout//10))
