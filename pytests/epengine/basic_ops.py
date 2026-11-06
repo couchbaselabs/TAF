@@ -2908,6 +2908,13 @@ class basic_ops(ClusterSetup):
                 stats["ep_defragmenter_age_threshold"],
             "fragmentation_backpressure_enabled":
                 stats["ep_fragmentation_backpressure_enabled"]}
+        # MB-74342 keeps the gate off for buckets under
+        # fragmentation_backpressure_min_quota (default 7GiB), so on this
+        # 100MB bucket it would never engage. Drop the minimum, as kv_engine's
+        # HighFragmentation test does. Older builds do not have the param
+        min_quota_param = "fragmentation_backpressure_min_quota"
+        if f"ep_{min_quota_param}" in stats:
+            orig_flush_params[min_quota_param] = stats[f"ep_{min_quota_param}"]
         orig_checkpoint_mem_ratio = stats["ep_checkpoint_memory_ratio"]
 
         def wait_for(predicate, poll_interval=1.0):
@@ -3029,6 +3036,8 @@ class basic_ops(ClusterSetup):
             # required fragmentation
             set_flush_param("defragmenter_enabled", "false")
             set_flush_param("fragmentation_backpressure_enabled", "false")
+            if min_quota_param in orig_flush_params:
+                set_flush_param(min_quota_param, 0)
             frag_ooms_at_start, _ = tmp_oom_counters()
             log_state("Start")
 
@@ -3071,8 +3080,18 @@ class basic_ops(ClusterSetup):
             self.log.info("Enabling fragmentation_backpressure_enabled")
             set_flush_param("fragmentation_backpressure_enabled", "true")
             if not wait_for(probe_rejected):
-                self.fail("Mutation not rejected with ETMPFAIL though "
-                          "resident > quota with high fragmentation")
+                gate_stats = client.stats()
+                rss, alloc = arena_memory()
+                self.fail(
+                    "Mutation not rejected with ETMPFAIL though resident > "
+                    f"quota with high fragmentation. quota={quota}, "
+                    f"resident={rss}, allocated={alloc}, "
+                    "fragmentation_backpressure_enabled="
+                    f"{gate_stats.get('ep_fragmentation_backpressure_enabled')}"
+                    f", {min_quota_param}="
+                    f"{gate_stats.get(f'ep_{min_quota_param}', 'n/a')}, "
+                    "defragmenter_auto_upper_threshold="
+                    f"{gate_stats.get('ep_defragmenter_auto_upper_threshold')}")
             frag_ooms, total_ooms = tmp_oom_counters()
             if frag_ooms <= frag_ooms_at_start:
                 self.log_failure("Mutation rejected but "
