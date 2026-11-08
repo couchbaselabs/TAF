@@ -27,7 +27,7 @@ with a per-bucket template file.
 | `n1ql.py` | `DoctorN1QL`, `QueryLoad`, `n1ql_identifier()` | GSI index create/build/stats; query load threads. Also used by hostedHospital |
 | `workloads.py` | `default`, `Hotel`, `hotel_vector`, `nimbus`, `siftBigANN`, `MSMARCOEmbeddingProduct`, `MSMARCOSiftEmbeddingProduct` | `val_type` workload dicts. They read test params **at import time** |
 | `workload_template.py` | `WorkloadTemplateMixin`, plus `template_errors()`, `collection_rate()`, `build_load_defns()` and others | Everything specific to template mode |
-| `templates/*.py` | dict literals | The templates: `single_template`, `sparse_dense_500M`, `sparse_dense_1B` |
+| `templates/*.py` | dict literals | The templates: `single_template`, `sparse_dense_500M`, `sparse_dense_1B`, `sparse_bhive_44M` |
 | `hosted*.py`, `serverless*.py`, `fusion/`, `goldfish/` | — | Other suites. They share `opd.py` / `n1ql.py`, so changes there must not change their behaviour |
 
 ---
@@ -172,6 +172,8 @@ value wins over the bucket's.
 | GleamBookUsers2 (siftBigANN) | 4 | 1 | 4 × 12,500/s is the fewest workers that reach the 50,000/s initial rate within the 16,384-doc batch, and 4 divides every step range. 1,000/s later needs 1 |
 
 `single_template` keeps `process_concurrency: 10` for every bucket.
+`sparse_bhive_44M` uses `process_concurrency: 2` (a collection's 10,000/s is
+just over one MSMARCO worker's ~9.5k/s) and `rebl_process_concurrency: 1`.
 
 **Measured** on the volume runner (24 cores, Xen VM) against its cluster (2 KV
 nodes, magma, 1 replica), with the templates' own requests:
@@ -227,6 +229,7 @@ logs:
 |---|---|---|---|---|
 | `sparse_dense_1B` | 186 | 159 | 200 | 340 |
 | `sparse_dense_500M` | 107 | 83 | 120 | 170 |
+| `sparse_bhive_44M` | 30 | 15 | 60 (default) | 60 (default) |
 
 - SteadyStateVolume runs its own wave alongside the mutation thread's, so it needs twice the mutation tasks.
 - A wave's siftBigANN tasks count as done after 600s (see `stall_timeout=-1` above), so the next wave can start while the previous wave's [200M, 500M) range is still running. That's one extra task in 1B, which the margins above cover.
@@ -323,10 +326,10 @@ the template passes.
 
 ### Shipped templates
 
-All three use `ops: 50000` and `rebl_ops_rate: 1000` per bucket. `2iQPS` is
-100 per bucket in `sparse_dense_500M` / `sparse_dense_1B`, and 10 / 10 / 50 in
-`single_template`. The MSMARCO scalar queries end in `LIMIT 100`. The
-siftBigANN bucket has no `groundTruths`. For the pcs, see
+All four use `ops: 50000` and `rebl_ops_rate: 1000` per bucket. `2iQPS` per
+bucket: 100 in `sparse_dense_500M` / `sparse_dense_1B`, 10 / 10 / 50 in
+`single_template`, 10 in `sparse_bhive_44M`. The MSMARCO scalar queries end in
+`LIMIT 100`. The siftBigANN bucket has no `groundTruths`. For the pcs, see
 [Process concurrency](#process-concurrency).
 
 | Template | GleamBookUsers0 (MSMARCO sparse) | GleamBookUsers1 (MSMARCO sparse) | GleamBookUsers2 (siftBigANN dense) | Items |
@@ -334,6 +337,11 @@ siftBigANN bucket has no `groundTruths`. For the pcs, see
 | `single_template` | `8M` (7 indexes/7 queries) | `8M` (7/7) | `1M` (4/4) | 18,683,646 |
 | `sparse_dense_500M` | `GB0_C01..GB0_C10` (4/4 each) | `GB1_C01..GB1_C15` (4/4) | `200M` (8/8) | 421,045,575 |
 | `sparse_dense_1B` | `GB0_C01..GB0_C20` (3/3) | `GB1_C01..GB1_C30` (4/4) | `500M` (5/5) | 942,091,150 |
+| `sparse_bhive_44M` | `GB0_C01..GB0_C05` (5/5) | — | — | 44,209,115 |
+
+`sparse_bhive_44M`: every collection has the same 4 BHIVE sparse vector
+indexes on `sparse` (plain, and `INCLUDE (size)`, `(size, color)`,
+`(size, country)`) plus a scalar index on `size`, each with its query.
 
 The MSMARCO collections' indexes and matching queries were distributed round
 robin from the bucket's original lists: 4 sparse vector pairs and 3 scalar
@@ -434,7 +442,7 @@ wt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wt)
 
 PC = 20  # the run's pc param
-for name in ("single_template", "sparse_dense_500M", "sparse_dense_1B"):
+for name in ("single_template", "sparse_dense_500M", "sparse_dense_1B", "sparse_bhive_44M"):
     template = wt.load_template(wt.resolve_template_path(name))
     errors = wt.template_errors(template, PC)
     print(f"{name}: {'OK' if not errors else errors}")
