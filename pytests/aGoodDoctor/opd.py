@@ -1443,7 +1443,8 @@ class OPD:
 
         output, error = self.drBackup.backup(
             self.backup_archive, self.backup_repo,
-            cluster_host=self.backup_cluster_host)
+            cluster_host=self.backup_cluster_host,
+            threads=60)
         self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
         # Fail before the flush below, which would otherwise empty the
         # buckets with no good backup to restore them from.
@@ -2487,7 +2488,8 @@ class OPD:
             if step == "traditional_backup":
                 output, error = self.drBackup.backup(
                     self.backup_archive, self.backup_repo,
-                    cluster_host=self.backup_cluster_host)
+                    cluster_host=self.backup_cluster_host,
+                    threads=60)
                 self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
                 self._assert_cbbackupmgr_succeeded(output, error, "backup")
             elif step in ("record_timestamp", "record_everything"):
