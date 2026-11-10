@@ -14,6 +14,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from capella_utils.dedicated import CapellaUtils
 from capella_utils.common_utils import Pod, Tenant
 from capella_utils.dedicated_rest.bucket_utils import CapellaBucketUtils
+from capella_utils.dedicated_rest.cluster_baseline import ClusterBaseline
 from capella_utils.dedicated_rest.context import CapellaContext
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
@@ -44,6 +45,9 @@ class CapellaBaseTest(CouchbaseBaseTest):
         self.pod_table.set_headers(["Tenant", "Creds", "Cluster", "SRV"])
 
         self.deploy_timeout = self.input.param("deploy_timeout", 600)
+        # Reused cluster (capella clusters=): scale to nodes_init at setUp,
+        # delete the test buckets at tearDown
+        self.capella_cleanup = self.input.param("capella_cleanup", False)
         # Read by rebalance tests (only OnPremBaseTest sets them)
         self.wait_timeout = self.input.param("wait_timeout", 120)
         self.network_delay_between_nodes = \
@@ -433,6 +437,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                                             cluster.id,
                                             cluster.srv])
             self.pod_table.display("POD: %s" % self.pod.url_public)
+            self.record_cluster_baselines()
             self.sleep(10)
         except Exception as e:
             self.log.critical(e)
@@ -453,6 +458,8 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                         table.add_row([logInfo["url"]])
                     table.display("Cluster: {}".format(cluster.id))
 
+        if not self.skip_teardown_cleanup:
+            self.restore_cluster_baselines()
         self.shutdown_task_manager()
         for tenant in self.tenants:
             for cluster in tenant.clusters:
@@ -487,6 +494,34 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 th.append(delete_th)
             for delete_th in th:
                 delete_th.join()
+
+    def record_cluster_baselines(self):
+        """
+        Reused clusters (capella_cleanup): scale to the test's nodes_init
+        (if given), then note the buckets so tearDown deletes only new ones
+        """
+        self.cluster_baselines = list()
+        if not (self.capella_cleanup
+                and TestInputSingleton.input.capella.get("clusters")):
+            return
+        nodes_init = self.input.param("nodes_init", None)
+        for cluster in self.cb_clusters.values():
+            baseline = ClusterBaseline(cluster)
+            if nodes_init is not None \
+                    and not baseline.scale_to(self.task, nodes_init):
+                raise Exception("Capella scale of %s to nodes_init=%s failed"
+                                % (cluster.id, nodes_init))
+            baseline.record_buckets()
+            self.cluster_baselines.append(baseline)
+
+    def restore_cluster_baselines(self):
+        """Delete the test's buckets; the next test scales if it needs to"""
+        for baseline in getattr(self, "cluster_baselines", []):
+            try:
+                baseline.restore()
+            except Exception as e:
+                self.log.error("Capella cleanup failed for %s: %s"
+                               % (baseline.cluster.id, e))
 
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1

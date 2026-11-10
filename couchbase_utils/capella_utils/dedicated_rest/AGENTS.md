@@ -42,6 +42,7 @@ call sites, while exercising the Capella control plane where it exists.
 | `cluster_rest.py` | `CapellaClusterRestAPI` - honest `cluster_tasks()`, raw `node_cluster_tasks()`, unsupported topology/failover calls |
 | `scale_spec.py` | `CapellaScaleSpec` - pure: current specs (GET) -> object-form scale payload (POST /specs), min 3 data nodes |
 | `rebalance_watcher.py` | `RebalanceWatcher` / `RebalanceReport` - follows a scale: Capella state + ns_server rebalance attempts and `rebalance_method` (FBR) from node tasks |
+| `cluster_baseline.py` | `ClusterBaseline` - `capella_cleanup=True`: setUp scales to `nodes_init` (no-op if already there) and notes buckets, tearDown deletes test buckets only (no scale back) |
 
 ## Scaling (rebalance on Capella)
 
