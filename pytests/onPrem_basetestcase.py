@@ -19,7 +19,7 @@ from cb_constants.ClusterRun import ClusterRun
 from cb_constants.CBServer import CbServer
 from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
 from cb_server_rest_util.analytics.analytics_settings import \
-    OPERATIONAL_INSIGHTS_SETTINGS_PATH
+    OPERATIONAL_INSIGHTS_SETTINGS_PATH, LEGACY_ANALYTICS_SETTINGS_PATH
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from constants.platform_constants import os_constants
@@ -841,8 +841,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 aws_secret_key=self.columnar_aws_secret_key,
                 aws_bucket_name=self.columnar_aws_bucket_name,
                 aws_bucket_region=self.columnar_aws_region,
-                path=getattr(self, "analytics_settings_path",
-                             OPERATIONAL_INSIGHTS_SETTINGS_PATH))
+                path=getattr(self, "analytics_settings_path", None) or (
+                    LEGACY_ANALYTICS_SETTINGS_PATH
+                    if int(ClusterRestAPI(cluster.master).node_details()[1]
+                           ["version"].split(".")[0]) < 3
+                    else OPERATIONAL_INSIGHTS_SETTINGS_PATH))
             if not status:
                 self.fail("Failed to put aws credentials to analytics, "
                           "request error")
