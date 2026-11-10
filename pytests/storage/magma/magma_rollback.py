@@ -304,7 +304,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
-                self.cluster.nodes_in_cluster[0], self.cluster.buckets[0])
+                self.cluster.master, self.cluster.buckets[0])
             mem_client.stop_persistence()
             self.gen_create = self.genrate_docs_basic(start, mem_only_items,
                                                       self.target_vbucket)
@@ -313,11 +313,12 @@ class MagmaRollbackTests(MagmaBaseTest):
                               retry_exceptions=self.retry_exceptions)
             start = self.gen_create.key_counter
 
-            ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
-                                 mem_only_items}
-            vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
+            ep_queue_size_map = {self.cluster.master: mem_only_items}
+            vb_replica_queue_size_map = {self.cluster.master: 0}
 
-            for node in self.cluster.nodes_in_cluster[1:]:
+            for node in self.cluster.nodes_in_cluster:
+                if node.ip == self.cluster.master.ip:
+                    continue
                 ep_queue_size_map.update({node: 0})
                 vb_replica_queue_size_map.update({node: 0})
 
