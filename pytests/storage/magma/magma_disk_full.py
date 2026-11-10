@@ -249,6 +249,8 @@ class MagmaDiskFull(MagmaBaseTest):
 
         for bucket in self.cluster.buckets:
             self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                            cbstat_cmd="all",
+                                            stat_name="ep_queue_size",
                                             timeout=300)
             #self.bucket_util._wait_for_stat(
             #    bucket,

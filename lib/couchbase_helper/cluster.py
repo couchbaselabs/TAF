@@ -229,7 +229,9 @@ class ServerTasks(object):
                         suppress_error_table=suppress_error_table,
                         track_failures=track_failures,
                         iterations=iterations,
-                        sdk_retry_strategy=sdk_retry_strategy)
+                        sdk_retry_strategy=sdk_retry_strategy,
+                        num_vbuckets=bucket.numVBuckets
+                        or CbServer.total_vbuckets)
                     ok, response = _task.create_doc_load_task()
                     if not ok:
                         raise Exception(f"Failure in Sirius Task: {response}")

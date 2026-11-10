@@ -37,7 +37,8 @@ def doc_generator(key, start, end,
         return SiriusJavaDocGen(start=start, end=end,
                                 key_prefix=key, key_size=key_size,
                                 doc_size=doc_size, mutate=mutate,
-                                key_type=key_type)
+                                key_type=key_type,
+                                target_vbuckets=target_vbucket)
 
     # Defaults to JSON doc_type
     if doc_size == 0:

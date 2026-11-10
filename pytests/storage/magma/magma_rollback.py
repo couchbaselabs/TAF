@@ -114,10 +114,15 @@ class MagmaRollbackTests(MagmaBaseTest):
         what the ep_queue_size assertion after the loop compares against, so
         the window has to move by exactly that much.
         """
+        step = mem_only_items
+        if self.target_vbucket:
+            num_vbs = self.cluster.buckets[0].numVBuckets or self.vbuckets
+            step = int(mem_only_items * num_vbs * 1.2
+                       / len(self.target_vbucket))
         for op in ("create", "update", "delete", "expiry"):
             if getattr(self, "gen_" + op) is None:
                 continue
-            new_start = getattr(self, op + "_end")
+            new_start = getattr(self, op + "_start") + step
             setattr(self, op + "_start", new_start)
             setattr(self, op + "_end", new_start + mem_only_items)
 
@@ -308,7 +313,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 vb_replica_queue_size_map.update({node: 0})
 
             for bucket in self.cluster.buckets:
-                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                cbstat_cmd="all",
+                                                stat_name="ep_queue_size")
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
@@ -795,7 +802,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 vb_replica_queue_size_map.update({node: 0})
 
             for bucket in self.cluster.buckets:
-                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                cbstat_cmd="all",
+                                                stat_name="ep_queue_size")
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
@@ -886,7 +895,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                                      0}
                 vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
                 for bucket in self.cluster.buckets:
-                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                cbstat_cmd="all",
+                                                stat_name="ep_queue_size")
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
                                                     cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size")
@@ -926,7 +937,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
                                                 cbstat_cmd="all",
                                                 stat_name="vb_replica_queue_size")
-                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                cbstat_cmd="all",
+                                                stat_name="ep_queue_size")
 
         for shell in shell_conn:
             shell.disconnect()
@@ -1478,7 +1491,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                         vb_replica_queue_size_map.update({nod: 0})
 
                 for bucket in self.cluster.buckets:
-                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
+                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                                                cbstat_cmd="all",
+                                                stat_name="ep_queue_size")
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
                                                     cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size",

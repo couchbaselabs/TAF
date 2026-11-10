@@ -15,8 +15,10 @@ class SiriusJavaDocGen(object):
 
     def __init__(self, start=0, end=1,
                  key_prefix="test_doc-", key_size=10,
-                 doc_size=64, mutate=0, key_type="SimpleKey"):
+                 doc_size=64, mutate=0, key_type="SimpleKey",
+                 target_vbuckets=None):
         self.itr = 0
+        self.target_vbuckets = target_vbuckets
         self.name = key_prefix
         self.keys_len = end - start
         self.doc_type = "json"
@@ -233,7 +235,6 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.gtm = False
         self.iterations = iterations
         self.target_vbuckets = target_vbuckets
-        self.vbuckets = CbServer.total_vbuckets
 
         # Stall detection: get_task_result() polls per-task progress instead of
         # blocking forever. A task_id's clock resets on any observed advance in
