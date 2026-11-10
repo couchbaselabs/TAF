@@ -65,6 +65,7 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
     # together. Versions before 3.0 (e.g. 2.1, 2.2) keep the old naming;
     # 3.0+ uses the new one. See _get_product_info().
     PRODUCT_RENAME_MAIN_VERSION = (3, 0)
+    SAMPLE_METHOD_MIN_MAIN_VERSION = (3, 0)
     PRODUCT_INFO = {
         "old": {
             "url_path": "builds/latestbuilds/enterprise-analytics",
@@ -207,6 +208,12 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             "analyze_sample_size", "high")
         self.analyze_sample_seed = self.input.param(
             "analyze_sample_seed", 1000)
+        post_main_version = tuple(
+            int(part) for part in
+            self.upgrade_version.split("-", 1)[0].split(".")[:2])
+        self.post_upgrade_sample_method = (
+            "random" if post_main_version >= self.SAMPLE_METHOD_MIN_MAIN_VERSION
+            else None)
         self.post_upgrade_retry_count = self.input.param(
             "post_upgrade_retry_count", 3)
 
@@ -1792,10 +1799,10 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                 # sample-method=random and verify it took effect
                 self._run_analyze_collection(sample_size=self.analyze_sample_size,
                                              sample_seed=self.analyze_sample_seed,
-                                             sample_method="random")
+                                             sample_method=self.post_upgrade_sample_method)
                 self._verify_sample_metadata_index(sample_size=self.analyze_sample_size,
                                                    sample_seed=self.analyze_sample_seed,
-                                                   sample_method="random")
+                                                   sample_method=self.post_upgrade_sample_method)
                 break
             except Exception as e:
                 retry += 1
@@ -1982,11 +1989,11 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                 # sample-method=random and verify it took effect
                 self._run_analyze_collection(sample_size=self.analyze_sample_size,
                                              sample_seed=self.analyze_sample_seed,
-                                             sample_method="random")
+                                             sample_method=self.post_upgrade_sample_method)
 
                 self._verify_sample_metadata_index(sample_size=self.analyze_sample_size,
                                                    sample_seed=self.analyze_sample_seed,
-                                                   sample_method="random")
+                                                   sample_method=self.post_upgrade_sample_method)
                 break
             except Exception as e:
                 retry += 1
@@ -2159,10 +2166,10 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                 # sample-method=random and verify it took effect
                 self._run_analyze_collection(sample_size=self.analyze_sample_size,
                                              sample_seed=self.analyze_sample_seed,
-                                             sample_method="random")
+                                             sample_method=self.post_upgrade_sample_method)
                 self._verify_sample_metadata_index(sample_size=self.analyze_sample_size,
                                                    sample_seed=self.analyze_sample_seed,
-                                                   sample_method="random")
+                                                   sample_method=self.post_upgrade_sample_method)
                 break
             except Exception as e:
                 retry += 1
