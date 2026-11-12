@@ -1356,6 +1356,12 @@ class CollectionBase(ClusterSetup, FusionBase):
             elif key == "magma_seq_tree_data_block_size":
                 bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
                     = int(test_obj.magma_seq_tree_data_block_size)
+            elif key == "bucket_throttle_reserved":
+                # KV rate limiting - per-bucket guaranteed units/sec
+                bucket_spec[Bucket.throttleReserved] = int(val)
+            elif key == "bucket_throttle_hard_limit":
+                # KV rate limiting - per-bucket max units/sec
+                bucket_spec[Bucket.throttleHardLimit] = int(val)
             elif key == "load_collections_exponentially":
                 bucket_spec[MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY] \
                     = test_obj.load_collections_exponentially
