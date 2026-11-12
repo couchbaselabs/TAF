@@ -155,8 +155,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             CollectionBase.wait_for_cont_doc_load_to_complete(
                 self, cont_load_task)
 
-        rebalance = self.task.async_rebalance(self.cluster, [], [],
-                                              retry_get_process_num=self.retry_get_process_num)
+        # Start exactly one rebalance per path. An unconditional
+        # async_rebalance used to run before this branch, so the
+        # non-fusion path started a second rebalance while the first was
+        # still running ("Rebalance Failed"), and the fusion path
+        # overwrote run_rebalance()'s nodes_to_monitor with that task.
         if not self.fusion_test:
             rebalance = self.task.async_rebalance(self.cluster, [], [],
                                                     retry_get_process_num=self.retry_get_process_num)
@@ -170,7 +173,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
         else:
-            nodes_to_monitor = rebalance
             self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
             self.monitor_active_guest_volumes()
 

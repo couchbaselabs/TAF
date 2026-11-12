@@ -57,9 +57,13 @@ class CollectionsNetworkSplit(CollectionBase):
                 self.shell.disconnect()
             except Exception as e:
                 self.log.warning(f"Error disconnecting shell: {e}")
-        if self.allow_unsafe:
-            self.wipe_config_on_removed_nodes(self.nodes_failover)
-        super(CollectionsNetworkSplit, self).tearDown()
+        # A failed node reset must not skip the base tearDown, which restores
+        # cluster-wide settings (e.g. FBR) that later tests in the run expect
+        try:
+            if self.allow_unsafe:
+                self.wipe_config_on_removed_nodes(self.nodes_failover)
+        finally:
+            super(CollectionsNetworkSplit, self).tearDown()
 
     def set_master_node(self, node=None):
         """
