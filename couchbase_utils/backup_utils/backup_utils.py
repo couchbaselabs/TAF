@@ -173,11 +173,19 @@ class BackupLocation(object):
 
         self.log.info("Creating Credential Store entry '%s' for %s"
                       % (cred_id, self.label))
-        self.cloud_provider.create_credential_store(
+        status, content = self.cloud_provider.create_credential_store(
             rest, cred_id=cred_id, description=description)
-        CredentialStoreUtils().put_service_roles(
+        if not CredentialStoreUtils._is_success_status(status):
+            raise Exception(f"Failed to create Credential Store entry "
+                            f"'{cred_id}' for {self.label}: status={status}, "
+                            f"response={content}")
+        status, content = CredentialStoreUtils().put_service_roles(
             rest, service_name=consumer_service,
             roles=[f"credential_consumer[{cred_id}]"])
+        if not CredentialStoreUtils._is_success_status(status):
+            raise Exception(f"Failed to grant credential_consumer[{cred_id}] "
+                            f"to the {consumer_service} service: "
+                            f"status={status}, response={content}")
         self.credential_store_id = cred_id
         return cred_id
 

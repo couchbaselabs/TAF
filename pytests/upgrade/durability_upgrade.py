@@ -1694,9 +1694,15 @@ class UpgradeTests(UpgradeBase):
 
         rest = RestConnection(self.cluster.master)
         self.km_cred_store_id = f"km_cred_{uuid.uuid4()}"
-        self.kms_provider.create_kms_credential_store(
+        status, content = self.kms_provider.create_kms_credential_store(
             rest, cred_id=self.km_cred_store_id,
             description="KMS credential for cbcontbk EaR upgrade tests")
+        # Fail here: otherwise a missing credential only shows up at the
+        # bucket update as "insufficient permissions to retrieve credential"
+        if not CredentialStoreUtils._is_success_status(status):
+            self.fail(f"Failed to create credential store entry "
+                      f"{self.km_cred_store_id} for KMS: status={status}, "
+                      f"response={content}")
         self.log.info(f"Created credential store for KMS with ID: "
                       f"{self.km_cred_store_id}")
 
@@ -1707,8 +1713,12 @@ class UpgradeTests(UpgradeBase):
         if self.cont_bkp_credential_store_id:
             roles.append(
                 f"credential_consumer[{self.cont_bkp_credential_store_id}]")
-        CredentialStoreUtils().put_service_roles(
+        status, content = CredentialStoreUtils().put_service_roles(
             rest, service_name="backup", roles=roles)
+        if not CredentialStoreUtils._is_success_status(status):
+            self.fail(f"Failed to grant {roles} to the backup service: "
+                      f"status={status}, response={content}")
+        self.log.info(f"Granted {roles} to the backup service")
 
         # Attach the provider only to the required CLI wrapper
         if self.ear_bk:
