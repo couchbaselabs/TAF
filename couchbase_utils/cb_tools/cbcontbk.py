@@ -283,6 +283,9 @@ class CbContBk(CbCmdBase):
         # rejects --no-ssl-verify on it as an unknown flag.
         cmd = f"{self.cbstatCmd} info -l {location} --json"
         cmd = self._append_obj_store_flags(cmd, includes_archive_path=False)
+        # Without KMS flags, info on an encrypted location lists no buckets
+        # ({"buckets":[]}) instead of failing
+        cmd = self._append_km_flags(cmd)
 
         self.log.info(f"Executing command: {cmd}")
 

@@ -137,6 +137,12 @@ class ContinuousBackupBase(CollectionBase):
             info = self.cont_bk_mgr.info(self.continuous_backup_location)
             bucket_info = (info or {}).get(
                 bucket_name or self.bucket.name, {})
+            if info is not None and not bucket_info:
+                self.log.warning(
+                    f"cbcontbk info lists no entry for bucket "
+                    f"{bucket_name or self.bucket.name} at "
+                    f"{self.continuous_backup_location} (buckets listed: "
+                    f"{sorted(info)})")
             range_end_str = bucket_info.get("range", {}).get("end")
             if range_end_str:
                 range_end_dt = self._parse_cbcontbk_timestamp(range_end_str)
