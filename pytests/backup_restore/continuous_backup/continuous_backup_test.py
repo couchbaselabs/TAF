@@ -963,7 +963,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util.update_bucket_property(
             self.cluster.master, self.bucket,
             flush_enabled=Bucket.FlushBucket.ENABLED)
-        self.bucket_util.flush_bucket(self.cluster, self.bucket)
+        # Keep num_items so the post-flush load (100% of num_items) recreates
+        # the docs; with 0 it creates none and the catch-up wait times out.
+        if not self.bucket_util.flush_bucket(self.cluster, self.bucket,
+                                             skip_resetting_num_items=True):
+            self.fail(f"Flush of bucket {self.bucket.name} failed")
         self._verify_doc_count(0)
 
         self.log.info("PITR restore to before flush (continuous backup still disabled)")
@@ -978,6 +982,18 @@ class ContinuousBackupTest(ContinuousBackupBase):
             continuous_backup_location=self.continuous_backup_location,
             continuous_backup_retention_period=self.continuous_backup_retention_period)
         self.sleep(10, "Waiting for settings to apply")
+
+        # A flush starts a new timeline and cbcontbk won't restore past it
+        # from a pre-flush backup ("...different timeline..."), so take a
+        # traditional backup now. ts_after_flush is taken after it.
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting one continuous backup interval after re-enabling "
+                   "before taking the traditional backup")
+        self.log.info(f"Taking a traditional backup of the flushed bucket "
+                      f"{self.bucket.name}")
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name)
+        self._assert_cbbackupmgr_succeeded(output, error, "post-flush backup")
 
         # Wait for continuous backup to capture the (now empty) post-flush state
         self.sleep(self.continuous_backup_interval * 60)
@@ -997,6 +1013,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # already trusts, and _verify_doc_count polls REST stats against it
         # instead of taking a single possibly-stale snapshot.
         final_count = self.bucket_util.get_expected_total_num_items(self.bucket)
+        self.log.info(f"Post-flush load: expecting {final_count} docs in "
+                      f"{self.bucket.name}, loaded after {mutation_time}")
+        if final_count == 0:
+            self.fail(f"Post-flush load created no docs in {self.bucket.name}, "
+                      f"so the continuous backup log has nothing after the "
+                      f"flush to catch up to")
         self._verify_doc_count(final_count)
         # This is the latest state with no mutation after it, so a captured
         # wall-clock timestamp would land one interval past the newest
