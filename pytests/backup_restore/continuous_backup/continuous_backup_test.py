@@ -445,7 +445,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # timestamp_after_mutation, so the restored content still matches the 50%
         # mutation validated below. (Restore is into the source bucket for
         # validate_cruds, so a fresh-bucket "everything" restore is not usable.)
-        CollectionBase.mutate_history_retention_data(self, update_percent=10, update_itrs=1)
+        # The span only passes it once every vBucket has an update. With
+        # initial_load=False collections hold 1000 docs: 10% (keys 0-99)
+        # reaches 84 of 128 vBuckets, all docs reach every vBucket.
+        CollectionBase.mutate_history_retention_data(self, update_percent=100, update_itrs=1)
         self._wait_for_history_upload("the post-mutation timestamp")
 
         # 3. Reset bucket and restore from backup
@@ -1792,8 +1795,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # falls back to "default_loader", which issued no mutations here (build
         # 8.5.0-1392: sentinel returned in ~0s), leaving the log with nothing
         # newer than the traditional backup.
+        # The log is newer than the backup only once every vBucket has a
+        # sentinel: 10% (keys 0-99) reaches 84 of 128, all 1000 docs reach all.
         sentinel_spec = CollectionBase.get_history_retention_load_spec(
-            self, update_percent=10, update_itrs=1)
+            self, update_percent=100, update_itrs=1)
         CollectionBase.over_ride_doc_loading_template_params(self, sentinel_spec)
         CollectionBase.set_retry_exceptions(sentinel_spec, self.durability_level)
         for b in (bucket1, bucket2):
@@ -1931,9 +1936,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # falls back to "default_loader", which issued no mutations here (build
         # 8.5.0-1392: sentinel returned in ~0s), leaving the log with nothing
         # newer than the traditional backup.
+        # range.end is the oldest per-vBucket log end, so it passes the
+        # sentinel only once every vBucket has one. 10% (keys 0-99) reached
+        # 84 of 128 vBuckets; all keys (0-999) reach all 128.
         sentinel_time = time.time()
         sentinel_spec = CollectionBase.get_history_retention_load_spec(
-            self, update_percent=10, update_itrs=1)
+            self, update_percent=100, update_itrs=1)
         CollectionBase.over_ride_doc_loading_template_params(self, sentinel_spec)
         CollectionBase.set_retry_exceptions(sentinel_spec, self.durability_level)
         for b in (bucket1, bucket2):
@@ -2273,8 +2281,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # restore fails with "traditional backup has the same or newer data
         # than the log backup". Update-only mutations keep count_after_subdoc
         # intact while giving the log data newer than the traditional base.
+        # Every vBucket needs one: after the 20% deletes, 10% (keys 400-559)
+        # reaches 116 of 128 vBuckets; all docs (400-1999) reach all.
         CollectionBase.mutate_history_retention_data(
-            self, update_percent=10, update_itrs=1)
+            self, update_percent=100, update_itrs=1)
         self._wait_for_history_upload("the post-backup sentinel update")
 
         restore_bucket_name = f"restore_subdoc_{int(time.time())}"
