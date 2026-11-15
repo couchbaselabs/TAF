@@ -167,6 +167,14 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
                         f"on any node after {wait_secs}s wait.")
         self.log.info("Test completed successfully")
 
+    def _retention_period_secs(self):
+        """retention_period_unsafe (e.g. "5m", "1h") in seconds."""
+        value = str(self.retention_period_unsafe).strip()
+        units = {"s": 1, "m": 60, "h": 3600}
+        if value[-1] in units:
+            return int(value[:-1]) * units[value[-1]]
+        return int(value)
+
     def _delete_and_recreate_bucket(self):
         """Delete and recreate self.bucket using its original bucket object."""
         self.log.info(f"Deleting bucket: {self.bucket.name}")
@@ -281,11 +289,18 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.log.info("Starting test_retention_pitr_restore")
         cluster_host = f"http://{self.cluster.master.ip}:8091"
 
+        # cbcontbk restores to a time only from a backup completed by then.
+        # A timestamp read right after setUp's backup (whole seconds) can
+        # precede its end: "no complete cbbackupmgr backups before target
+        # time".
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting one continuous backup interval after setUp's "
+                   "traditional backup before capturing t_before_add")
+
         # 1. Original count and timestamp before loading new docs
         original_count = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
         self.log.info(f"Original doc count: {original_count}")
-
         t_before_add = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"Timestamp before adding docs: {t_before_add}")
 
@@ -302,6 +317,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.log.info(f"Doc count after loading new docs: {count_with_new_docs}")
         self.assertGreater(count_with_new_docs - original_count, 0,
                            "No new docs were added; check the data spec")
+        load_done_time = time.time()
 
         # 3. Wait for continuous backup to catch up to the new docs. Poll
         # rather than a fixed sleep -- see _wait_for_continuous_backup_catchup
@@ -313,31 +329,52 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         # "everything" cbcontbk has is bounded by it -- no need for a specific
         # timestamp here (and "now" risks landing outside the backup's covered
         # range, since cbcontbk now rejects timestamps it doesn't contain).
+        # Retention deletes log data older than retention_period_unsafe at
+        # its next check, even past the traditional backup, so the new docs'
+        # log data must still be younger than that.
+        retention_secs = self._retention_period_secs()
+        since_load = time.time() - mutation_time
+        self.log.info(f"Restoring everything {int(since_load)}s after the "
+                      f"load started; retention period is {retention_secs}s")
+        if since_load >= retention_secs - 60:
+            self.fail(f"The new docs' log data is {int(since_load)}s old, "
+                      f"within a minute of the {retention_secs}s retention "
+                      f"period, so retention may delete it before or during "
+                      f"this restore. Raise retention_period_unsafe.")
         self._delete_and_recreate_bucket()
-        self.cont_bk_mgr.restore(
+        output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             cluster_host=cluster_host,
             location=self.continuous_backup_location,
             temp_dir=self.restore_temp_dir,
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
+        # Check the restore result itself: just after the bucket is recreated,
+        # REST can still report the deleted bucket's count.
+        self._assert_restore_succeeded(output, error, "everything")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_with_new_docs)
         self.log.info(f"Restore of everything verified: {count_with_new_docs} docs")
 
-        # 5. Wait for the retention check cycle to run
-        retention_wait_secs = self.retention_check_mins * 60 + 30
+        # 5. Wait until retention has run after the new docs' log data aged
+        # out, so the restore below runs after it was deleted.
+        retention_wait_secs = max(
+            self.retention_check_mins * 60 + 30,
+            int(load_done_time + retention_secs
+                + self.retention_check_mins * 60 + 30 - time.time()))
         self.sleep(retention_wait_secs,
-                   f"Waiting {retention_wait_secs}s for retention check cycle to run")
+                   f"Waiting {retention_wait_secs}s for a retention check "
+                   f"after the new docs' log data is {retention_secs}s old")
 
         # 6. Delete and recreate bucket, restore at T_before_add → expect only original count
         self._delete_and_recreate_bucket()
-        self.cont_bk_mgr.restore(
+        output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             cluster_host=cluster_host,
             location=self.continuous_backup_location,
             temp_dir=self.restore_temp_dir,
             timestamp=t_before_add,
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
+        self._assert_restore_succeeded(output, error, t_before_add)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(original_count)
         self.log.info(f"Restore at T_before_add verified: {original_count} docs (new docs absent)")
