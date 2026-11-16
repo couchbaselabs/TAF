@@ -349,7 +349,20 @@ class RebalanceOutTests(RebalanceBaseTest):
         _ = self.cluster_util.find_node_info(
             self.cluster.master,
             self.cluster.servers[self.nodes_init - 1])
+        # loadgen_docs() is async and bumps the expected num_items up front.
+        # Wait for the load to finish before validating doc counts or taking
+        # the pre-failover data snapshot, otherwise both race the in-flight
+        # creates/deletes.
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
         if not self.atomicity:
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster, load_using=self.load_docs_using)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
@@ -379,16 +392,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.assertTrue(reb_result, msg="Rebalance failed")
         self.cluster.nodes_in_cluster = new_server_list
 
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
         if not self.atomicity:
-            self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster, load_using=self.load_docs_using)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            for task, task_info in tasks_info.items():
-                self.assertFalse(
-                    task_info["ops_failed"],
-                    "Doc ops failed for task: {}".format(task.thread_name))
             self.bucket_util.verify_cluster_stats(
                 self.cluster, self.num_items,
                 check_ep_items_remaining=True,

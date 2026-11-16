@@ -44,6 +44,14 @@ class RebalanceStartStopTests(RebalanceBaseTest):
     def load_all_buckets(self, op_type, doc_load_percent):
         loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
+        # When a bucket_spec is used, the cluster is loaded via the untouched
+        # initial_load spec (doc_key="test_collections"). Overriding to self.key
+        # here would mutate a disjoint key space and upserts would insert new
+        # docs. Only override for the legacy (no bucket_spec) load path, which
+        # seeds data with self.key.
+        if self.spec_name is None:
+            loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
         loading_spec["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         if op_type == DocLoading.Bucket.DocOps.CREATE:
@@ -199,6 +207,16 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     CollectionBase.wait_for_cont_doc_load_to_complete(
                         self, cont_load_task)
                 self.sleep(5)
+            elif self.withMutationOps:
+                # Rebalance reached 100% before the 20%*i check above caught
+                # it mid-flight, so the "stop rebalance" branch above (and
+                # its waits) never ran. The mutation/history load started at
+                # the top of this iteration is still running - wait for it
+                # here too, or validate_docs() below counts against a bucket
+                # that is still being written to.
+                self.tasks_result(task)
+                CollectionBase.wait_for_cont_doc_load_to_complete(
+                    self, cont_load_task)
             self.task.jython_task_manager.get_task_result(rebalance)
             if self.cluster_util.is_cluster_rebalanced(rest):
                 self.validate_docs()
