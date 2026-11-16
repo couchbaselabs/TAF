@@ -2867,9 +2867,9 @@ class basic_ops(ClusterSetup):
         1. Gate: With fragmentation_backpressure_enabled, mutations are
            rejected with ETMPFAIL and each rejection is counted in both
            ep_fragmentation_tmp_ooms and ep_tmp_oom_errors
-        2. Recovery: Defragmenter runs in aggressive mode (sleep drops to
-           defragmenter_auto_min_sleep, age threshold 0), RSS returns under
-           the quota and mutations are accepted again
+        2. Recovery: Defragmenter runs in aggressive mode (age threshold 0)
+           so ep_defragmenter_num_moved goes up, RSS returns under the quota
+           and mutations are accepted again
 
         Fragmentation is built using two jemalloc size classes, so the
         holes in the first one are not refilled by the second:
@@ -3061,7 +3061,6 @@ class basic_ops(ClusterSetup):
 
             stats = client.stats()
             defrag_moved_before = int(stats["ep_defragmenter_num_moved"])
-            min_sleep = float(stats["ep_defragmenter_auto_min_sleep"])
             if int(stats["ep_fragmentation_tmp_ooms"]) != frag_ooms_at_start:
                 self.log_failure("ep_fragmentation_tmp_ooms moved while "
                                  "fragmentation_backpressure_enabled=false")
@@ -3092,28 +3091,27 @@ class basic_ops(ClusterSetup):
 
             # Recovery: With max age threshold (255) the normal mode cannot
             # move anything, so num_moved going up proves the aggressive
-            # mode (age threshold 0) ran
+            # mode (age threshold 0) ran. num_moved never goes down, so a
+            # slow poll cannot miss it.
+            # ep_defragmenter_sleep_time is not checked: the recovery sleep
+            # (defragmenter_critical_sleep) is used only while RSS is over
+            # quota, which a single defragmenter run can end within a few
+            # ms. kv_engine's HighFragmentation test dropped the same check
+            # for this race (MB-74261)
             self.log.info("Enabling defragmenter to recover")
             set_flush_param("defragmenter_age_threshold", 255)
             set_flush_param("defragmenter_enabled", "true")
             last_seen = {}
 
-            def in_aggressive_mode():
-                defrag_stats = client.stats()
+            def recovery_ran():
                 last_seen["moved"] = \
-                    int(defrag_stats["ep_defragmenter_num_moved"])
-                last_seen["sleep"] = \
-                    float(defrag_stats["ep_defragmenter_sleep_time"])
-                return last_seen["moved"] > defrag_moved_before \
-                    and last_seen["sleep"] <= min_sleep
+                    int(client.stats()["ep_defragmenter_num_moved"])
+                return last_seen["moved"] > defrag_moved_before
 
-            # Min sleep lasts only ~min_sleep secs, so poll at min_sleep/10
-            if not wait_for(in_aggressive_mode, min_sleep / 10):
+            if not wait_for(recovery_ran):
                 self.fail("Defragmenter not seen in aggressive mode. "
                           f"num_moved={last_seen.get('moved')} "
-                          f"(before={defrag_moved_before}), "
-                          f"sleep_time={last_seen.get('sleep')} "
-                          f"(min={min_sleep})")
+                          f"(before={defrag_moved_before})")
             if not wait_for(lambda: arena_memory()[0] <= quota):
                 self.fail("Resident did not return under quota. "
                           f"quota={quota}, resident={arena_memory()[0]}")
