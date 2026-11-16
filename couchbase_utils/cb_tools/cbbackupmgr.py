@@ -406,10 +406,11 @@ class CbBackupMgr(CbCmdBase):
 
         return output, error
 
-    def generate_docs(self, num_docs, bucket_name, size, cluster_host=None,
-                       obj_staging_dir=None):
+    def generate_docs(self, num_docs, bucket_name, size, cluster_host=None):
         """
         Execute cbbackupmgr generate command to create documents in a bucket
+
+        No object-store or KMS flags: generate rejects them.
 
         :param num_docs int: Number of documents to generate
         :param bucket_name str: Name of the bucket to generate documents in
@@ -427,10 +428,6 @@ class CbBackupMgr(CbCmdBase):
             self.username, self.password, size)
 
         cmd += self.cli_flags
-
-        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
-
-        cmd = self._append_km_flags(cmd)
 
         self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)

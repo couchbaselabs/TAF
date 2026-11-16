@@ -30,9 +30,9 @@ model: inherit
 
 - Covers `backup`, `create_repo`, `worm`, `info`, `list_backups`, `restore`, `remove`, `generate_docs`, `merge`, `examine`, `collect_logs`.
 - `__init__` takes optional `cloud_provider` (any `couchbase_utils.cloud_provider_utils` provider, e.g. `AWSProvider`).
-- If set, every method above (except `merge`) appends `cloud_provider.get_cbbackupmgr_flags(self.shellConn)` — the provider gets the shell connection so providers needing a remote-staged file (e.g. `GCPProvider`) can stage it on the node the command actually runs on.
-- Each of those methods also takes `obj_staging_dir=None` as a **per-call** param (not stored on instance) — `--obj-staging-dir <dir>` added only when both `cloud_provider` is injected AND `obj_staging_dir` is passed.
-- `merge()` takes `obj_staging_dir` too but is NOT gated by `cloud_provider` and never appends provider flags.
+- If set, every method above except `generate_docs` appends `cloud_provider.get_cbbackupmgr_flags(self.shellConn)` — the provider gets the shell connection so providers needing a remote-staged file (e.g. `GCPProvider`) can stage it on the node the command actually runs on.
+- `--obj-staging-dir <dir>` comes from `obj_staging_dir` passed to `__init__`; each of those methods also takes `obj_staging_dir=None` to override it for one call. Both flag sets go through `_append_obj_store_flags()`.
+- `generate_docs()` adds no object-store or KMS flags: `cbbackupmgr generate` rejects them (`Unknown flag: --obj-staging-dir`).
 - No more `aws_region` param / `prepare_command()` / `_normalise_aws_region()` — the old `AWS_DEFAULT_REGION`/`AWS_REGION` env-var-prefix injection was removed in favor of the `cloud_provider` abstraction.
 
 ```python

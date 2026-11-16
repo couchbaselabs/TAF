@@ -452,9 +452,11 @@ class WormBackupBase(ContinuousBackupBase):
         baseline = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
         output, error = self.backup_mgr.generate_docs(
-            num_docs=num_docs, bucket_name=self.bucket.name, size=doc_size,
-            obj_staging_dir=self.obj_staging_dir_cbbackup)
-        self._assert_command_success(output, error)
+            num_docs=num_docs, bucket_name=self.bucket.name, size=doc_size)
+        # A rejected generate (e.g. unknown flag) prints to stdout with an
+        # empty stderr, so require the success line
+        self._assert_command_success(
+            output, error, expected_text="Generate completed successfully")
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets)
         expected_count = baseline + num_docs
