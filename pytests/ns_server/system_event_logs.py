@@ -87,6 +87,40 @@ class SystemEventLogs(ClusterSetup):
             if failures:
                 self.fail(failures)
 
+    @staticmethod
+    def __get_kv_service_name(node):
+        """
+        Name used by ns_server for memcached process in service events.
+        Renamed from 'memcached' -> 'kv' in 8.0 (MB-59704)
+        """
+        version = RestConnection(node).get_nodes_version()
+        if int(version.split(".")[0]) >= 8:
+            return "kv"
+        return "memcached"
+
+    def __validate_only_param_updated(self, old_settings, new_settings,
+                                      updated_param):
+        """
+        Validate that 'updated_param' differs between old/new settings
+        and that all other params remain unchanged
+        """
+        if updated_param not in new_settings:
+            self.fail("'%s' missing in new_settings: %s"
+                      % (updated_param, new_settings))
+        if old_settings.get(updated_param) == new_settings[updated_param]:
+            self.fail("'%s' not updated. Old %s, New %s"
+                      % (updated_param, old_settings, new_settings))
+        diff = dict()
+        for param in set(old_settings.keys()) | set(new_settings.keys()):
+            if param == updated_param:
+                continue
+            if old_settings.get(param) != new_settings.get(param):
+                diff[param] = (old_settings.get(param),
+                               new_settings.get(param))
+        if diff:
+            self.fail("Unexpected changes apart from '%s' {param: (old, new)}"
+                      ": %s" % (updated_param, diff))
+
     def __generate_random_event(self, components, severities, description):
         component = choice(components)
         return {
@@ -108,6 +142,27 @@ class SystemEventLogs(ClusterSetup):
             "ps -ef | grep \"%s \" | grep -v grep | awk '{print $2}'"
             % process_name)
         return process_id[0].strip()
+
+    def __wait_for_event(self, event_id, since_time, timeout=120):
+        """
+        Wait for the latest event with 'event_id' logged after 'since_time'.
+        Picking the last cluster event blindly is racy, since other events
+        (Eg: Bucket online) can get logged in between
+        """
+        end_time = time() + timeout
+        while time() < end_time:
+            events = self.event_rest_helper.get_events(
+                server=self.cluster.master, since_time=since_time,
+                events_count=-1)["events"]
+            events = [event for event in events
+                      if event[Event.Fields.EVENT_ID] == event_id]
+            if events:
+                return max(events,
+                           key=lambda event: event[Event.Fields.TIMESTAMP])
+            self.sleep(1, "Waiting for event_id %s" % event_id,
+                       log_type="infra")
+        self.fail("Event_id %s not seen since %s within %s seconds"
+                  % (event_id, since_time, timeout))
 
     def get_last_event_from_cluster(self):
         return self.event_rest_helper.get_events(
@@ -718,8 +773,14 @@ class SystemEventLogs(ClusterSetup):
         users = [bucket_admin, ro_admin]
         roles = [bucket_admin_roles, ro_admin_roles]
 
-        rbac_util.remove_user_role([user['id'] for user in users],
-                                   rest_connection)
+        # Best-effort cleanup of stale users from previous runs.
+        # delete_builtin_user() raises "Unknown user." if user doesn't exist
+        for user in users:
+            try:
+                rbac_util.remove_user_role([user['id']], rest_connection)
+            except Exception as e:
+                if "Unknown user" not in str(e):
+                    raise
         self.log.info("Creating required users for testing")
         rbac_util.create_user_source(users, 'builtin', self.cluster.master)
         status = rbac_util.add_user_role(roles, rest_connection, 'builtin')
@@ -779,11 +840,17 @@ class SystemEventLogs(ClusterSetup):
         # Crash memcached and xdcr
         for p_name in ["memcached", "goxdcr"]:
             node_ip, pid = crash_process(p_name, self.cluster.kv_nodes)
+            service_name = p_name
+            if p_name == "memcached":
+                service_name = self.__get_kv_service_name(
+                    [node for node in self.cluster.kv_nodes
+                     if node.ip == node_ip][0])
             self.system_events.add_event(
-                NsServerEvents.service_crashed(node_ip, p_name, pid,
+                NsServerEvents.service_crashed(node_ip, service_name, pid,
                                                exit_status))
             self.system_events.add_event(
-                NsServerEvents.service_started(node_ip, {"name": p_name}))
+                NsServerEvents.service_started(node_ip,
+                                               {"name": service_name}))
 
         # Crash cbq-engine
         p_name = "cbq-engine"
@@ -1099,9 +1166,9 @@ class SystemEventLogs(ClusterSetup):
         fo_type = self.input.param("failover_type",
                                    CbServer.Failover.Type.AUTO)
         auto_fo_threshold = 5
-        auto_fo_reason = "The data service did not respond for the duration " \
-                         "of the auto-failover threshold. Either none of " \
-                         "the buckets have warmed up or there is an " \
+        # Reason text updated as part of MB-52466
+        auto_fo_reason = "The data service did not respond. Either none " \
+                         "of the buckets have warmed up or there is an " \
                          "issue with the data service. "
         rest = RestConnection(self.cluster.master)
         if fo_type == "auto":
@@ -1506,8 +1573,6 @@ class SystemEventLogs(ClusterSetup):
             "num_replicas": bucket.replicaNumber,
             "eviction_policy": eviction_policy_val
         }
-        if bucket.storageBackend == Bucket.StorageBackend.magma:
-            old_settings["storage_quota_percentage"] = 10
         if bucket.bucketType == Bucket.Type.EPHEMERAL:
             old_settings["eviction_policy"] = "no_eviction"
             old_settings["storage_mode"] = Bucket.Type.EPHEMERAL
@@ -1554,27 +1619,28 @@ class SystemEventLogs(ClusterSetup):
                 self.fail("Mismatch in %s. Expected %s != %s Actual"
                           % (param, exp_val, act_val))
 
-        act_val = event[Event.Fields.EXTRA_ATTRS]["old_settings"]
+        # ns_server logs the complete bucket props (not just the delta)
+        # in old/new_settings, and the set of props grows across releases.
+        # So validate the known params as a subset and verify that only
+        # the updated param differs between old and new settings.
+        act_old = event[Event.Fields.EXTRA_ATTRS]["old_settings"]
+        act_new = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
         for param in ["ram_quota", "purge_interval"]:
-            if param not in act_val.keys():
+            if param not in act_old:
                 self.fail("'%s' missing in old_settings: %s"
-                          % (param, act_val))
-            act_val.pop(param)
-        if old_settings != act_val:
-            self.fail("Old settings' value mismatch. Expected %s != %s Actual"
-                      % (old_settings, act_val))
-
-        expected_keys = 12
-        if bucket.storageBackend == Bucket.StorageBackend.magma:
-            expected_keys += 1
-        elif bucket.bucketType == Bucket.Type.EPHEMERAL:
-            expected_keys -= 1
-
-        act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
-        act_val_keys = act_val.keys()
-        if len(act_val_keys) != expected_keys \
-                or 'ram_quota' not in act_val_keys:
-            self.fail("Mismatch in new-setting params: %s" % act_val_keys)
+                          % (param, act_old))
+        if bucket.storageBackend == Bucket.StorageBackend.magma \
+                and "storage_quota_percentage" not in act_old:
+            self.fail("'storage_quota_percentage' missing in old_settings: "
+                      "%s" % act_old)
+        mismatch = dict()
+        for param, exp_val in old_settings.items():
+            if param not in act_old or act_old[param] != exp_val:
+                mismatch[param] = (exp_val, act_old.get(param))
+        if mismatch:
+            self.fail("Old settings' value mismatch {param: (exp, act)}: %s"
+                      % mismatch)
+        self.__validate_only_param_updated(act_old, act_new, "ram_quota")
 
         prev_uuid = self.get_last_event_from_cluster()[Event.Fields.UUID]
 
@@ -1593,10 +1659,9 @@ class SystemEventLogs(ClusterSetup):
                 event = None
 
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
-        act_val_keys = act_val.keys()
-        if len(act_val_keys) != expected_keys \
-                or 'num_replicas' not in act_val_keys:
-            self.fail("Mismatch in new-setting params: %s" % act_val_keys)
+        self.__validate_only_param_updated(
+            event[Event.Fields.EXTRA_ATTRS]["old_settings"], act_val,
+            "num_replicas")
         if event[Event.Fields.EXTRA_ATTRS]["old_settings"]["num_replicas"] \
                 != self.num_replicas-1:
             self.fail("Mismatch in old replica val. Expected %s != %s Actual"
@@ -1628,9 +1693,27 @@ class SystemEventLogs(ClusterSetup):
             {"max_connections": 2000},
             {"max_connections": 2001})
         event["otp_node"] = "ns_1@" + self.cluster.master.ip
+
+        # ns_server logs the complete memcached config in old/new_settings
+        # (Eg: 8.0+ adds magma_blind_write_optimisation_enabled by default).
+        # Validate the updated key + ensure other keys remain unchanged
+        act_extra = last_event.pop(Event.Fields.EXTRA_ATTRS, dict())
+        exp_extra = event.pop(Event.Fields.EXTRA_ATTRS)
         if last_event != event:
             self.fail("Mismatch in event. Expected %s != %s Actual"
                       % (event, last_event))
+        act_old = act_extra.get("old_settings", dict())
+        act_new = act_extra.get("new_settings", dict())
+        for key, settings in [("old_settings", act_old),
+                              ("new_settings", act_new)]:
+            exp_val = exp_extra[key]["max_connections"]
+            if settings.get("max_connections") != exp_val:
+                self.fail("%s max_connections mismatch. Expected %s != %s "
+                          "Actual :: %s" % (key, exp_val,
+                                            settings.get("max_connections"),
+                                            act_extra))
+        self.__validate_only_param_updated(act_old, act_new,
+                                           "max_connections")
 
     def test_auto_reprovisioning(self):
         """
@@ -1683,6 +1766,8 @@ class SystemEventLogs(ClusterSetup):
         self.log.critical("Memcached pid=%s" % p_id)
 
         if rebalance_failure:
+            reb_start_time = EventHelper.get_timestamp_format(
+                datetime.utcnow())
             rebalance_task = self.task.async_rebalance(
                 self.cluster, to_add=[], to_remove=eject_nodes)
             self.system_events.add_event(
@@ -1690,27 +1775,26 @@ class SystemEventLogs(ClusterSetup):
                     self.cluster.master.ip, active_nodes=active_nodes,
                     keep_nodes=keep_nodes, eject_nodes=eject_ns_nodes,
                     delta_nodes=empty_list, failed_nodes=empty_list))
-            self.sleep(5, "Wait for rebalance to start")
-            cluster_event["reb_start"] = self.get_last_event_from_cluster()
+            # async_rebalance() has internal sleeps before triggering the
+            # actual rebalance. Wait for the rebalance to start, else
+            # memcached gets killed before the rebalance is running
+            cluster_event["reb_start"] = self.__wait_for_event(
+                NsServer.RebalanceStarted, reb_start_time)
 
         shell.execute_command("kill -9 %s" % p_id)
         shell.disconnect()
 
         # Add required event to validate
         restarted_nodes = [node.ip]
+        kv_service_name = self.__get_kv_service_name(node)
         self.system_events.add_event(NsServerEvents.service_crashed(
-            node.ip, memcached_process, p_id, 137))
+            node.ip, kv_service_name, p_id, 137))
         self.system_events.add_event(
             NsServerEvents.service_started(node.ip,
-                                           {"name": memcached_process}))
+                                           {"name": kv_service_name}))
         if rebalance_failure:
-            reb_fail_event = None
-            max_retry_time = time() + 5
-            while time() < max_retry_time and reb_fail_event is None:
-                reb_fail_event = self.get_last_event_from_cluster()
-                if reb_fail_event["event_id"] != NsServer.RebalanceFailure:
-                    reb_fail_event = None
-            cluster_event["reb_failed"] = reb_fail_event
+            cluster_event["reb_failed"] = self.__wait_for_event(
+                NsServer.RebalanceFailure, reb_start_time)
 
         if rebalance_failure:
             self.task_manager.get_task_result(rebalance_task)
@@ -1729,10 +1813,11 @@ class SystemEventLogs(ClusterSetup):
                                             bucket.uuid))
 
         self.sleep(30, "Wait for bucket online before rebalancing")
+        reb_start_time = EventHelper.get_timestamp_format(datetime.utcnow())
         rebalance_task = self.task.async_rebalance(self.cluster, [], [])
-        self.sleep(2, "Wait for rebalance to start")
         if not rebalance_failure:
-            cluster_event["reb_start"] = self.get_last_event_from_cluster()
+            cluster_event["reb_start"] = self.__wait_for_event(
+                NsServer.RebalanceStarted, reb_start_time)
         self.task_manager.get_task_result(rebalance_task)
 
         self.system_events.add_event(
@@ -1745,7 +1830,8 @@ class SystemEventLogs(ClusterSetup):
                 self.cluster.master.ip, active_nodes=active_nodes,
                 keep_nodes=active_nodes, eject_nodes=empty_list,
                 delta_nodes=empty_list, failed_nodes=empty_list))
-        cluster_event["reb_success"] = self.get_last_event_from_cluster()
+        cluster_event["reb_success"] = self.__wait_for_event(
+            NsServer.RebalanceComplete, reb_start_time)
 
         # Validate all cluster events before validating event specific fields
         self.__validate(self.system_events.test_start_time)
