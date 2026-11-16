@@ -1134,7 +1134,6 @@ class ClusterUtils:
     def change_env_variables(self, cluster):
         for server in cluster.servers:
             remote_client = RemoteMachineShellConnection(server)
-            env_dict = dict()
             vb_on_node, _ = remote_client.execute_command("grep ^COUCHBASE_NUM_VBUCKETS \
             /opt/couchbase/bin/couchbase-server | cut -d \"=\" -f 2",)
             if vb_on_node:
@@ -1143,11 +1142,8 @@ class ClusterUtils:
                 vb_on_node = 1024
             if cluster.vbuckets != vb_on_node:
                 self.log.critical(f"{server.ip} :: Updating COUCHBASE_NUM_VBUCKETS={cluster.vbuckets}")
-                env_dict["COUCHBASE_NUM_VBUCKETS"] = cluster.vbuckets
-            if cluster.env_variables:
-                env_dict.update(cluster.env_variables)
-            if len(env_dict) >= 1:
-                remote_client.change_env_variables(env_dict)
+                remote_client.change_env_variables(
+                    {"COUCHBASE_NUM_VBUCKETS": cluster.vbuckets})
             remote_client.disconnect()
             self.log.debug("========= CHANGED ENVIRONMENT SETTING ===========")
 

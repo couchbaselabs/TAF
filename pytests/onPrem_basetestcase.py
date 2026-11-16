@@ -223,9 +223,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.obj_staging_dir_cont_bkp = self.input.param("obj_staging_dir_cont_bkp", "/data/staging_cont_bkp")
         else:
             self.obj_staging_dir_cont_bkp = self.obj_staging_dir_cbbackup
-        self.retention_test = self.input.param("retention_test", False)
-        self.retention_check_mins = self.input.param("retention_check_mins", 5)
-        self.retention_period_unsafe = self.input.param("retention_period_unsafe", "5m")
         self.continuous_backup_enabled = self.input.param("continuous_backup_enabled", False)
         self.continuous_backup_interval = self.input.param("continuous_backup_interval", 5)
         self.continuous_backup_retention_period = self.input.param("continuous_backup_retention_period", 1440)
@@ -600,9 +597,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 if result == "unknown pool":
                     self.skip_cluster_reset = False
                 if not self.skip_cluster_reset:
-                    if self.retention_test:
-                        cluster.env_variables["CB_CONTBK_RETENTION_CHECK_MINS"] = self.retention_check_mins
-                        cluster.env_variables["CB_CONTBK_RETENTION_PERIOD_UNSAFE"] = self.retention_period_unsafe
                     services = None
                     if self.services_init:
                         services = str(self.services_init.split("-")[0]) \

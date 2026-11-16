@@ -1,40 +1,145 @@
 import importlib
+import re
 import time
+from datetime import timedelta
 
 from backup_restore.continuous_backup.continuous_backup_base import ContinuousBackupBase
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from StatsLib.StatsOperations import StatsHelper
 from pytests.bucket_collections.collections_base import CollectionBase
 from py_constants import CbServer
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 class ContinuousBackupRetentionTest(ContinuousBackupBase):
+    # cont_backup runs retention hourly and consolidates metadata 30 min
+    # after each run (continuousBackupRetentionPeriod only sets the age at
+    # which data is deleted); the longest a wait for either may take
+    RETENTION_RUN_PERIOD_SECS = 60 * 60
+    CONT_BACKUP_LOG = "/opt/couchbase/var/lib/couchbase/logs/cont_backup.log"
+    # cont_backup.log messages; the bucket appears as bucket=<bucket>-<uuid>
+    WORKER_CREATED_MSG = "creating retention worker"
+    # After each run (after RETENTION_FAILED_MSG if it failed)
+    RETENTION_RAN_MSG = "retention worker next run time"
+    RETENTION_FAILED_MSG = "could not do retention"
+    # Per worker after consolidation, with failed=<true|false>
+    CONSOLIDATION_RAN_MSG = "finished running consolidation on worker"
+
     def setUp(self):
         super(ContinuousBackupRetentionTest, self).setUp()
         self.log.info(f"Loading spec from: {self.spec_name}")
         spec_module = importlib.import_module(f"bucket_collections.bucket_templates.{self.spec_name}")
         self.spec = spec_module.spec
 
-        # Override retention periods via environment variables for testing if needed
-        # self.cluster.set_env_variable(self.cluster.master, "CB_CONTBK_RETENTION_PERIOD_UNSAFE", "5m")
-        # self.cluster.set_env_variable(self.cluster.master, "CB_CONTBK_RETENTION_CHECK", "5m")
+    def _cont_backup_log_lines(self, server, bucket_log_name, *msgs):
+        """
+        (time, line) pairs, oldest first, of cont_backup.log lines on
+        `server` matching any of `msgs` for bucket `bucket_log_name`.
+        """
+        msg_patterns = " ".join(f"-e 'msg=\"{msg}\"'" for msg in msgs)
+        shell = RemoteMachineShellConnection(server)
+        try:
+            output, _ = shell.execute_command(
+                f"grep -h -F {msg_patterns} {self.CONT_BACKUP_LOG}* "
+                f"| grep -F 'bucket={bucket_log_name}'")
+        finally:
+            shell.disconnect()
+        lines = []
+        for line in output:
+            # Every log line starts with "time=<RFC 3339 timestamp> "
+            if not line.startswith("time="):
+                continue
+            timestamp = line.split(" ", 1)[0][len("time="):]
+            lines.append((self._parse_cbcontbk_timestamp(timestamp), line))
+        return sorted(lines)
 
-    def tearDown(self):
-        # onPrem_basetestcase only resets CB_CONTBK_RETENTION_* env vars when
-        # cluster.vbuckets != 1024, which is never true for these on-prem
-        # clusters -- so the unsafe retention window this class sets on the
-        # node's couchbase-server environment would otherwise persist onto
-        # every later test that reuses the same nodes without going through
-        # initialize_cluster() again (e.g. ContinuousBackupTest, which runs
-        # right after this class and defaults skip_cluster_reset=True).
-        # Reset unconditionally here, before super().tearDown(), so a failure
-        # anywhere in the inherited teardown chain (e.g. bucket/scope cleanup
-        # after a failed retention-window restore) can never skip it.
-        if self.retention_test:
-            for cluster in self.cb_clusters.values():
-                self.cluster_util.reset_env_variables(cluster)
-            self.sleep(30, "Wait for couchbase-server to come back up "
-                           "after resetting env vars")
-        super(ContinuousBackupRetentionTest, self).tearDown()
+    def _wait_for_bucket_log(self, what, done_msg, failed_msg=None,
+                             after=None, timeout=None):
+        """
+        Wait until cont_backup on every KV node logs `done_msg` for
+        self.bucket at or after `after` (aware cluster-time datetime, or
+        None for any time). Return {node ip: [(time, line), ...]}, oldest
+        first.
+
+        Only the bucket's current UUID matches. A `failed_msg` line, or one
+        with failed=true, before the first `done_msg` fails the test.
+        """
+        status, content = BucketRestApi(self.cluster.master) \
+            .get_bucket_info(self.bucket.name)
+        if not status:
+            self.fail(f"Failed to get bucket info for {self.bucket.name}: "
+                      f"{content}")
+        bucket_log_name = f"{self.bucket.name}-{content['uuid']}"
+        msgs = [done_msg] + ([failed_msg] if failed_msg else [])
+        since = f" after {after.isoformat()}" if after else ""
+        if timeout is None:
+            timeout = self.RETENTION_RUN_PERIOD_SECS + 20 * 60
+        # `after` may still be ahead; nothing logged before it counts
+        deadline = max(time.time(), after.timestamp() if after else 0) \
+            + timeout
+        done = {}
+        while True:
+            for server in self.cluster.kv_nodes:
+                if server.ip in done:
+                    continue
+                lines = [(logged, line) for logged, line in
+                         self._cont_backup_log_lines(
+                             server, bucket_log_name, *msgs)
+                         if after is None or logged >= after]
+                matches = [(logged, line) for logged, line in lines
+                           if f'msg="{done_msg}"' in line]
+                # Only failures up to the first done_msg line count
+                until = matches[0][0] if matches else None
+                failed = [line for logged, line in lines
+                          if (until is None or logged <= until)
+                          and ((failed_msg and f'msg="{failed_msg}"' in line)
+                               or " failed=true" in line)]
+                if failed:
+                    self.fail(f"{what} for {bucket_log_name} failed on "
+                              f"{server.ip}: {failed[0]}")
+                if matches:
+                    done[server.ip] = matches
+            pending = [server.ip for server in self.cluster.kv_nodes
+                       if server.ip not in done]
+            if not pending:
+                logged_at = {ip: f"{matches[0][0].isoformat()} (first of "
+                                 f"{len(matches)}, last "
+                                 f"{matches[-1][0].isoformat()})"
+                             for ip, matches in done.items()}
+                self.log.info(f"{what} for {bucket_log_name}{since}: "
+                              f"{logged_at}")
+                return done
+            if time.time() > deadline:
+                self.fail(f"No {what.lower()} for {bucket_log_name} on "
+                          f"{pending}{since} within {timeout}s")
+            self.sleep(60, f"Waiting for {what.lower()} for "
+                           f"{bucket_log_name} on {pending}{since}")
+
+    def _retention_workers(self):
+        """
+        {node ip: (created, first_run)} for self.bucket's retention worker
+        on each KV node. cont_backup logs both once it gets the bucket's
+        continuous backup start event, possibly minutes after enabling.
+        """
+        created = self._wait_for_bucket_log(
+            "Retention worker creation", self.WORKER_CREATED_MSG,
+            timeout=15 * 60)
+        workers = {}
+        for ip, lines in created.items():
+            created_at, line = lines[-1]
+            first_run = re.search(r"firstRunTime=(\S+)", line).group(1)
+            workers[ip] = (created_at,
+                           self._parse_cbcontbk_timestamp(first_run))
+        return workers
+
+    def _wait_for_retention_run(self, after):
+        """
+        Wait for self.bucket's retention to run on every KV node at or after
+        `after`; return {node ip: run time}. A failed run fails the test.
+        """
+        ran = self._wait_for_bucket_log(
+            "Retention run", self.RETENTION_RAN_MSG, self.RETENTION_FAILED_MSG,
+            after=after)
+        return {ip: lines[0][0] for ip, lines in ran.items()}
 
     def _load_data_and_get_task(self, data_spec_name):
         self.log.info("Load docs using spec file %s" % data_spec_name)
@@ -139,41 +244,28 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
     def test_execution_scheduling(self):
         """TC-CONF-04: Execution Scheduling Validation
 
-        Retention trigger interval is controlled by CB_CONTBK_RETENTION_CHECK_MINS
-        (default 5 mins) set via environment variable.
+        On continuous backup start, each KV node creates the bucket's
+        retention worker and logs its first run time (firstRunTime), then
+        runs hourly. Check each node ran retention at that time.
         """
         self.log.info("Testing execution scheduling for retention")
 
-        # Wait for one full check cycle plus a 30s buffer for execution
-        wait_secs = self.retention_check_mins * 60 + 30
-        self.sleep(wait_secs, f"Waiting {wait_secs}s for retention check cycle to trigger")
+        workers = self._retention_workers()
+        first_runs = {ip: first_run
+                      for ip, (_, first_run) in workers.items()}
+        self.log.info(f"Retention first run times for {self.bucket.name}: "
+                      f"{first_runs}")
 
-        # 3. Check cont_backup.log on each node for "running retention consolidation"
-        log_path = "/opt/couchbase/var/lib/couchbase/logs/cont_backup.log"
-        retention_triggered = False
-        for server in self.cluster.servers:
-            shell = RemoteMachineShellConnection(server)
-            output, _ = shell.execute_command(
-                f"grep 'running retention consolidation' {log_path}"
-            )
-            shell.disconnect()
-            if output:
-                self.log.info(f"Found retention consolidation log entry on {server.ip}: {output[0]}")
-                retention_triggered = True
-                break
-
-        self.assertTrue(retention_triggered,
-                        f"No 'running retention consolidation' entry found in cont_backup.log "
-                        f"on any node after {wait_secs}s wait.")
+        ran_at = self._wait_for_retention_run(min(first_runs.values()))
+        # A run starts within seconds of its scheduled time
+        allowed_delay = timedelta(minutes=5)
+        for ip, first_run in first_runs.items():
+            self.assertTrue(
+                first_run <= ran_at[ip] <= first_run + allowed_delay,
+                f"{ip} ran retention for {self.bucket.name} at "
+                f"{ran_at[ip].isoformat()}, not within {allowed_delay} of "
+                f"its first run time {first_run.isoformat()}")
         self.log.info("Test completed successfully")
-
-    def _retention_period_secs(self):
-        """retention_period_unsafe (e.g. "5m", "1h") in seconds."""
-        value = str(self.retention_period_unsafe).strip()
-        units = {"s": 1, "m": 60, "h": 3600}
-        if value[-1] in units:
-            return int(value[:-1]) * units[value[-1]]
-        return int(value)
 
     def _delete_and_recreate_bucket(self):
         """Delete and recreate self.bucket using its original bucket object."""
@@ -238,9 +330,10 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.log.info("Testing retention Prometheus metrics")
         bucket_name = self.bucket.name
 
-        # Wait for at least one retention cycle plus a 30s buffer
-        wait_secs = self.retention_check_mins * 60 + 30
-        self.sleep(wait_secs, f"Waiting {wait_secs}s for retention cycle to complete before checking metrics")
+        # Wait for a retention run since continuous backup started
+        workers = self._retention_workers()
+        self._wait_for_retention_run(
+            min(created for created, _ in workers.values()))
 
         lines = self._get_contbk_metrics()
         self.assertTrue(lines, "No contbk_* metrics found on any KV node")
@@ -275,15 +368,16 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.log.info("All retention Prometheus metrics validated successfully")
 
     def test_retention_pitr_restore(self):
-        """Validate PITR restore before and after the retention period.
+        """Validate PITR restores within the retention period after
+        retention has run.
 
         Flow:
           1. Capture original doc count and a timestamp (T_before_add).
           2. Load 10000 additional docs.
           3. Wait for continuous backup interval so the new docs are captured.
-          4. Restore everything (no writes happen after this point, so
+          4. Wait for the bucket's next (hourly) retention run.
+          5. Restore everything (no writes happen after this point, so
              "everything" == T_after_backup); verify count = original + new docs.
-          5. Wait for the retention check cycle so retention runs at least once.
           6. Restore to a new bucket at T_before_add; verify count = original (new docs absent).
         """
         self.log.info("Starting test_retention_pitr_restore")
@@ -317,30 +411,22 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.log.info(f"Doc count after loading new docs: {count_with_new_docs}")
         self.assertGreater(count_with_new_docs - original_count, 0,
                            "No new docs were added; check the data spec")
-        load_done_time = time.time()
 
         # 3. Wait for continuous backup to catch up to the new docs. Poll
         # rather than a fixed sleep -- see _wait_for_continuous_backup_catchup
         # for why a fixed interval isn't always enough.
         self._wait_for_continuous_backup_catchup(mutation_time)
 
-        # 4. Delete and recreate bucket, restore everything → expect original + new docs.
+        # 4. Wait for retention while the bucket exists: deleting it stops
+        # retention, and the recreated bucket has no continuous backup.
+        self._wait_for_retention_run(self._parse_cbcontbk_timestamp(
+            self.cont_bk_mgr.get_cluster_timestamp()))
+
+        # 5. Delete and recreate bucket, restore everything → expect original + new docs.
         # No further writes happen after count_with_new_docs was captured, so
         # "everything" cbcontbk has is bounded by it -- no need for a specific
         # timestamp here (and "now" risks landing outside the backup's covered
         # range, since cbcontbk now rejects timestamps it doesn't contain).
-        # Retention deletes log data older than retention_period_unsafe at
-        # its next check, even past the traditional backup, so the new docs'
-        # log data must still be younger than that.
-        retention_secs = self._retention_period_secs()
-        since_load = time.time() - mutation_time
-        self.log.info(f"Restoring everything {int(since_load)}s after the "
-                      f"load started; retention period is {retention_secs}s")
-        if since_load >= retention_secs - 60:
-            self.fail(f"The new docs' log data is {int(since_load)}s old, "
-                      f"within a minute of the {retention_secs}s retention "
-                      f"period, so retention may delete it before or during "
-                      f"this restore. Raise retention_period_unsafe.")
         self._delete_and_recreate_bucket()
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
@@ -354,16 +440,6 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_with_new_docs)
         self.log.info(f"Restore of everything verified: {count_with_new_docs} docs")
-
-        # 5. Wait until retention has run after the new docs' log data aged
-        # out, so the restore below runs after it was deleted.
-        retention_wait_secs = max(
-            self.retention_check_mins * 60 + 30,
-            int(load_done_time + retention_secs
-                + self.retention_check_mins * 60 + 30 - time.time()))
-        self.sleep(retention_wait_secs,
-                   f"Waiting {retention_wait_secs}s for a retention check "
-                   f"after the new docs' log data is {retention_secs}s old")
 
         # 6. Delete and recreate bucket, restore at T_before_add → expect only original count
         self._delete_and_recreate_bucket()
@@ -506,9 +582,11 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
           1. Load data repeatedly (load, sleep, repeat) for ~1.5x the continuous backup retention period so
              continuous backup keeps capturing and retention keeps running.
           2. Capture a cluster timestamp after the ~1.5x retention period load.
-          3. Create and flush the restore bucket.
-          4. Attempt a full restore at that timestamp.
-          5. The restore must FAIL with the message:
+          3. Wait for a retention run after the first load ages past the
+             retention period (runs are hourly), so it has been deleted.
+          4. Create and flush the restore bucket.
+          5. Attempt a full restore at that timestamp.
+          6. The restore must FAIL with the message:
              "cannot restore as retention has run on the continuous backup
              and deleted data since the last traditional backup".
         """
@@ -527,6 +605,8 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         retention_period = int(params.get("continuousBackupRetentionPeriod"))
         self.log.info(f"Retrieved continuousBackupRetentionPeriod: {retention_period}")
         total_load_secs = retention_period * 1.5 * 60 * 60 # 1.5x the retention period in seconds
+        first_load_at = self._parse_cbcontbk_timestamp(
+            self.cont_bk_mgr.get_cluster_timestamp())
         deadline = time.time() + total_load_secs
         iteration = 0
         while time.time() < deadline:
@@ -548,16 +628,21 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         timestamp = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"Captured timestamp after ~{int(total_load_secs / 60)} min of loading: {timestamp}")
 
-        # 3. Create and flush the restore bucket.
+        # 3. Retention deletes aged-out data only when it runs, so wait for
+        #    a run after the first load ages out.
+        self._wait_for_retention_run(
+            first_load_at + timedelta(hours=retention_period))
+
+        # 4. Create and flush the restore bucket.
         restore_bucket_name = f"restore_bucket_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
         self._flush_restore_bucket(restore_bucket_name)
 
-        # 4. Attempt the restore (expected to fail, so skip the success assert).
+        # 5. Attempt the restore (expected to fail, so skip the success assert).
         output, error = self._restore_entire_bucket(
             timestamp, restore_bucket_name, assert_success=False)
 
-        # 5. Assert the restore failed with the retention-deleted-data message.
+        # 6. Assert the restore failed with the retention-deleted-data message.
         expected_msg = ("cannot restore as retention has run on the continuous "
                         "backup and deleted data since the last traditional "
                         "backup")
@@ -580,7 +665,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         restore into that aged-out window has to fail rather than silently
         returning a partial dataset.
 
-        Flow (R = effective retention period, e.g. 60 min):
+        Flow (R = the bucket's continuousBackupRetentionPeriod, e.g. 60 min):
           1. Load 3 times, sleeping 10 min after each, then idle out the rest
              of a 0.75 * R (45 min) window. A timestamp is captured after the
              first load -- data that will be well past R by the end.
@@ -588,7 +673,8 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
           3. Wait 0.25 * R + 30 min, so total elapsed is R + 30 min: everything
              from step 1 is now older than the retention period.
           4. Re-enable continuous backup and load one more cycle, then wait for
-             a retention check cycle so retention runs on the older data.
+             the bucket's next (hourly) retention run, so it covers the
+             older data.
           5. Restore at the early timestamp. It must FAIL with:
              "cannot restore as retention has run on the continuous backup
              and deleted data since the last traditional backup".
@@ -641,7 +727,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         # spent loading plus 0.25 * R gets to R, then the overshoot on top.
         disabled_wait_secs = retention_secs * 0.25 + overshoot_secs
         self.log.info(
-            f"Effective retention {int(retention_secs / 60)} min: loading for "
+            f"Retention period {int(retention_secs / 60)} min: loading for "
             f"{int(load_window_secs / 60)} min, then waiting "
             f"{int(disabled_wait_secs / 60)} min with continuous backup "
             f"disabled ({int(overshoot_secs / 60)} min past the retention "
@@ -729,6 +815,8 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.log.info(f"Re-enabling continuous backup on bucket {self.bucket.name}")
         self.bucket_util.update_bucket_property(
             self.cluster.master, self.bucket, continuous_backup_enabled=True)
+        reenabled_at = self._parse_cbcontbk_timestamp(
+            self.cont_bk_mgr.get_cluster_timestamp())
         self.sleep(30, "Wait for continuous backup to be re-enabled")
 
         self._load_data_and_get_task(self.data_spec_name)
@@ -738,11 +826,10 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
                    f"continuous backup to capture the post-re-enable load")
 
         # Retention has to actually run on the now-stale data before the
-        # restore is attempted, otherwise this asserts nothing.
-        retention_wait_secs = self.retention_check_mins * 60 + 30
-        self.sleep(retention_wait_secs,
-                   f"Waiting {retention_wait_secs}s for a retention check cycle "
-                   f"to run over the pre-disable data")
+        # restore is attempted, otherwise this asserts nothing. Step 1's
+        # data is already past the retention period, so the first run
+        # deletes it.
+        ran_at = self._wait_for_retention_run(reenabled_at)
 
         # 5. Restore at the early timestamp -- must fail, retention deleted it.
         restore_bucket_name = f"restore_bucket_{int(time.time())}"
@@ -770,7 +857,10 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         # 6. Retention must have actually run by now -- the SSTable deletion,
         #    the metadata consolidation that reflects it, and the file count
         #    proving files really were reclaimed rather than a run just being
-        #    counted.
+        #    counted. Consolidation follows a run by 30 min, so wait for it.
+        self._wait_for_bucket_log(
+            "Retention consolidation", self.CONSOLIDATION_RAN_MSG,
+            after=min(ran_at.values()))
         lines = self._get_contbk_metrics()
         self.assertTrue(lines, "No contbk_* metrics found on any KV node at the "
                                "end of the test")
