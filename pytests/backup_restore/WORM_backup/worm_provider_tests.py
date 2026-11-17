@@ -32,18 +32,31 @@ class WormProviderTest(WormBackupBase):
     def test_gcp_retention_lock_is_applied(self):
         self._assert_object_has_retention("GCP")
 
+    def _gcp_composite_parts(self, helper):
+        # GCS data files are assembled from parts named
+        # "<key>-mpu-<upload id>-<part id>"
+        return helper.find_relative_paths(
+            self.backup_archive_dir, self.backup_repo_name, contains="-mpu-")
+
     def test_gcp_orphaned_composite_parts_are_cleaned_or_ignored(self):
         helper = self._require_storage_provider(
             "GCP", "GCP orphaned composite parts validation")
         self._create_worm_repo()
         expected_count = self._load_data_and_return_count()
         self._interrupt_background_backup_after_objects()
-        part_paths_before_resume = helper.find_relative_paths(
-            self.backup_archive_dir, self.backup_repo_name, contains="part")
-        self.log.info("GCP part-like objects before resume: %s"
-                      % part_paths_before_resume)
+        parts_before = self._gcp_composite_parts(helper)
+        self.log.info(f"GCP composite part objects before resume: "
+                      f"{len(parts_before)}, e.g. {parts_before[:5]}")
 
-        self._run_backup(resume=True)
+        # 8.5.0-1442 refused this resume ("can't be resumed and must be
+        # purged"); log the parts before asserting
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name, resume=True,
+            no_progress_bar=True, obj_staging_dir=self.obj_staging_dir_cbbackup)
+        parts_after = self._gcp_composite_parts(helper)
+        self.log.info(f"GCP composite part objects after resume: "
+                      f"{len(parts_after)}, e.g. {parts_after[:5]}")
+        self._assert_command_success(output, error)
         self._assert_repo_reports_worm()
 
         restore_bucket_name = self._create_restore_bucket("gcp_parts")
