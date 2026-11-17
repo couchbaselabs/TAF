@@ -666,7 +666,7 @@ class DocLoaderUtils(object):
                         else:
                             result = dict()
                             result['status'] = True
-                            for tup in failed_doc["path_val"]:
+                            for tup in failed_doc.get("path_val", []):
                                 if op_type in [DocLoading.Bucket.SubDocOps.LOOKUP,
                                                DocLoading.Bucket.SubDocOps.REMOVE]:
                                     tup = tup[0]

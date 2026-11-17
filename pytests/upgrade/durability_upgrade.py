@@ -212,7 +212,8 @@ class UpgradeTests(UpgradeBase):
         if self.include_indexing_query:
             self.create_indexes_pre_upgrade()
 
-        self.validate_encryption_operations(expected_to_fail=True)
+        if float(self.initial_version[:3]) < 8.0:
+            self.validate_encryption_operations(expected_to_fail=True)
 
         self.PrintStep("Upgrade begins...")
         for upgrade_version in self.upgrade_chain:
@@ -226,7 +227,8 @@ class UpgradeTests(UpgradeBase):
 
             ### Each node in the cluster is upgraded iteratively ###
             while node_to_upgrade is not None:
-                self.validate_encryption_operations(expected_to_fail=True)
+                if float(self.initial_version[:3]) < 8.0:
+                    self.validate_encryption_operations(expected_to_fail=True)
                 if self.include_indexing_query:
                     self.indexes = set()
                     sdk_client = SDKClient(

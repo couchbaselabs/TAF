@@ -207,8 +207,19 @@ class MagmaDiskFull(MagmaBaseTest):
         mem_only_items = self.input.param("rollback_items", 100000)
         self.gen_read = copy.deepcopy(self.gen_create)
 
+        # NodeA is the master: it holds the mem-only items and gets its
+        # memcached killed. NodeB is any other node: its replica vBuckets must
+        # be unable to persist, which is what the full disk arranges.
+        # cluster.nodes_in_cluster is populated from the order the REST API
+        # lists the nodes in (Rebalance_task -> cluster.nodes_in_cluster), so
+        # neither [0] nor [-1] is reliably the master - pick the node by ip.
+        node_b = [node for node in self.cluster.nodes_in_cluster
+                  if node.ip != self.cluster.master.ip]
+        self.assertTrue(node_b, "test needs at least 2 nodes in the cluster")
+        node_b = node_b[0]
+
         # Fill Disk on nodeB leaving 100MB
-        self.fill_disk(self.cluster.nodes_in_cluster[-1], free=100)
+        self.fill_disk(node_b, free=100)
 
         # Stopping persistence on NodeA
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -224,9 +235,10 @@ class MagmaDiskFull(MagmaBaseTest):
 
         self.loadgen_docs(_sync=True, retry_exceptions=self.retry_exceptions)
 
-        ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
-                             mem_only_items}
-        #ep_data_write_failed = {self.cluster.nodes_in_cluster[-1]: 0}
+        # The mem-only items are queued on NodeA, the node persistence was
+        # stopped on
+        ep_queue_size_map = {self.cluster.master: mem_only_items}
+        #ep_data_write_failed = {node_b: 0}
 
         for bucket in self.cluster.buckets:
             self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
@@ -245,7 +257,7 @@ class MagmaDiskFull(MagmaBaseTest):
         shell.kill_memcached()
         self.sleep(10, "sleep after MemCached kill on node {}".format(shell.ip))
 
-        self.free_disk(self.cluster.nodes_in_cluster[-1])
+        self.free_disk(node_b)
         self.assertTrue(self.bucket_util._wait_warmup_completed(
             self.cluster.buckets[0],
             servers=self.cluster.nodes_in_cluster,

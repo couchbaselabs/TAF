@@ -253,13 +253,17 @@ class DocumentGenerator(KVGenerator):
 
     def next_key(self):
         if self.name == "random_keys":
-            seed_hash = self.name + str(abs(self.itr))
+            seed_hash = self.name + '-' + str(abs(self.itr))
             self.random.seed(seed_hash)
             """ This will generate a random ascii key with 12 characters """
             _slice = int(self.random.random()*(self.len_random_string
                                                - self.key_size))
             key_len = self.key_size - (len(str(self.itr)) + 1)
-            doc_key = self.random_string[_slice:key_len+_slice] + str(self.itr)
+            # '-' separates the random prefix from the doc index. Without it
+            # doc a (d digits) and doc c*10^d + a collide whenever their
+            # slices match and the prefix ends in digit c.
+            doc_key = self.random_string[_slice:key_len+_slice] \
+                + "-" + str(self.itr)
         elif self.mix_key_size:
             seed_hash = self.name + str(abs(self.itr))
             self.random.seed(seed_hash)

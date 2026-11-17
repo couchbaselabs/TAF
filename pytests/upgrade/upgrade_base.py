@@ -173,6 +173,7 @@ class UpgradeBase(BaseTestCase):
             vbuckets=self.cluster.vbuckets,
             build_type=build_type,
             cluster_profile=self.cluster_profile)
+        self.initial_version = self.upgrade_chain[0]
         for node in self.cluster.servers[0:self.nodes_init]:
             self.assertTrue(
                 RestConnection(node).is_ns_server_running(30),
