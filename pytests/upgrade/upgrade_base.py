@@ -1,10 +1,12 @@
 import threading
 import json
+import random
 import uuid
 
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
 import Jython_tasks.task as jython_tasks
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbbackupmgr import CbBackupMgr
 from cb_tools.cbcontbk import CbContBk
@@ -26,6 +28,7 @@ from bucket_collections.collections_base import CollectionBase
 from BucketLib.bucket import Bucket
 import testconstants
 from shell_util.remote_connection import RemoteMachineShellConnection
+from throttling_helper import ThrottlingHelper
 from upgrade_lib.couchbase import upgrade_chains
 from upgrade_utils.upgrade_util import CbServerUpgrade
 from TestInput import TestInputSingleton
@@ -613,6 +616,41 @@ class UpgradeBase(BaseTestCase):
             restore_status, restore_content = bucket_helper.import_collection_using_manifest(
                 bucket_selected.name, str(manifest).replace("'", '"'))
             self.log.info("Restoring original manifest for bucket {0}".format(bucket_selected.name))
+
+    def attempt_rate_limiting_enable(self):
+        bucket = self.cluster.buckets[0]
+        cluster_rest = ClusterRestAPI(self.cluster.master)
+        bucket_rest = BucketRestApi(self.cluster.master)
+        rng = random.SystemRandom()
+        reserved = rng.randint(5000, 8000)
+        hard_limit = rng.randint(reserved, 8000)
+        enabled = stored = False
+        try:
+            enabled, content = cluster_rest.manage_global_memcached_setting(
+                throttle_enabled="true")
+            self.log.info(f"throttle_enabled: {enabled}, {content}")
+            status, content = bucket_rest.edit_bucket(
+                bucket.name, {Bucket.throttleReserved: reserved,
+                              Bucket.throttleHardLimit: hard_limit})
+            self.log.info(f"Bucket throttle limits {reserved}/{hard_limit} "
+                          f"edit: {status}, {content}")
+            _, info = bucket_rest.get_bucket_info(bucket.name)
+            stored = isinstance(info, dict) \
+                and info.get(Bucket.throttleReserved) == reserved \
+                and info.get(Bucket.throttleHardLimit) == hard_limit
+            return enabled and stored \
+                and ThrottlingHelper(self.cluster.master, self.log) \
+                .validate_memcached_throttle_settings(
+                    self.cluster_util.get_kv_nodes(self.cluster),
+                    bucket.name, reserved, hard_limit)
+        finally:
+            if stored:
+                bucket_rest.edit_bucket(
+                    bucket.name, {Bucket.throttleReserved: 0,
+                                  Bucket.throttleHardLimit: 2 ** 64 - 1})
+            if enabled:
+                cluster_rest.manage_global_memcached_setting(
+                    throttle_enabled="false")
 
     def validate_encryption_operations(self, expected_to_fail=True):
         """Validate encryption key creation and assignment."""

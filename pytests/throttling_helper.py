@@ -2,6 +2,9 @@
 Helper module for rate limiting validation across different test categories.
 Provides reusable methods for monitoring and verifying rate limiting behavior.
 """
+import time
+
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 
 
@@ -104,4 +107,37 @@ class ThrottlingHelper:
         self.log.info(f"{label} throttle stats for {bucket_name}:")
         for key, value in stats.items():
             self.log.info(f"  {key}: {value}")
+
+    def validate_memcached_throttle_settings(self, nodes, bucket_name,
+                                             reserved, hard_limit, timeout=30):
+        """
+        Poll until memcached on every node runs with throttling enabled
+        and the given bucket limits.
+
+        Returns:
+            bool: True if all nodes match within timeout
+        """
+        expected = {"throttle_enabled": True, "throttle_reserved": reserved,
+                    "throttle_hard_limit": hard_limit}
+        end_time = time.time() + timeout
+        while True:
+            actual = dict()
+            for node in nodes:
+                status, effective = \
+                    ClusterRestAPI(node).get_effective_memcached_setting()
+                stats = ThrottlingHelper(node, self.log).get_throttle_stats(
+                    bucket_name)
+                actual[node.ip] = {
+                    "throttle_enabled":
+                        effective.get("throttle_enabled") if status else None,
+                    "throttle_reserved": int(stats.get("throttle_reserved", -1)),
+                    "throttle_hard_limit": int(stats.get("throttle_hard_limit",
+                                                         -1))}
+            if actual and all(mc == expected for mc in actual.values()):
+                return True
+            if time.time() > end_time:
+                self.log.error(f"memcached throttle settings: {actual}, "
+                               f"expected: {expected}")
+                return False
+            time.sleep(2)
 
