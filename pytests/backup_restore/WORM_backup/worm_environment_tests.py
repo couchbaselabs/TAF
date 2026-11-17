@@ -58,14 +58,19 @@ class WormEnvironmentTest(WormBackupBase):
     def test_worm_enable_rejected_on_community_edition(self):
         if getattr(self.cluster, "edition", None) != "community" and CbServer.enterprise_edition:
             self.fail("Run on a Community Edition cluster for CE WORM validation")
+        # Local archive: CE rejects object-store archives before checking
+        # --worm
+        self.log.info(f"WORM: expecting CE to reject 'config --worm "
+                      f"{self.worm_period_days}' on {self.backup_archive_dir}")
         output, error = self.backup_mgr.create_repo(
             self.backup_archive_dir, self.backup_repo_name,
             worm_period=self.worm_period_days,
             obj_staging_dir=self.obj_staging_dir_cbbackup,
-            encrypted=self.encrypted)
+            encrypted=self.ear_bk)
+        # Edition words only: "worm" could match an unrelated WORM error
         self._assert_command_failure(
             output, error,
-            expected_texts=["enterprise", "community", "edition", "worm"])
+            expected_texts=["enterprise", "community", "edition"])
 
     def test_backup_worm_enable_race_has_defined_outcome(self):
         self._create_repo()
