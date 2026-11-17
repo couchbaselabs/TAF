@@ -74,3 +74,8 @@ CB_RELEASE_YUM_REPO = "http://latestbuilds.service.couchbase.com/couchbase-relea
 IS_CONTAINER = False
 
 PITR_NFS_SERVER = "172.23.104.203"
+# Credential Store entry for the continuous backup location. Its
+# lifecycle follows the cluster cleanup flags, like the buckets: see
+# CollectionBase._setup_cont_bkp_credential() and
+# CollectionBase.teardown_backup_locations().
+CONT_BKP_CRED_ID = "cont_bkp_cred"

@@ -30,6 +30,7 @@ from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.fusion.fusion_base import FusionBase
 from TestInput import TestInputSingleton
+from testconstants import CONT_BKP_CRED_ID
 
 
 class CollectionBase(ClusterSetup, FusionBase):
@@ -219,9 +220,9 @@ class CollectionBase(ClusterSetup, FusionBase):
         # The backup service reads the object store itself, so it needs the
         # credentials in the cluster's Credential Store rather than on the CLI.
         self.cont_bkp_credential_store_id = \
-            self.cont_bkp_location.create_credential_store(
-                RestConnection(self.cluster.master), cred_id="cont_bkp_cred",
-                description="Credential store for continuous backup tests")
+            self._setup_cont_bkp_credential(
+                RestConnection(self.cluster.master)) \
+            if self.cont_bkp_location.is_cloud else None
 
         self.backup_mgr = CbBackupMgr(
             shell,
@@ -241,6 +242,49 @@ class CollectionBase(ClusterSetup, FusionBase):
                 cbcontbk_cloud_provider=self.cont_bkp_location.cloud_provider,
                 backup_cloud_provider=self.backup_location.cloud_provider,
                 obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+
+    def _setup_cont_bkp_credential(self, rest):
+        """
+        Create or reuse the continuous backup location's Credential Store
+        entry, following the cluster cleanup flags like the buckets do.
+
+        skip_setup_cleanup=True: reuse the previous test's entry (its
+        buckets may still back up through it); create one only if missing.
+
+        skip_setup_cleanup=False: setUp just deleted the previous buckets
+        (and reset nodes if skip_cluster_reset=False), so delete any
+        leftover entry, then create this test's.
+
+        :return: the credential id
+        """
+        cs_utils = CredentialStoreUtils()
+        cred_id = CONT_BKP_CRED_ID
+        if self.skip_setup_cleanup:
+            status, content = cs_utils.get_credential(rest, cred_id)
+            if CredentialStoreUtils._is_success_status(status):
+                entry = cs_utils.parse_content(content)
+                entry_type = entry.get("type") \
+                    if isinstance(entry, dict) else None
+                self.log.info(f"skip_setup_cleanup=True: reusing the "
+                              f"Credential Store entry '{cred_id}' "
+                              f"(type={entry_type}) the previous test left")
+                return self.cont_bkp_location.use_credential_store(
+                    rest, cred_id)
+            if status != 404:
+                self.fail(f"Could not read Credential Store entry "
+                          f"'{cred_id}': status={status}, response={content}")
+        else:
+            status, content = cs_utils.delete_credential(rest, cred_id)
+            if CredentialStoreUtils._is_success_status(status):
+                self.log.info(f"Deleted Credential Store entry '{cred_id}' "
+                              f"left by the previous test")
+            elif status != 404:
+                self.fail(f"Could not delete Credential Store entry "
+                          f"'{cred_id}' left by the previous test: "
+                          f"status={status}, response={content}")
+        return self.cont_bkp_location.create_credential_store(
+            rest, cred_id=cred_id,
+            description="Credential store for continuous backup tests")
 
     def setup_backup_encryption(self):
         """
@@ -338,9 +382,11 @@ class CollectionBase(ClusterSetup, FusionBase):
 
     def teardown_backup_locations(self):
         """
-        Collect cbbackupmgr/cbcontbk logs when the test failed -- leaving the
-        backup data in place for investigation -- and otherwise remove
-        everything the run wrote.
+        Remove the backup data and the continuous backup Credential Store
+        entry, unless the test failed (kept for investigation, after
+        collecting cbbackupmgr/cbcontbk logs) or skip_teardown_cleanup=True
+        (kept for a next test with skip_setup_cleanup=True). A next test
+        with skip_setup_cleanup=False deletes the entry in setUp.
         """
         locations = [location
                      for location in (self.backup_location,
@@ -354,8 +400,23 @@ class CollectionBase(ClusterSetup, FusionBase):
                 self.log.warning(
                     "Test failed, skipping cleanup of %s to preserve data "
                     "for investigation: %s" % (location.label, location.path))
+            if self.cont_bkp_credential_store_id:
+                self.log.warning(
+                    f"Test failed, keeping Credential Store entry "
+                    f"'{self.cont_bkp_credential_store_id}' for investigation")
             if self.get_cbcollect_info:
                 self._collect_backup_logs_on_failure()
+            return
+
+        if self.skip_teardown_cleanup:
+            for location in locations:
+                self.log.info(
+                    f"skip_teardown_cleanup=True, leaving {location.label} "
+                    f"in place: {location.path}")
+            if self.cont_bkp_credential_store_id:
+                self.log.info(
+                    f"skip_teardown_cleanup=True, leaving Credential Store "
+                    f"entry '{self.cont_bkp_credential_store_id}' in place")
             return
 
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -377,6 +438,23 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.log.warning(f"Exception during backup cleanup: {e}")
         finally:
             shell.disconnect()
+
+        # Deleting it also drops the backup service's grant on it
+        if self.cont_bkp_credential_store_id:
+            try:
+                status, content = CredentialStoreUtils().delete_credential(
+                    RestConnection(self.cluster.master),
+                    self.cont_bkp_credential_store_id)
+                if not (CredentialStoreUtils._is_success_status(status)
+                        or status == 404):
+                    self.log.warning(
+                        f"Could not delete Credential Store entry "
+                        f"'{self.cont_bkp_credential_store_id}': "
+                        f"status={status}, response={content}")
+            except Exception as e:
+                self.log.warning(
+                    f"Exception deleting Credential Store entry "
+                    f"'{self.cont_bkp_credential_store_id}': {e}")
 
     def tearDown(self):
         if self.range_scan_task is not None:

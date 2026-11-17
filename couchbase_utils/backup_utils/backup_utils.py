@@ -179,6 +179,18 @@ class BackupLocation(object):
             raise Exception(f"Failed to create Credential Store entry "
                             f"'{cred_id}' for {self.label}: status={status}, "
                             f"response={content}")
+        return self.use_credential_store(rest, cred_id, consumer_service)
+
+    def use_credential_store(self, rest, cred_id, consumer_service="backup"):
+        """
+        Grant `consumer_service` the existing entry `cred_id` (e.g. one an
+        earlier test left) and record it as this location's entry.
+
+        :return: the credential id, or None for non-object-store modes
+        """
+        if not self.is_cloud:
+            return None
+
         status, content = CredentialStoreUtils().put_service_roles(
             rest, service_name=consumer_service,
             roles=[f"credential_consumer[{cred_id}]"])
