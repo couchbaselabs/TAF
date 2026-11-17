@@ -944,7 +944,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Load initial data
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        initial_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+        # Tracked total, just validated against cbstats by the load. REST
+        # can lag it (Jenkins read 198579 of 200000).
+        initial_count = self.bucket_util.get_expected_total_num_items(self.bucket)
+        self.log.info(f"Pre-flush count of {self.bucket.name}: {initial_count}")
         self.sleep(self.continuous_backup_interval * 60)
         # No mutation happens between this point and disabling continuous
         # backup below, so the log's newest data at disable time is exactly
