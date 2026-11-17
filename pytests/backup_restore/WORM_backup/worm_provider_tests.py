@@ -172,14 +172,35 @@ class WormProviderTest(WormBackupBase):
         self.assertFalse(versions_after,
                          "Expected --obj-versions remove to clean all object versions")
 
+    def _log_live_version_counts(self, helper, label):
+        """Log live (non-delete-marker) version counts of each log object
+        and of backup-meta.json, whose old versions cbbackupmgr prunes."""
+        counts = {}
+        for path in helper.find_relative_paths(self.backup_archive_dir,
+                                               self.backup_repo_name):
+            if "log" not in path.lower() and \
+                    not path.endswith("backup-meta.json"):
+                continue
+            versions = helper.list_object_versions(
+                self.backup_archive_dir, self.backup_repo_name, path)
+            counts[path] = len([version for version in versions
+                                if not version.get("delete_marker")])
+        self.log.info(f"Live object versions {label}: {counts}")
+
     def test_worm_log_versioning_cleanup_limits_non_locked_log_versions(self):
         helper = self._require_storage_provider(
             ["AWS", "Azure", "GCP"], "WORM log versioning cleanup validation")
         self._create_worm_repo()
         self._load_data_and_return_count()
         self._run_backup()
+        self._log_live_version_counts(helper, "after backup 1")
         self._generate_additional_docs_and_return_count()
         self._run_backup()
+        self._log_live_version_counts(helper, "after backup 2")
+        # Jenkins saw 2 log versions after 2 backups. A third shows whether
+        # old versions are never pruned (3) or pruned a backup late (2).
+        self._run_backup()
+        self._log_live_version_counts(helper, "after backup 3")
 
         log_paths = [path for path in helper.find_relative_paths(
                         self.backup_archive_dir, self.backup_repo_name)
