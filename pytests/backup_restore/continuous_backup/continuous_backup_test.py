@@ -126,7 +126,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._wait_for_history_upload(f"interval {num_intervals}'s timestamp")
         return timestamps, item_counts
 
-    def _reset_bucket_and_restore_from_backup(self, expected_item_count):
+    def _reset_bucket_and_restore_from_backup(self, expected_item_count,
+                                              reenable_continuous_backup=True):
         # Flush instead of delete+recreate: customers reset a bucket via flush,
         # not by deleting and recreating it, and recreating churns the bucket's
         # UUID which risks disconnecting it from its own continuous backup
@@ -167,7 +168,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # Re-enable continuous backup now that the reset + restore is done. The
         # existing continuousBackupLocation is preserved, so the pre-flush log
-        # history the callers PITR-restore from stays available.
+        # history the callers PITR-restore from stays available. Callers
+        # that restore into this bucket more than once keep it off: each
+        # restore adds a second log history and the next one fails with
+        # "overlapping histories for target time" (MB-71777, MB-73520).
+        if not reenable_continuous_backup:
+            return
         self.log.info("Re-enabling continuous backup after restore: %s" % self.bucket.name)
         self.bucket_util.update_bucket_property(
             self.cluster.master, self.bucket,
@@ -323,11 +329,17 @@ class ContinuousBackupTest(ContinuousBackupBase):
         """
         Takes 5 continuous backups, then restores them sequentially,
         verifying the doc count at each step.
+
+        The bucket is reset to the traditional backup, then rolled forward
+        through each timestamp in place with continuous backup off: with it
+        on, the next restore fails with "overlapping histories for target
+        time" (MB-71777, MB-73520: not a bug).
         """
         self._verify_continuous_backup_params()
         timestamps, item_counts = self._create_backup_intervals()
 
-        self._reset_bucket_and_restore_from_backup(self._get_total_docs())
+        self._reset_bucket_and_restore_from_backup(
+            self._get_total_docs(), reenable_continuous_backup=False)
 
         for i, timestamp in enumerate(timestamps):
             self._perform_continuous_restore(timestamp)
