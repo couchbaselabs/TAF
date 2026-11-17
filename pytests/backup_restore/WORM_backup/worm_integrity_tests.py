@@ -46,10 +46,32 @@ class WormIntegrityTest(WormBackupBase):
                   % self.obj_staging_dir_cbbackup
         output, error = self.shell.execute_command(command)
         self._assert_command_success(output, error)
-        self.assertTrue(output,
-                        "No local .obj_versions file found in %s"
-                        % self.obj_staging_dir_cbbackup)
+        if not output:
+            # cbbackupmgr 8.5.0-1442 writes no .obj_versions; log what the
+            # interrupted backup left locally and remotely instead
+            self._log_interrupted_backup_state()
+            self.fail(f"No local .obj_versions file found in "
+                      f"{self.obj_staging_dir_cbbackup}. This cbbackupmgr "
+                      f"build may not write one; see the staging and remote "
+                      f"listings logged above")
         return output
+
+    def _log_interrupted_backup_state(self):
+        output, _ = self.shell.execute_command(
+            f"find {self.obj_staging_dir_cbbackup} -type f -printf '%P %s\\n'"
+            f" | sort")
+        self.log.info(
+            f"Staging dir {self.obj_staging_dir_cbbackup} after the interrupt "
+            f"({len(output)} files):\n" + "\n".join(output))
+        helper = self._require_cloud_helper("remote archive listing")
+        remote_paths = helper.find_relative_paths(
+            self.backup_archive_dir, self.backup_repo_name)
+        data_parts = [path for path in remote_paths if ".rift" in path]
+        self.log.info(
+            f"Remote repo {self.backup_archive_dir}/{self.backup_repo_name}: "
+            f"{len(remote_paths)} objects, {len(data_parts)} data parts. "
+            f"Others:\n" + "\n".join(sorted(
+                path for path in remote_paths if ".rift" not in path)))
 
     def _prepare_completed_backup_injection(self, reason):
         helper = self._require_cloud_helper(reason)
