@@ -1281,8 +1281,9 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         Flow:
           1. Load data; capture T1 and count C1.
-          2. Drop one user collection (loses N items).
-          3. Wait for continuous backup to capture the drop; capture T2 and count C2.
+          2. Drop one user collection (N items, so C2 = C1 - N).
+          3. Wait for continuous backup to capture the drop and the bucket
+             count to reach C2.
           4. Take an incremental traditional backup at the T2 state.
           5. PITR restore to T1 -> verify count == C1 (dropped collection recovered).
           6. PITR restore to T2 -> verify count == C2 (collection still absent).
@@ -1302,10 +1303,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
                    "Waiting for backup interval before collection drop")
 
         drop_scope, drop_coll = self._get_first_non_system_scope_and_collection()
-        items_per_coll = self.spec.get(MetaConstants.NUM_ITEMS_PER_COLLECTION, 0)
+        # Tracked count (each load validates it), not the spec size
+        dropped_items = \
+            self.bucket.scopes[drop_scope].collections[drop_coll].num_items
+        count_t2 = count_t1 - dropped_items
         self.log.info(
             f"Dropping {self.bucket.name}.{drop_scope}.{drop_coll} "
-            f"(~{items_per_coll} items)")
+            f"({dropped_items} items, leaving {count_t2})")
         self.bucket_util.drop_collection(
             self.cluster.master, self.bucket,
             scope_name=drop_scope,
@@ -1314,9 +1318,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for continuous backup to capture the collection drop")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
-        count_t2 = self.bucket_util.get_buckets_item_count(
-            self.cluster, self.bucket.name)
+        # The bucket count includes a dropped collection's items until
+        # compaction purges them per vBucket, which can take minutes on a
+        # slow node (Jenkins read 198486 for 198000).
+        self._verify_doc_count(count_t2, timeout=600)
         self.log.info(f"T2 (post-drop) count: {count_t2}")
         # T2 is the latest state with no mutation after it, so a captured
         # wall-clock timestamp would land one interval past the newest
