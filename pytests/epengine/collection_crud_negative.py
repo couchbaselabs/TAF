@@ -645,6 +645,7 @@ class CollectionDurabilityTests(CollectionBase):
                             read_task = self.task.async_load_gen_docs(
                                 self.cluster, self.bucket,
                                 c_meta[op_type]["doc_gen"], "read",
+                                scope=s_name, collection=c_name,
                                 batch_size=self.crud_batch_size,
                                 process_concurrency=1,
                                 timeout_secs=self.sdk_timeout,
@@ -652,8 +653,7 @@ class CollectionDurabilityTests(CollectionBase):
                             self.task_manager.get_task_result(read_task)
                             for key, doc_info in read_task.success.items():
                                 if doc_info["cas"] != 0 \
-                                        and json.loads(str(doc_info["value"])
-                                                       )["mutated"] != 1:
+                                        and doc_info["value"]["mutated"] != 1:
                                     self.log_failure(
                                         "Update failed for key %s: %s"
                                         % (key, doc_info))
@@ -859,6 +859,7 @@ class CollectionDurabilityTests(CollectionBase):
                                 self.cluster, self.bucket,
                                 c_meta[op_type]["doc_gen"],
                                 DocLoading.Bucket.DocOps.READ,
+                                scope=s_name, collection=c_name,
                                 batch_size=self.crud_batch_size,
                                 process_concurrency=1,
                                 timeout_secs=self.sdk_timeout,

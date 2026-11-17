@@ -490,30 +490,13 @@ class DocLoaderUtils(object):
             end = start + num_items
             if collection_obj.doc_index != (0, 0):
                 collection_obj.num_items += (end - start)
-            collection_obj.doc_index = (collection_obj.doc_index[0], end)
-        elif op_type == "delete":
-            start = collection_obj.doc_index[0]
-            end = start + num_items
-            collection_obj.doc_index = (end, collection_obj.doc_index[1])
-            collection_obj.num_items -= (end - start)
         else:
             start = collection_obj.doc_index[0]
             end = start + num_items
-
-        if op_type in [DocLoading.Bucket.DocOps.DELETE,
-                       DocLoading.Bucket.DocOps.UPDATE,
-                       DocLoading.Bucket.DocOps.REPLACE]:
-            # if document is deleted/updated/replaced,
-            # then it's corresponding subdoc
-            # start index must also be changed
-            if collection_obj.sub_doc_index[0] < end:
-                collection_obj.sub_doc_index = \
-                    (end, collection_obj.sub_doc_index[1])
-                if collection_obj.sub_doc_index[1] < collection_obj.sub_doc_index[0]:
-                    # no subdocs present
-                    collection_obj.sub_doc_index = \
-                        (collection_obj.sub_doc_index[0],
-                         collection_obj.sub_doc_index[0])
+            if op_type == "delete":
+                collection_obj.num_items -= (end - start)
+        # Doc index past the last key the generator uses
+        index_end = end
 
         if target_vbuckets == "all":
             target_vbuckets = None
@@ -530,6 +513,12 @@ class DocLoaderUtils(object):
                                      randomize_value=randomize_value,
                                      randomize_doc_size=randomize_doc_size,
                                      key_size=key_size)
+            # With target_vbuckets, keys are picked by scanning doc indexes
+            # from 'start' and skipping other vbuckets, so the last key used
+            # lies beyond start+num_items. Move the indexes past it, else the
+            # next generator (e.g. update after delete) reuses the same keys
+            if getattr(gen_docs, "key_index_end", None) is not None:
+                index_end = gen_docs.key_index_end
         else:
             json_generator = JsonGenerator()
             if type == "employee":
@@ -538,6 +527,28 @@ class DocLoaderUtils(object):
             else:
                 gen_docs = json_generator.generate_earthquake_doc(
                     generic_key, docs_per_day=end, start=start)
+
+        if op_type == "create":
+            collection_obj.doc_index = (collection_obj.doc_index[0],
+                                        index_end)
+        elif op_type == "delete":
+            collection_obj.doc_index = (index_end,
+                                        collection_obj.doc_index[1])
+
+        if op_type in [DocLoading.Bucket.DocOps.DELETE,
+                       DocLoading.Bucket.DocOps.UPDATE,
+                       DocLoading.Bucket.DocOps.REPLACE]:
+            # if document is deleted/updated/replaced,
+            # then it's corresponding subdoc
+            # start index must also be changed
+            if collection_obj.sub_doc_index[0] < index_end:
+                collection_obj.sub_doc_index = \
+                    (index_end, collection_obj.sub_doc_index[1])
+                if collection_obj.sub_doc_index[1] < collection_obj.sub_doc_index[0]:
+                    # no subdocs present
+                    collection_obj.sub_doc_index = \
+                        (collection_obj.sub_doc_index[0],
+                         collection_obj.sub_doc_index[0])
         return gen_docs
 
     @staticmethod
@@ -881,20 +892,8 @@ class DocLoaderUtils(object):
     def validate_crud_task_per_collection(cluster, bucket, scope_name,
                                           collection_name, c_data,
                                           load_using="default_loader"):
-        # Table objects to print data
         table_headers = ["Initial exception", "Key"]
         failure_table_header = table_headers + ["Retry exception"]
-        ignored_keys_table = TableView(DocLoaderUtils.log.debug)
-        retry_succeeded_table = TableView(DocLoaderUtils.log.debug)
-        retry_failed_table = TableView(DocLoaderUtils.log.error)
-        unwanted_retry_succeeded_table = TableView(DocLoaderUtils.log.error)
-        unwanted_retry_failed_table = TableView(DocLoaderUtils.log.error)
-
-        ignored_keys_table.set_headers(table_headers)
-        retry_succeeded_table.set_headers(table_headers)
-        retry_failed_table.set_headers(failure_table_header)
-        unwanted_retry_succeeded_table.set_headers(table_headers)
-        unwanted_retry_failed_table.set_headers(failure_table_header)
 
         exception_patterns = [".*(com\.[a-zA-Z0-9\.]+)", "([a-zA-Z0-9]+)"]
 
@@ -913,6 +912,22 @@ class DocLoaderUtils(object):
                 subdoc_data[op_type] = op_data
         for data in [doc_data, subdoc_data]:
             for op_type, op_data in data.items():
+                # Fresh tables per op_type, else rows of one op get
+                # displayed again under the next op's header
+                ignored_keys_table = TableView(DocLoaderUtils.log.debug)
+                retry_succeeded_table = TableView(DocLoaderUtils.log.debug)
+                retry_failed_table = TableView(DocLoaderUtils.log.error)
+                unwanted_retry_succeeded_table = \
+                    TableView(DocLoaderUtils.log.error)
+                unwanted_retry_failed_table = \
+                    TableView(DocLoaderUtils.log.error)
+                ignored_keys_table.set_headers(table_headers)
+                retry_succeeded_table.set_headers(table_headers)
+                retry_failed_table.set_headers(failure_table_header)
+                unwanted_retry_succeeded_table.set_headers(table_headers)
+                unwanted_retry_failed_table.set_headers(
+                    failure_table_header)
+
                 failed_keys = list(op_data["fail"].keys())
 
                 # New dicts to filter failures based on retry strategy
@@ -935,6 +950,7 @@ class DocLoaderUtils(object):
                                 initial_exception = pattern_match.group(1)
                                 break
 
+                        break_loop = False
                         for tem_exception in op_data["ignore_exceptions"]:
                             if not isinstance(tem_exception, list):
                                 tem_exception = [tem_exception]
@@ -977,7 +993,7 @@ class DocLoaderUtils(object):
 
                         if op_type in DocLoading.Bucket.DOC_OPS:
                             result = client.crud(
-                                op_type, key, failed_doc["value"],
+                                op_type, key, failed_doc.get("value", None),
                                 exp=op_data["doc_ttl"],
                                 durability=op_data["durability_level"],
                                 timeout=op_data["sdk_timeout"],
@@ -985,7 +1001,7 @@ class DocLoaderUtils(object):
                         else:
                             result = dict()
                             result['status'] = True
-                            for tup in failed_doc["path_val"]:
+                            for tup in failed_doc.get("path_val", []):
                                 if op_type in [DocLoading.Bucket.SubDocOps.LOOKUP,
                                                DocLoading.Bucket.SubDocOps.REMOVE]:
                                     tup = tup[0]
@@ -1006,26 +1022,32 @@ class DocLoaderUtils(object):
 
                         retry_strategy = "unwanted"
                         for ex in op_data["retry_exceptions"]:
-                            if str(exception).find(ex) != -1:
-                                retry_strategy = "retried"
-                                break
+                            if not isinstance(ex, list):
+                                ex = [ex]
+                            for t_ex in ex:
+                                if str(exception).find(t_ex) != -1:
+                                    retry_strategy = "retried"
+                                    break
+                            else:
+                                continue
+                            break
 
                         if result["status"] \
                                 or (ambiguous_state
-                                    and SDKException.DocumentExistsException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.DocumentExistsException, str(result["error"]))
                                     and op_type in ["create", "update"]) \
                                 or (ambiguous_state
-                                    and SDKException.PathExistsException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.PathExistsException, str(result["error"]))
                                     and op_type in [DocLoading.Bucket.SubDocOps.INSERT]) \
                                 or (ambiguous_state
-                                    and SDKException.DocumentNotFoundException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.DocumentNotFoundException, str(result["error"]))
                                     and op_type == "delete") \
                                 or (ambiguous_state
-                                    and SDKException.PathNotFoundException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.PathNotFoundException, str(result["error"]))
                                     and op_type == DocLoading.Bucket.SubDocOps.REMOVE):
                             op_data[retry_strategy]["success"][key] = \
                                 result

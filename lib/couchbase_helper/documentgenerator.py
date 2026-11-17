@@ -143,6 +143,10 @@ class KVGenerator(object):
         self.vbuckets = CbServer.total_vbuckets
         self.target_vbuckets = None
         self.pre_generated_keys = None
+        # Doc index just past the last key this generator yields. Differs
+        # from 'end' for target_vbuckets, where keys are picked by scanning
+        # doc indexes and skipping the ones hashing to other vbuckets
+        self.key_index_end = None
 
     def get_random_key(self, doc_index):
         """
@@ -202,6 +206,7 @@ class KVGenerator(object):
                 self.pre_generated_keys[self.start+num_keys_generated] = key
                 num_keys_generated += 1
         self.end = self.start + num_keys_generated
+        self.key_index_end = doc_index
 
     def get_key(self, doc_index):
         raise NotImplementedError
