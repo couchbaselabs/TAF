@@ -1066,6 +1066,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
     def test_pitr_with_filtering(self):
         """
         Test PITR with scope/collection filtering using include_data and map_data during restore.
+
+        1. include_data: restore one collection into a new bucket.
+        2. include_data + map_data: restore it into a new collection of
+           the source bucket (remaps can't cross buckets).
         """
         # Load data with multiple scopes/collections from spec
         mutation_time = time.time()
@@ -1104,69 +1108,61 @@ class ContinuousBackupTest(ContinuousBackupBase):
             expected_coll_count = \
                 bucket_obj.scopes[first_scope].collections[first_collection].num_items
 
-            # Define test cases for filtering
-            test_cases = [
-                {
-                    "name": "include_data only",
-                    "include_data": f"{self.bucket.name}.{first_scope}.{first_collection}",
-                    "map_data": None
-                },
-                {
-                    "name": "include_data with map_data",
-                    "include_data": f"{self.bucket.name}.{first_scope}.{first_collection}",
-                    "map_data": None  # Will be set inside loop
-                }
-            ]
+            if expected_coll_count <= 0:
+                self.fail(f"Source collection {first_scope}.{first_collection} "
+                          f"has no items to verify the filtered restores with")
+            source_coll = f"{self.bucket.name}.{first_scope}.{first_collection}"
 
-            for i, test_case in enumerate(test_cases, 1):
-                restore_bucket_name = f"restore_bucket_{int(time.time())}"
-                self._create_restore_bucket(restore_bucket_name)
+            # Test 1: include_data only, into a new bucket
+            restore_bucket_name = f"restore_bucket_{int(time.time())}"
+            self._create_restore_bucket(restore_bucket_name)
+            self.log.info(f"Test 1: include_data only. Restoring {source_coll} "
+                          f"({expected_coll_count} docs) into {restore_bucket_name}")
+            self._restore_entire_bucket(
+                timestamp=None,
+                target_bucket_name=restore_bucket_name,
+                include_data=source_coll)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            # The REST count lags the writes by up to ~12s, node by node
+            # (Jenkins read 1123 of 2000 right after the restore)
+            self._verify_doc_count(expected_coll_count,
+                                   bucket_name=restore_bucket_name)
+            self.bucket_util.delete_bucket(
+                self.cluster,
+                self.bucket_util.get_bucket_obj(self.cluster.buckets,
+                                                restore_bucket_name))
 
-                self.log.info(f"Test {i}: {test_case['name']}")
-
-                # For the second test, create map_data with different target collection
-                if test_case["map_data"] is None and test_case["name"] == "include_data with map_data":
-                    target_collection_name = "mapped_collection"
-                    target_bucket_obj = self.bucket_util.get_bucket_obj(self.cluster.buckets, restore_bucket_name)
-                    if target_bucket_obj:
-                        self.log.info(f"Creating target scope and collection: {first_scope}.{target_collection_name}")
-                        if first_scope not in target_bucket_obj.scopes:
-                            self.bucket_util.create_scope(
-                                self.cluster.master, target_bucket_obj,
-                                scope_spec={"name": first_scope})
-                        self.bucket_util.create_collection(
-                            self.cluster.master, target_bucket_obj,
-                            scope_name=first_scope,
-                            collection_spec={"name": target_collection_name})
-                    test_case["map_data"] = f"{self.bucket.name}.{first_scope}.{first_collection}={restore_bucket_name}.{first_scope}.{target_collection_name}"
-                    self.log.info(f"Mapping from {self.bucket.name}.{first_scope}.{first_collection} to {restore_bucket_name}.{first_scope}.{target_collection_name}")
-                elif test_case["map_data"] is None:
-                    self.log.info(f"Filtering with include_data: {test_case['include_data']}")
-
-                self._restore_entire_bucket(
-                    timestamp=None,
-                    target_bucket_name=restore_bucket_name,
-                    include_data=test_case["include_data"],
-                    map_data=test_case["map_data"]
-                )
-
-                # Verify the restore
-                self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-                restored_count = self.bucket_util.get_buckets_item_count(self.cluster, restore_bucket_name)
-                self.log.info(f"Restored count: {restored_count}")
-
-                if expected_coll_count > 0:
-                    self.log.info(f"Filter restored {restored_count} docs "
-                                  f"(expected {expected_coll_count} from source "
-                                  f"collection {first_scope}.{first_collection})")
-                    self.assertEqual(expected_coll_count, restored_count)
-                else:
-                    self.log.warning("Source collection has 0 items, cannot verify filter count")
-
-                # Clean up restore bucket
-                restore_bucket_obj = self.bucket_util.get_bucket_obj(self.cluster.buckets, restore_bucket_name)
-                if restore_bucket_obj:
-                    self.bucket_util.delete_bucket(self.cluster, restore_bucket_obj)
+            # Test 2: include_data + map_data into a new collection of the
+            # source bucket. cbbackupmgr remaps collections only within a
+            # bucket; "b._default._default=<bucket>.s.c" needs a
+            # collection-unaware backup.
+            mapped_collection = "mapped_collection"
+            mapped_coll = f"{self.bucket.name}.{first_scope}.{mapped_collection}"
+            self.bucket_util.create_collection(
+                self.cluster.master, self.bucket,
+                scope_name=first_scope,
+                collection_spec={"name": mapped_collection})
+            count_before_map = \
+                self.bucket_util.get_expected_total_num_items(self.bucket)
+            self.log.info(f"Test 2: include_data with map_data. Restoring "
+                          f"{source_coll} into {mapped_coll}")
+            self._restore_entire_bucket(
+                timestamp=None,
+                target_bucket_name=self.bucket.name,
+                include_data=source_coll,
+                map_data=f"{source_coll}={mapped_coll}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self.bucket.scopes[first_scope].collections[mapped_collection] \
+                .num_items = expected_coll_count
+            # The bucket gains exactly the restored docs, and every
+            # collection holds what the loads and this restore put there
+            self._verify_doc_count(count_before_map + expected_coll_count)
+            try:
+                self.bucket_util.validate_doc_count_as_per_collections(
+                    self.cluster, self.bucket)
+            except Exception as e:
+                self.fail(f"Per-collection counts after restoring {source_coll} "
+                          f"into {mapped_coll} don't match: {e}")
         else:
             self.log.warning("Bucket has no scopes or collections, cannot test filtering")
 
