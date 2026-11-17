@@ -1,4 +1,5 @@
 import copy
+import time
 
 from bucket_collections.collections_base import CollectionBase
 from cb_constants import CbServer, DocLoading
@@ -733,18 +734,36 @@ class CollectionsTTL(CollectionBase):
             self.bucket_util.update_ttl_for_collections(self.cluster, bucket,
                                                         ttl_value=curr_ttl)
 
-    def wait_time_validation_of_docs_ttl(self, wait_time, num_docs, time_interval=20):
-        self.log.info("Validating expiry of docs dynamically")
-        check_time = 0
+    def wait_time_validation_of_docs_ttl(self, wait_time, num_docs,
+                                         time_interval=20, stats_grace=30):
+        """
+        Poll the bucket's curr_items till it reaches 'num_docs'.
+
+        'stats_grace' is added on top of 'wait_time' since the observed
+        count trails the actual expiry by:
+         - ns_server pushing expiryPagerSleepTime to memcached
+           asynchronously (seen ~5-7s after the REST call)
+         - the expiry pager run itself (exp_pager_stime = 10s)
+         - curr_items coming from Prometheus samples (10s interval)
+        The loop exits as soon as the expected count is seen, so the grace
+        only extends the failure path.
+        """
+        total_wait = wait_time + stats_grace
+        self.log.info("Validating expiry of docs dynamically. Expected "
+                      "items: %s, max wait: %ss" % (num_docs, total_wait))
         status = False
         items_in_bucket = 0
+        end_time = time.time() + total_wait
 
-        while check_time <= wait_time:
+        while True:
             items_in_bucket = self.bucket_helper_obj.get_active_key_count("default")
             if items_in_bucket == num_docs:
                 status = True
                 break
-            check_time += time_interval
+            if time.time() > end_time:
+                break
+            self.log.debug("Items in bucket: %s, expected: %s"
+                           % (items_in_bucket, num_docs))
             self.sleep(time_interval)
 
         return status, items_in_bucket

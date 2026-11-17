@@ -6126,29 +6126,42 @@ class BucketUtils(ScopeUtils):
                                 += c_data['items']
         return collection_data
 
-    def validate_doc_count_as_per_collections(self, cluster, bucket):
+    def validate_doc_count_as_per_collections(self, cluster, bucket,
+                                              timeout=60):
         """
         Function to validate doc_item_count as per the collection object's
         num_items value against cbstats count from KV nodes
 
         Throws exception if mismatch in stats.
 
+        Per-collection 'items' in cbstats is updated by the flusher on
+        commit, so it can trail curr_items for a few seconds after the
+        checkpoint persistence cursor reaches zero (the batch is still
+        being written). Retry till 'timeout' before failing.
+
         :param cluster: Target cluster object
         :param bucket: Bucket object using which the validation should be done
+        :param timeout: Max seconds to retry on a count mismatch
         """
-        cb_stat_objects = list()
-        collection_data = self.get_doc_count_per_collection(cluster, bucket)
+        end_time = time.time() + timeout
+        while True:
+            cb_stat_objects = list()
+            collection_data = self.get_doc_count_per_collection(cluster,
+                                                                bucket)
 
-        # Create required cb_stat objects
-        for node in self.cluster_util.get_kv_nodes(cluster):
-            cb_stat_objects.append(Cbstats(node))
+            # Create required cb_stat objects
+            for node in self.cluster_util.get_kv_nodes(cluster):
+                cb_stat_objects.append(Cbstats(node))
 
-        # Validate scope-collection hierarchy with doc_count
-        status = self.validate_bucket_collection_hierarchy(bucket,
-                                                           cb_stat_objects,
-                                                           collection_data)
-        for cb_stat in cb_stat_objects:
-            cb_stat.disconnect()
+            # Validate scope-collection hierarchy with doc_count
+            status = self.validate_bucket_collection_hierarchy(
+                bucket, cb_stat_objects, collection_data)
+            for cb_stat in cb_stat_objects:
+                cb_stat.disconnect()
+            if status or time.time() > end_time:
+                break
+            sleep(5, "Collection stats mismatch, retrying in case the "
+                     "flusher has not committed the latest batch yet")
         # Raise exception if the status is 'False'
         if not status:
             raise Exception("Collections stat validation failed")

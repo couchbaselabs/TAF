@@ -734,15 +734,31 @@ class BucketHelper(BucketRestApi):
         bucket_stats = self.fetch_bucket_stats(bucket)
         return bucket_stats['op']['samples']['ep_dcp_xdcr_items_remaining'][-1]
 
+    def _get_latest_bucket_stat_sample(self, bucket, stat_name, timeout=60):
+        """Return the latest sample of 'stat_name' from bucket stats.
+
+        Bucket stats are served from Prometheus, so for a freshly created
+        bucket the samples can be absent until the first scrape lands.
+        Retry until the stat shows up instead of raising KeyError."""
+        end_time = time.time() + timeout
+        while True:
+            samples = self.fetch_bucket_stats(bucket)['op']['samples']
+            if samples.get(stat_name):
+                return samples[stat_name][-1]
+            if time.time() > end_time:
+                raise KeyError("'%s' not present in bucket '%s' stats "
+                               "after %ss" % (stat_name, bucket, timeout))
+            sleep(2, "Bucket '%s' stats has no '%s' samples yet"
+                     % (bucket, stat_name), log_type="infra")
+
     def get_active_key_count(self, bucket):
         """Fetch bucket stats and return the bucket's curr_items count"""
-        bucket_stats = self.fetch_bucket_stats(bucket)
-        return bucket_stats['op']['samples']['curr_items'][-1]
+        return self._get_latest_bucket_stat_sample(bucket, 'curr_items')
 
     def get_replica_key_count(self, bucket):
         """Fetch bucket stats and return the bucket's replica count"""
-        bucket_stats = self.fetch_bucket_stats(bucket)
-        return bucket_stats['op']['samples']['vb_replica_curr_items'][-1]
+        return self._get_latest_bucket_stat_sample(bucket,
+                                                   'vb_replica_curr_items')
 
     # the same as Preview a Random Document on UI
     def get_random_key(self, bucket):
