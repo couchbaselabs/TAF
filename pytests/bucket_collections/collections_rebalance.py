@@ -328,11 +328,20 @@ class CollectionsRebalance(CollectionBase):
             maxttl = 0
         self.log.info("Loading docs with maxttl:{0} in default collection "
                       "in order to load bucket in dgm".format(maxttl))
-        self.key = "test_collections"
+        # DGM docs extend the _default collection's doc_index range, which
+        # the spec-based CRUD loads later read/update/delete. Generate them
+        # with the same key prefix/size as that spec, else every op on
+        # these keys fails with DocumentNotFoundException.
+        doc_crud = self.bucket_util.get_crud_template_from_package(
+            self.data_load_spec)["doc_crud"]
+        dgm_key = doc_crud.get(MetaCrudParams.DocCrud.COMMON_DOC_KEY,
+                               "test_docs-")
+        dgm_key_size = doc_crud.get(MetaCrudParams.DocCrud.DOC_KEY_SIZE, 8)
         start = self.bucket.scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
             .num_items
-        load_gen = doc_generator(self.key, start, start + 1)
+        load_gen = doc_generator(dgm_key, start, start + 1,
+                                 key_size=dgm_key_size)
         tasks = list()
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, load_gen, "create", maxttl,
