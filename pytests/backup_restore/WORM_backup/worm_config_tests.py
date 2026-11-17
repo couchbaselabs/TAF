@@ -15,8 +15,11 @@ class WormConfigTest(WormBackupBase):
         second_backup_count = self._generate_additional_docs_and_return_count()
         self.assertGreater(second_backup_count, first_backup_count,
                            "Expected the second backup to contain more documents")
-        self._run_backup()
+        # Full, so it restores without the non-WORM backup before it
+        self._run_backup(full_backup=True)
 
+        # The default range includes the non-WORM backup: needs
+        # --allow-non-worm
         restore_bucket_name = self._create_restore_bucket("mixed_allow")
         map_data = "%s=%s" % (self.bucket.name, restore_bucket_name)
         self._assert_restore_failure(
@@ -27,9 +30,13 @@ class WormConfigTest(WormBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(second_backup_count, bucket_name=restore_bucket_name)
 
+        # Only the WORM backup, so no --allow-non-worm needed
+        latest_backup = self._latest_backup_name()
+        self.log.info(f"WORM: restoring only the WORM backup {latest_backup}")
         latest_restore_bucket = self._create_restore_bucket("latest_worm")
         self._run_restore(
-            map_data="%s=%s" % (self.bucket.name, latest_restore_bucket))
+            map_data="%s=%s" % (self.bucket.name, latest_restore_bucket),
+            start=latest_backup, end=latest_backup)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(second_backup_count, bucket_name=latest_restore_bucket)
 

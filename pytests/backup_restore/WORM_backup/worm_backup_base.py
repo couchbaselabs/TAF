@@ -164,10 +164,26 @@ class WormBackupBase(ContinuousBackupBase):
                 % (sorted(allowed), reason))
         return self.backup_cloud_provider
 
+    # cbbackupmgr prints fatal errors on stdout with an empty stderr:
+    # "Error ...", "Failed to ...", "... failed: ...", "Unknown flag: ..."
+    # or usage text. "Failed to upload logs ..." is only a warning.
+    FATAL_OUTPUT_LINE = re.compile(
+        r"^(error\b|unknown flag|failed to (?!upload logs)"
+        r"|[a-z][a-z ]* failed: |cbbackupmgr \S+ \[<args>\]$)",
+        re.IGNORECASE)
+    ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
     def _assert_command_success(self, output, error, expected_text=None):
         command_text = self._command_text(output, error)
         if error:
             self.fail("Command failed unexpectedly: %s" % command_text)
+        fatal_lines = [
+            line for line in (self.ANSI_ESCAPE.sub("", line).strip()
+                              for line in output or [])
+            if self.FATAL_OUTPUT_LINE.match(line)]
+        if fatal_lines:
+            self.fail(f"Command failed: {fatal_lines[0]}\n"
+                      f"Output: {command_text}")
         if expected_text and expected_text.lower() not in command_text.lower():
             self.fail("Expected command output to contain '%s'. Output: %s"
                       % (expected_text, command_text))
@@ -405,16 +421,19 @@ class WormBackupBase(ContinuousBackupBase):
         return command_text
 
     def _run_restore(self, map_data=None, auto_create_buckets=False,
-                     allow_non_worm=False, backup_id=None):
+                     allow_non_worm=False, backup_id=None, start=None,
+                     end=None):
         self.log.info(
             "WORM: running restore from repo '%s' (map_data=%s, "
-            "auto_create_buckets=%s, allow_non_worm=%s, backup_id=%s)"
+            "auto_create_buckets=%s, allow_non_worm=%s, backup_id=%s, "
+            "start=%s, end=%s)"
             % (self.backup_repo_name, map_data, auto_create_buckets,
-               allow_non_worm, backup_id))
+               allow_non_worm, backup_id, start, end))
         output, error = self.backup_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
             map_data=map_data, auto_create_buckets=auto_create_buckets,
             allow_non_worm=allow_non_worm, backup_id=backup_id,
+            start=start, end=end,
             obj_staging_dir=self.obj_staging_dir_cbbackup)
         command_text = self._assert_command_success(output, error)
         self.log.info("WORM: restore completed. cbbackupmgr output: %s" % command_text)

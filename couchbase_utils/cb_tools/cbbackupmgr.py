@@ -289,9 +289,13 @@ class CbBackupMgr(CbCmdBase):
                 filter_keys=None, filter_values=None,
                 allow_non_worm=False, force_updates=False,
                 include_data=None, obj_staging_dir=None,
-                client_cert=None, client_key=None):
+                client_cert=None, client_key=None, start=None, end=None):
         """
         Execute cbbackupmgr restore command
+        :param start str: First backup to restore (--start): name, 1-based
+                          index or date. Default: oldest.
+        :param end str: Last backup to restore, inclusive (--end).
+                        Default: newest.
         :param force_updates bool: If True, pass --force-updates so restored
                                    documents get fresh CAS values instead of
                                    reusing ones that may already exist in the
@@ -314,6 +318,11 @@ class CbBackupMgr(CbCmdBase):
 
         if backup_id:
             cmd += " --backup %s" % backup_id
+
+        if start:
+            cmd += f" --start {start}"
+        if end:
+            cmd += f" --end {end}"
 
         if no_progress_bar:
             cmd += " --no-progress-bar"
