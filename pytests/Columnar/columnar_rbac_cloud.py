@@ -3165,4 +3165,4 @@ class ColumnarRBAC(ColumnarBaseTest):
         if hasattr(self, "remote_cluster") and self.remote_cluster:
             self.delete_all_buckets_from_capella_cluster(
                 self.tenant, self.remote_cluster)
-        #super(ColumnarBaseTest, self).tearDown()
+        super(ColumnarBaseTest, self).tearDown()

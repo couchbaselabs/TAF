@@ -13,6 +13,7 @@ from BucketLib.BucketOperations import BucketHelper
 import json
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from sirius_client_framework.sirius_setup import SiriusSetup
+from capella_utils.dedicated import CapellaUtils
 
 
 class ColumnarBaseTest(BaseTestCase):
@@ -104,6 +105,12 @@ class ColumnarBaseTest(BaseTestCase):
         else:
             self.log.error("Error while creating V2 control plane API key")
             self.fail("{}".format(response.content))
+        # Bootstrap keys created below are not tracked anywhere else, so
+        # remember them and delete them when the test finishes (this cleanup
+        # also runs when setUp fails after this point).
+        self._bootstrap_v2_key = (response['id'], response['token'])
+        self._bootstrap_v4_key = None
+        self.addCleanup(self._delete_bootstrap_api_keys)
         self.capellaAPI.cluster_ops_apis.SECRET = response['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESS = response['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = response['token']
@@ -123,6 +130,7 @@ class ColumnarBaseTest(BaseTestCase):
         else:
             self.fail("Error while creating V4 API key for organization owner")
 
+        self._bootstrap_v4_key = (org_owner_key["id"], org_owner_key["token"])
         self.capellaAPI.org_ops_apis.bearer_token = \
             self.capellaAPI.cluster_ops_apis.bearer_token = \
             org_owner_key["token"]
@@ -133,6 +141,26 @@ class ColumnarBaseTest(BaseTestCase):
 
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
+
+    def _delete_bootstrap_api_keys(self):
+        """
+        Delete the V2 control plane key and the V4 organizationOwner key that
+        setUp creates for self.capellaAPI. Without this they pile up on the
+        tenant until APIKeyCountQuotaReached is hit.
+        """
+        v2_key = getattr(self, "_bootstrap_v2_key", None)
+        v4_key = getattr(self, "_bootstrap_v4_key", None)
+        if not v2_key:
+            return
+        try:
+            CapellaUtils.delete_v4_api_key(
+                self.pod, self.tenant, v2_key[0],
+                v4_key[0] if v4_key else None,
+                v4_key[1] if v4_key else None)
+        except Exception as e:
+            self.log.error(f"Failed to delete bootstrap API keys: {e}")
+        finally:
+            self._bootstrap_v2_key = self._bootstrap_v4_key = None
 
     def tearDown(self):
         if self.perform_columnar_instance_cleanup:

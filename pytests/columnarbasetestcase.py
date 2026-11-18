@@ -39,6 +39,11 @@ def transform_couchbase_version_azure(aws_version):
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
     def setUp(self):
+        # Subclass tearDowns often raise (e.g. self.fail on cbas cleanup)
+        # before reaching this class's tearDown, and unittest skips tearDown
+        # when setUp fails. Cleanups still run, so use one as a safety net.
+        self._cloud_teardown_ran = False
+        self.addCleanup(self._teardown_if_not_run)
         super(ColumnarBaseTest, self).setUp()
         self.log_setup_status(self.__class__.__name__, "started")
 
@@ -215,7 +220,17 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         for link in log_links:
             self.log.info(link)
 
+    def _teardown_if_not_run(self):
+        if self._cloud_teardown_ran:
+            return
+        self.log.warning("Cloud teardown did not run, running it now")
+        try:
+            ColumnarBaseTest.tearDown(self)
+        except Exception as e:
+            self.log.error("Cloud teardown failed: {}".format(e))
+
     def tearDown(self):
+        self._cloud_teardown_ran = True
         if self.has_test_failed():
             self.collect_logs()
 
@@ -229,10 +244,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             for cluster in tenant.clusters:
                 if cluster.sdk_client_pool:
                     cluster.sdk_client_pool.shutdown()
-
-        if self.is_test_failed() and self.get_cbcollect_info:
-            # Add code to get columnar logs.
-            return
 
         if self.skip_teardown_cleanup:
             return
