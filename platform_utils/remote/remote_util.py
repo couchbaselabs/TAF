@@ -5207,7 +5207,7 @@ class RemoteUtilHelper(object):
     @staticmethod
     def enable_firewall(
             server, bidirectional=False, xdcr=False, action_on_packet="REJECT",
-            block_ips=[], all_interface=False, interface_names=["eth0"],
+            block_ips=[], all_interface=False, interface_names=None,
             destination_ports=None):
         """ Check if user is root or non root in unix """
         shell = RemoteMachineShellConnection(server)
@@ -5227,18 +5227,55 @@ class RemoteUtilHelper(object):
                 shell.test_log.error("%s - Erlang process failed to suspend"
                                      % shell.ip)
         else:
+            # Some nodes (Debian 10) only have iptables, others (Debian 12+)
+            # only have nftables - fire both, whichever binary is missing
+            # just no-ops instead of silently skipping the fault injection.
+            if interface_names is None:
+                # Not every server object goes through onPrem setUp
+                # (e.g. deep copies), so detect the NIC here if needed.
+                # Hardcoding eth0 never matches on hosts using enX2/ens*.
+                if getattr(server, "default_interface", None) is None:
+                    o, _ = shell.execute_command(
+                        "ip route | grep default | cut -d' ' -f 5")
+                    server.default_interface = \
+                        o[0].strip() if o else "eth0"
+                interface_names = [server.default_interface]
+            nft_ifaces = ", ".join('"{0}"'.format(i) for i in interface_names)
             copy_server = copy.deepcopy(server)
             command_1 = "/sbin/iptables -A INPUT -p tcp "
+            nft_in_match = ""
             if not all_interface:
                 command_1 += "-i {0} ".format(",".join(interface_names))
+                nft_in_match += "iifname {{ {0} }} ".format(nft_ifaces)
             if block_ips:
                 command_1 += "-s {0} ".format(",".join(block_ips))
+                nft_in_match += "ip saddr {{ {0} }} ".format(
+                    ", ".join(block_ips))
             if not destination_ports:
                 destination_ports = "1000:65535"
             command_1 += "--dport {0} -j {1}".format(
                 destination_ports, action_on_packet)
-            command_2 = "/sbin/iptables -A OUTPUT -p tcp -o eth0 --sport 1000:65535 -j REJECT"
+            nft_verdict = "drop" if action_on_packet.upper() == "DROP" \
+                else "reject"
+            command_1_nft = "nft add rule ip filter INPUT {0}tcp dport {1} " \
+                            "counter {2}".format(
+                                nft_in_match,
+                                destination_ports.replace(":", "-"),
+                                nft_verdict)
+            command_2 = "/sbin/iptables -A OUTPUT -p tcp -o {0} " \
+                        "--sport 1000:65535 -j REJECT".format(
+                            ",".join(interface_names))
+            # flush_network_rules() only pre-creates the INPUT chain, so the
+            # OUTPUT chain has to be created here (harmless if it already
+            # exists from an earlier enable_firewall call this test).
+            command_2_nft_chain = "nft add chain ip filter OUTPUT " \
+                                  "'{ type filter hook output priority 0; }'"
+            command_2_nft = "nft add rule ip filter OUTPUT oifname {{ {0} }} " \
+                            "tcp sport 1000-65535 counter reject".format(
+                                nft_ifaces)
             command_3 = "/sbin/iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
+            command_3_nft = "nft add rule ip filter INPUT ct state " \
+                            "established,related counter accept"
             if shell.info.distribution_type.lower() in Linux.DISTRIBUTION_NAME \
                     and server.ssh_username != "root":
                 copy_server.ssh_username = "root"
@@ -5248,18 +5285,36 @@ class RemoteUtilHelper(object):
                 shell = RemoteMachineShellConnection(copy_server)
                 o, r = shell.execute_command("whoami")
                 shell.log_command_output(o, r)
-            # Reject incoming connections on port 1000->65535
-            o, r = shell.execute_command(command_1)
+            # (Re)create the base nft table/chain - harmless no-op if they
+            # already exist, but required if a prior disable_firewall() in
+            # this same test flushed the ruleset (nft flush ruleset wipes
+            # the table/chain flush_network_rules created in setUp too).
+            o, r = shell.execute_command("nft add table ip filter")
             shell.log_command_output(o, r)
+            o, r = shell.execute_command(
+                "nft add chain ip filter INPUT "
+                "'{ type filter hook input priority 0; }'")
+            shell.log_command_output(o, r)
+            # Run all iptables cmds before the nft ones: iptables-nft refuses
+            # to touch a table once nft-only syntax (sets) has been added
+            # Reject incoming connections on port 1000->65535
+            iptables_cmds = [command_1]
+            nft_cmds = [command_1_nft]
             # Reject outgoing connections on port 1000->65535
             if bidirectional:
-                o, r = shell.execute_command(command_2)
-                shell.log_command_output(o, r)
+                iptables_cmds.append(command_2)
+                nft_cmds.extend([command_2_nft_chain, command_2_nft])
             if xdcr:
-                o, r = shell.execute_command(command_3)
+                iptables_cmds.append(command_3)
+                nft_cmds.append(command_3_nft)
+            for cmd in iptables_cmds + nft_cmds:
+                o, r = shell.execute_command(cmd)
                 shell.log_command_output(o, r)
-            shell.test_log.debug("%s - Enabled firewall" % shell.ip)
+            shell.test_log.debug("%s - Enabled firewall on %s"
+                                 % (shell.ip, interface_names))
             o, r = shell.execute_command("/sbin/iptables --list")
+            shell.log_command_output(o, r)
+            o, r = shell.execute_command("nft list ruleset")
             shell.log_command_output(o, r)
         shell.disconnect()
 

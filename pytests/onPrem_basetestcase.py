@@ -865,6 +865,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             ssh_sessions[server.ip] = RemoteMachineShellConnection(server)
 
         for server in cluster.servers:
+            # Find the default interface for firewall-based fault injection
+            self.node_utils.populate_default_nw_interface_name(server)
             # Make sure that data_and index_path are writable by couchbase user
             if self.create_KMIP_secret:
                 self.get_KMIP_certificate(server)
