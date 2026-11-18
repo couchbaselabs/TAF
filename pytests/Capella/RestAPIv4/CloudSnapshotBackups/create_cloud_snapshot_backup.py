@@ -122,11 +122,12 @@ class CreateCloudSnapshotBackup(CloudSnapshotBackupBase):
 
     def test_payload(self):
         payload = {"retention": self.default_retention}
+        # The backend applies the per-cluster rate limit and hourly backup
+        # quota BEFORE validating the payload. Invalid payloads don't create
+        # backups (so don't use quota), hence run them first and the valid
+        # case (which consumes a quota slot) last.
         testcases = [
             {
-                "desc": "Valid cloud snapshot backup payload",
-                "payload": copy.deepcopy(payload)
-            }, {
                 "desc": "Invalid retention type",
                 "payload": dict(payload, retention="168"),
                 "expected_status_code": 422
@@ -134,10 +135,14 @@ class CreateCloudSnapshotBackup(CloudSnapshotBackupBase):
                 "desc": "Invalid regionsToCopy type",
                 "payload": dict(payload, regionsToCopy="us-east-1"),
                 "expected_status_code": 400
+            }, {
+                "desc": "Valid cloud snapshot backup payload",
+                "payload": copy.deepcopy(payload)
             }
         ]
 
         failures = list()
+        skipped = list()
         for testcase in testcases:
             self.log.info("[backup-trace] Executing test: {}".format(
                 testcase.get("description", testcase.get("desc"))))
@@ -147,9 +152,24 @@ class CreateCloudSnapshotBackup(CloudSnapshotBackupBase):
                 self.organisation_id, self.project_id, self.cluster_id,
                 retention=pld.get("retention"),
                 regionsToCopy=pld.get("regionsToCopy"))
+            if ("expected_status_code" in testcase and
+                    self.is_backup_quota_exceeded(result)):
+                # Quota is checked before payload validation, so the payload
+                # can't be verified until the hourly window frees up.
+                self.log.warning(
+                    "[backup-trace] SKIPPED '{}': backup quota exceeded "
+                    "before payload validation, expected {} could not be "
+                    "verified".format(testcase["desc"],
+                                      testcase["expected_status_code"]))
+                skipped.append(testcase["desc"])
+                continue
             self.validate_testcase(result, [202, 409], testcase, failures,
                                    payloadTest=True)
 
+        if skipped:
+            self.log.warning("[backup-trace] {} payload case(s) not verified "
+                             "due to backup quota: {}".format(
+                                 len(skipped), skipped))
         if failures:
             for fail in failures:
                 self.log.warning(fail)

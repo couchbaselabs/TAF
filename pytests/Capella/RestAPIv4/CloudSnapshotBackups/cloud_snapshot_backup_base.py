@@ -152,11 +152,15 @@ class CloudSnapshotBackupBase(GetCluster):
                 self.log.error("[backup-trace] Still rate limited after {} "
                                "attempts, giving up".format(max_attempts))
                 return result
-            retry_after = int(result.headers.get("Retry-After", 60))
+            header_retry_after = result.headers.get("Retry-After")
+            retry_after = int(header_retry_after or 60)
             window = re.search(r"request\(s\) per (\d+)s",
                                self._error_message(result))
             if window:
-                wait = max(int(window.group(1)), retry_after) + 1
+                # Snapshot endpoints often omit Retry-After; then the window
+                # from the message is enough (don't fall back to 60s).
+                wait = max(int(window.group(1)),
+                           int(header_retry_after or 0)) + 1
                 self.log.warning(
                     "Per-cluster rate limit hit ({}), retrying in {}s "
                     "(attempt {}/{})".format(self._error_message(result),
