@@ -91,6 +91,24 @@ class ClusterManagement(CollectionBase):
 
         if self.nodes_out:
             out_nodes = self.cluster.nodes_in_cluster[-self.nodes_out:]
+            # nodes_in_cluster order need not follow services_init, so the
+            # tail slice can pick every KV node and ns_server rejects the
+            # rebalance with 'noKVNodesLeft'. Swap one KV node back in.
+            kv_ips = [node.ip for node in self.cluster.kv_nodes]
+            out_ips = [node.ip for node in out_nodes]
+            kv_incoming = any("kv" in str(service).split(",")
+                              for service in (self.services_in or []))
+            if kv_ips and not kv_incoming \
+                    and not [ip for ip in kv_ips if ip not in out_ips]:
+                spare = [node for node in self.cluster.nodes_in_cluster
+                         if node.ip not in out_ips]
+                if spare:
+                    kv_out = [node for node in out_nodes
+                              if node.ip in kv_ips][0]
+                    out_nodes[out_nodes.index(kv_out)] = spare[0]
+                    self.log.info("Retaining KV node %s in cluster, "
+                                  "ejecting %s instead"
+                                  % (kv_out.ip, spare[0].ip))
 
         self.log.info("Starting doc_loading")
         load_task = self.bucket_util.run_scenario_from_spec(
