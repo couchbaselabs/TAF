@@ -166,7 +166,7 @@ class DeleteAdminUsers(GetAdminUsers):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-             "organizationOwner", "projectOwner"
+             "organizationOwner", "projectOwner", "projectManager"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

@@ -66,6 +66,8 @@ class CreateCloudSnapshotBackup(CloudSnapshotBackupBase):
 
         failures = list()
         for testcase in testcases:
+            self.log.info("[backup-trace] Executing test: {}".format(
+                testcase.get("description", testcase.get("desc"))))
             organization = self.organisation_id
             project = self.project_id
             cluster = self.cluster_id
@@ -93,6 +95,8 @@ class CreateCloudSnapshotBackup(CloudSnapshotBackupBase):
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner"
         ]):
+            self.log.info("[backup-trace] Executing test: {}".format(
+                testcase.get("description", testcase.get("desc"))))
             header = dict()
             self.auth_test_setup(
                 testcase, failures, header, self.project_id, self.other_project_id)
@@ -100,6 +104,15 @@ class CreateCloudSnapshotBackup(CloudSnapshotBackupBase):
                 self.capellaAPI.cluster_ops_apis.create_cloud_snapshot_backup,
                 self.organisation_id, self.project_id, self.cluster_id,
                 retention=self.default_retention, headers=header)
+            if ("expected_status_code" not in testcase and
+                    self.is_backup_quota_exceeded(result)):
+                # Only 5 backups/hour are allowed per cluster, fewer than the
+                # number of authorized roles. RBAC is evaluated before the
+                # quota (unauthorized roles still get 403 here), so a quota
+                # 429 means this role was authorized.
+                self.log.info("{}: authorized, blocked only by backup quota"
+                              .format(testcase["description"]))
+                continue
             self.validate_testcase(result, [202, 409], testcase, failures)
 
         if failures:
@@ -126,6 +139,8 @@ class CreateCloudSnapshotBackup(CloudSnapshotBackupBase):
 
         failures = list()
         for testcase in testcases:
+            self.log.info("[backup-trace] Executing test: {}".format(
+                testcase.get("description", testcase.get("desc"))))
             pld = testcase["payload"]
             result = self.api_call_with_retry(
                 self.capellaAPI.cluster_ops_apis.create_cloud_snapshot_backup,

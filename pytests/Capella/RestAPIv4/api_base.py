@@ -94,9 +94,13 @@ class APIBase(CouchbaseBaseTest):
             self.other_project_id = self.capella["tenant_id"]["otherProj"]
             self.api_keys = self.capella["tenant_id"]["apiKeys"]
             self.update_auth_with_api_token(self.curr_owner_key)
+            # A run that didn't start with a security TC (e.g. GROUP=backup)
+            # never set up the other project needed by auth tests.
+            if self.is_security_test() and not self.other_project_id:
+                self.other_project_id = self.get_or_create_auth_project()
+                self.capella["tenant_id"]["otherProj"] = self.other_project_id
             # Recreate security keys if cleared by previous TC's tearDown.
-            if (self.input.param("GROUP", "functional") == "security" and
-                    not self.api_keys):
+            if self.is_security_test() and not self.api_keys:
                 self.api_keys.update(
                     self.create_api_keys_for_all_combinations_of_roles(
                         [self.capella["project"]]))
@@ -168,24 +172,8 @@ class APIBase(CouchbaseBaseTest):
                 self.capella["project"] = self.project_id
 
             self.api_keys = dict()
-            if self.input.param("GROUP", "functional") == "security":
-                # Reuse a residual project used for auth verification
-                # tests, IF not already present.
-                self.other_project_id = self.find_project_by_name(
-                    self.organisation_id, "Auth_Project")
-                if self.other_project_id:
-                    self.log.info("Reusing existing project: {}"
-                                  .format(self.other_project_id))
-                else:
-                    self.log.info(
-                        "Creating the security-test required project")
-                    resp = self.capellaAPI.org_ops_apis.create_project(
-                        self.organisation_id, "Auth_Project")
-                    if resp.status_code == 201:
-                        self.other_project_id = resp.json()["id"]
-                    else:
-                        self.fail("Error while creating project: {}"
-                                  .format(resp.content))
+            if self.is_security_test():
+                self.other_project_id = self.get_or_create_auth_project()
                 self.capella["tenant_id"]["otherProj"] = self.other_project_id
 
                 if "apiKeys" not in self.capella["tenant_id"] or not \
@@ -604,6 +592,33 @@ class APIBase(CouchbaseBaseTest):
             }
         }
 
+    def is_security_test(self):
+        """
+        True when this TC needs the security setup (Auth_Project + API keys
+        for every role combination). The runtime GROUP can hold several
+        ';'-separated groups (e.g. "security;backup") or not name security
+        at all (e.g. "backup", "P2") while still running test_authorization,
+        so don't rely on GROUP == "security" alone.
+        """
+        groups = str(self.input.param("GROUP", "functional")).split(";")
+        return ("security" in groups or
+                self._testMethodName == "test_authorization")
+
+    def get_or_create_auth_project(self):
+        # Reuse a residual project used for auth verification tests, IF
+        # already present.
+        project_id = self.find_project_by_name(
+            self.organisation_id, "Auth_Project")
+        if project_id:
+            self.log.info("Reusing existing project: {}".format(project_id))
+            return project_id
+        self.log.info("Creating the security-test required project")
+        resp = self.capellaAPI.org_ops_apis.create_project(
+            self.organisation_id, "Auth_Project")
+        if resp.status_code == 201:
+            return resp.json()["id"]
+        self.fail("Error while creating project: {}".format(resp.content))
+
     def tearDown(self):
         # Delete security keys after every TC to prevent accumulation
         # against the org-level API key limit. This must run before the
@@ -611,8 +626,7 @@ class APIBase(CouchbaseBaseTest):
         # deleting the key currently authenticating this session
         # immediately invalidates it, so any cleanup attempted afterwards
         # (like this one) would fail with 401 on every call.
-        if (self.input.param("GROUP", "functional") == "security" and
-                self.api_keys):
+        if self.is_security_test() and self.api_keys:
             self.log.info("Deleting {} security API keys after TC".format(
                 len(self.api_keys)))
             self.delete_api_keys(self.api_keys)
@@ -2313,7 +2327,12 @@ class APIBase(CouchbaseBaseTest):
     def create_scope_to_be_tested(self, org_id, proj_id, clus_id, buck_id):
         self.update_auth_with_api_token(self.curr_owner_key)
 
-        name = self.prefix + "Scope_Delete"
+        # Use a fresh name on every call. Recreating a scope with the same
+        # name right after deleting it races with the backend's async drop
+        # of the old scope, which can silently remove the new one too
+        # (create returns 201, later fetch/delete return 404 Scope Not Found).
+        name = self.prefix + "Scope_Delete_" + self.generate_random_string(
+            length=6, special_characters=False)
         res = self.capellaAPI.cluster_ops_apis.create_scope(
             org_id, proj_id, clus_id, buck_id, name)
         if res.status_code == 429:

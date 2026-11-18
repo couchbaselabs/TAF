@@ -81,6 +81,8 @@ class DeleteCloudSnapshotBackup(UpdateCloudSnapshotBackupRetention):
 
         failures = list()
         for testcase in testcases:
+            self.log.info("[backup-trace] Executing test: {}".format(
+                testcase.get("description", testcase.get("desc"))))
             organization = self.organisation_id
             project = self.project_id
             cluster = self.cluster_id
@@ -112,6 +114,8 @@ class DeleteCloudSnapshotBackup(UpdateCloudSnapshotBackupRetention):
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner"
         ]):
+            self.log.info("[backup-trace] Executing test: {}".format(
+                testcase.get("description", testcase.get("desc"))))
             header = dict()
             self.auth_test_setup(
                 testcase, failures, header, self.project_id, self.other_project_id)

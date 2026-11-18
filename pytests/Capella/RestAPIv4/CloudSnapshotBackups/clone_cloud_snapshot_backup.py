@@ -75,6 +75,8 @@ class CloneCloudSnapshotBackup(CloudSnapshotBackupBase):
 
         failures = list()
         for testcase in testcases:
+            self.log.info("[backup-trace] Executing test: {}".format(
+                testcase.get("description", testcase.get("desc"))))
             organization = self.organisation_id
             project = self.project_id
             backup = self.backup_id
