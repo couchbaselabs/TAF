@@ -919,11 +919,21 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
     def setUp(self):
         super(DiskAutoFailoverBasetest, self).bareSetUp()
         self.log.info("=========Starting Diskautofailover base setup=========")
-        self.original_data_path = self.rest.get_data_path()
-        self.reset_cluster()
         self.disk_location = self.input.param("data_location", "/data")
         self.disk_location_size = self.input.param("data_location_size", 5120)
         self.data_location = "{0}/data".format(self.disk_location)
+        self.original_data_path = self.rest.get_data_path()
+        if self.original_data_path.rstrip("/") == self.data_location:
+            # A previous run's teardown never restored the node, so what
+            # reads back as the "original" path is this suite's own loopback
+            # path. Restoring to it would leave the node pointing at a
+            # directory the restore removes.
+            self.log.warning("Data path is already the test's own %s, "
+                             "restoring to %s instead"
+                             % (self.data_location,
+                                self.default_data_path))
+            self.original_data_path = self.default_data_path
+        self.reset_cluster()
         self.skip_collections_during_data_load = self.input.param(
             "skip_col_dict", None)
         self.range_scan_timeout = self.input.param("range_scan_timeout",
@@ -945,6 +955,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.log.info("Cleanup the cluster and set the data location "
                       "to the one specified by the test.")
         self.original_data_devices = {}
+        # tearDown() is not run when setUp() fails, so a node left on the
+        # loopback partition is restored through a cleanup instead
+        self.disk_setup_complete = False
+        self.addCleanup(self._restore_after_failed_setup)
         for server in self.cluster.servers:
             self._create_data_locations(server)
             if server == self.cluster.master:
@@ -1028,23 +1042,147 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.failover_actions['disk_full'] = self.fail_disk_via_disk_full
 
         self.loadgen_tasks = []
+        self.disk_setup_complete = True
         self.log.info("=========Finished Diskautofailover base setup=========")
+
+    default_data_path = "/opt/couchbase/var/lib/couchbase/data"
 
     def tearDown(self):
         self.log.info("=========Starting Diskautofailover teardown ==========")
         self.bucket_util.print_bucket_stats(self.cluster)
         self.targetMaster = True
+        restore_errors = list()
         if hasattr(self, "original_data_path"):
             self.bring_back_failed_nodes_up()
-            for server in self.cluster.servers:
-                shell = RemoteMachineShellConnection(server)
+            restore_errors = self._restore_data_locations()
+        super(DiskAutoFailoverBasetest, self).tearDown()
+        if restore_errors:
+            self.fail("Failed to restore original data location on: %s"
+                      % "; ".join(restore_errors))
+
+    def _restore_data_locations(self, servers=None):
+        """
+        Put every node back on its original data path and partition.
+
+        The loopback partition holds the live data path, so it can only be
+        swapped out with couchbase stopped: 'umount -l' under a running
+        memcached only detaches it lazily, and ns_server is then left
+        configured with a data path that no longer exists. Once that node
+        is ejected, ns_heart crashes on every status poll with
+        {error,read_file_info,"/data/data",[],{error,enoent}} and the node
+        never becomes healthy again, which breaks setUp of every later
+        test in the job.
+        :param servers: Servers to restore. Default: all cluster servers
+        :return: List of restore errors
+        """
+        if servers is None:
+            servers = self.cluster.servers
+        restore_errors = list()
+        # Buckets go first. A node's config is not under disk_location, so
+        # a node that still owns a bucket whose files have been removed
+        # comes back expecting vbucket files that no longer exist.
+        try:
+            self.bucket_util.delete_all_buckets(self.cluster)
+        except Exception as e:
+            restore_errors.append("delete_all_buckets: %s" % e)
+            self.log.error("Failed to delete buckets before restoring %s: %s"
+                           % (self.disk_location, e))
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            try:
+                shell.stop_couchbase()
                 shell.restore_partition(
                     self.disk_location,
                     self.original_data_devices.get(server))
+            except Exception as e:
+                restore_errors.append("%s: %s" % (server.ip, e))
+                self.log.error("Failed to restore %s on %s: %s"
+                               % (self.disk_location, server.ip, e))
+            finally:
+                # Before couchbase restarts: it cannot start on a data
+                # path that the restore has just removed
+                self.prepare_data_location(
+                    shell, (self.disk_location, self.data_location,
+                            self.original_data_path))
+                shell.start_couchbase()
                 shell.disconnect()
+            try:
                 self._initialize_node_with_new_data_location(
                     server, self.original_data_path)
-        super(DiskAutoFailoverBasetest, self).tearDown()
+            except Exception as e:
+                restore_errors.append("%s: %s" % (server.ip, e))
+                self.log.error("Failed to set data path %s on %s: %s"
+                               % (self.original_data_path, server.ip, e))
+        return restore_errors
+
+    def _restore_after_failed_setup(self):
+        """
+        Restore the data partition if setUp() failed after mounting it
+        """
+        if self.disk_setup_complete:
+            return
+        servers = [server for server in self.cluster.servers
+                   if server in self.original_data_devices]
+        if not servers:
+            return
+        self.log.warning("setUp failed, restoring %s on %s"
+                         % (self.disk_location,
+                            [server.ip for server in servers]))
+        restore_errors = self._restore_data_locations(servers)
+        if restore_errors:
+            self.fail("setUp failed and the original data location could "
+                      "not be restored on: %s" % "; ".join(restore_errors))
+
+    def prepare_data_location(self, shell, data_paths):
+        """
+        Make sure the paths couchbase will be started with exist and are
+        owned by couchbase. restore_partition() leaves disk_location as
+        the bare root-owned directory create_new_partition() made when
+        there was no dedicated device to remount, and create_new_partition()
+        removed whatever was under it, so the data directories are gone
+        either way.
+        :param shell: Open connection to the node
+        :param data_paths: Paths couchbase must find on restart
+        """
+        for path in data_paths:
+            if not path:
+                continue
+            # An immutable flag on the path or any parent refuses mkdir
+            # even to root, leaving the node with no data path at all
+            parts = path.rstrip("/").split("/")
+            for index in range(2, len(parts) + 1):
+                shell.execute_command("chattr -i %s 2>/dev/null"
+                                      % "/".join(parts[:index]))
+            try:
+                output, error = shell.execute_command("mkdir -p %s" % path)
+                shell.log_command_output(output, error)
+                shell.give_directory_permissions_to_couchbase(path)
+            except Exception as e:
+                self.log.error("Failed to recreate %s on %s: %s"
+                               % (path, shell.ip, e))
+
+    def wait_for_ns_server_reachable(self, server, wait_time=300):
+        """
+        Wait until ns_server on 'server' answers REST. node-init needs the
+        node reachable, not 'healthy': a node whose buckets are reloading
+        reports 'warmup' while serving REST normally. /pools is used since
+        it also answers on a node that has just been hard reset and is no
+        longer provisioned.
+        :return: True once ns_server answers, False if it never does
+        """
+        end_time = time.time() + wait_time
+        while time.time() < end_time:
+            try:
+                pools_info = RestConnection(server).get_pools_info()
+                if pools_info and "implementationVersion" in pools_info:
+                    return True
+            except Exception as e:
+                # Building the REST client probes the node, so an
+                # unreachable one raises here rather than returning None
+                self.log.debug("%s: ns_server not reachable yet: %s"
+                               % (server.ip, e))
+            self.sleep(5, "Waiting for ns_server on %s" % server.ip)
+        return False
 
     def enable_disk_autofailover(self):
         if self.disk_timeout < 5:
@@ -1108,10 +1246,19 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         shell = RemoteMachineShellConnection(server)
         self.original_data_devices[server] = shell.get_mount_source(
             self.disk_location)
-        shell.create_new_partition(self.disk_location, self.disk_location_size)
-        shell.create_directory(self.data_location)
-        shell.give_directory_permissions_to_couchbase(self.data_location)
-        shell.disconnect()
+        # Couchbase has to be down while the partition is swapped. With
+        # memcached holding files open on disk_location the unmount inside
+        # create_new_partition() is only lazy, and the old filesystem
+        # stays in use underneath the new mount.
+        shell.stop_couchbase()
+        try:
+            shell.create_new_partition(self.disk_location,
+                                       self.disk_location_size)
+            shell.create_directory(self.data_location)
+            shell.give_directory_permissions_to_couchbase(self.data_location)
+        finally:
+            shell.start_couchbase()
+            shell.disconnect()
 
     def _initialize_node_with_new_data_location(self, server, data_location,
                                                 services=None):
@@ -1120,13 +1267,30 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         init_port = server.port or CbServer.port
         if init_port == CbServer.ssl_port:
             init_port = CbServer.port
+        self.assertTrue(
+            self.wait_for_ns_server_reachable(server),
+            "%s: ns_server not reachable, cannot set the data location "
+            "to %s" % (server.ip, data_location))
+        # node-init refuses to change the data path of a node that is part
+        # of a provisioned cluster, so the node is reset first. Without
+        # this the teardown restore failed on every node, and the failure
+        # went unnoticed.
+        RestConnection(server).reset_node()
+        self.sleep(5, "Wait for ns_server restart after hard reset")
+        self.assertTrue(
+            self.wait_for_ns_server_reachable(server),
+            "%s: ns_server not reachable after resetting the node"
+            % server.ip)
         cli = CouchbaseCLI(server, server.rest_username, server.rest_password)
         cli.hostname = "%s:%s" % (server.ip, init_port)
-        output, error, _ = cli.node_init(data_location, None, None)
+        output, error, success = cli.node_init(data_location, None, None)
         self.log.info(output)
-        if error or "ERROR" in output:
+        # 'output' is a list of lines, so a substring check such as
+        # '"ERROR" in output' never matches. Use the CLI's own verdict.
+        if error or not success:
             self.log.info(error)
-            self.fail("Failed to set new data location. Check error message.")
+            self.fail("%s: Failed to set data location to %s: %s"
+                      % (server.ip, data_location, output))
         init_tasks.append(self.task.async_init_node(
             server, self.disabled_consistent_view,
             self.rebalanceIndexWaitingDisabled,
