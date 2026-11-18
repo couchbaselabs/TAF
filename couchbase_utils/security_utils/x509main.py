@@ -13,6 +13,7 @@ import random
 import os
 import copy
 import subprocess
+import time
 
 
 class ServerInfo():
@@ -301,11 +302,35 @@ class x509main:
         return status, content
 
     #Upload Cluster or root cert
-    def _upload_cluster_ca_certificate(self,username,password):
+    def _upload_cluster_ca_certificate(self, username, password):
+        # controller/uploadClusterCA rejects non-localhost calls on a node
+        # that is not yet part of a cluster ("API is accessible from
+        # localhost only"), so a node about to be rebalanced in never trusts
+        # the root CA and add_node fails with 'Unknown CA'. Place the CA in
+        # inbox/CA and load it via loadTrustedCAs, which works on any node.
         rest = RestConnection(self.host)
-        url = "controller/uploadClusterCA"
-        api = rest.baseUrl + url
-        self._rest_upload_file(api,x509main.CACERTFILEPATH + "/" + x509main.CACERTFILE,"Administrator",'password')
+        shell = RemoteMachineShellConnection(self.host)
+        ca_dir = self.install_path + x509main.CHAINFILEPATH + "/CA"
+        shell.execute_command("mkdir -p '{0}'".format(ca_dir))
+        shell.copy_file_local_to_remote(
+            x509main.CACERTFILEPATH + "/" + x509main.CACERTFILE,
+            ca_dir + "/root_ca.pem")
+        shell.disconnect()
+
+        time.sleep(2)
+        status, content = rest.load_trusted_CAs()
+        if not status:
+            raise Exception("Failed to load trusted CAs on {0}. Error: {1}"
+                            .format(self.host.ip, content))
+
+        for _ in range(5):
+            trusted_status, trusted_content = rest.get_trusted_CAs()
+            if trusted_status and "My Company Root CA" in str(trusted_content):
+                return
+            time.sleep(1)
+        raise Exception("Trusted CA verification failed on {0}. "
+                        "'My Company Root CA' not found in trustedCAs"
+                        .format(self.host.ip))
 
     #Upload security setting for client cert
     def _upload_cluster_ca_settings(self,username,password,data=None):

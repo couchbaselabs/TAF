@@ -194,7 +194,10 @@ class N2nEncryptionX509(CollectionBase):
                     CbServer.use_https = False
                 for server in self.cluster.servers:
                     self.set_ports_for_server(server, "non_ssl")
-                self.upload_x509_certs(servers=add_nodes)
+                cert_setup_nodes = self.nodes_in_cluster + \
+                    [node for node in add_nodes
+                     if node not in self.nodes_in_cluster]
+                self.upload_x509_certs(servers=cert_setup_nodes)
             if level in ["strict", "control", "all"]:
                 self.set_n2n_encryption_level_on_nodes(nodes=[self.cluster.master],
                                                        level=level)
