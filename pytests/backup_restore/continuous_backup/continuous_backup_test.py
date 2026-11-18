@@ -1193,6 +1193,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self._load_data_tolerating_stat_validation()
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             count_before_disable = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+            self.log.info(f"Toggle iteration {i + 1}: {count_before_disable} "
+                          f"items before disabling continuous backup")
             # Ensure all pre-disable data is uploaded to the backup location
             # before disabling. Disabling stops further uploads, so any tail
             # not yet uploaded when we disable is lost from the backup and the
@@ -1206,6 +1208,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
             self.log.info("Loading more data while continuous backup is disabled")
             self._load_data_tolerating_stat_validation()
+            self.log.info(
+                f"Toggle iteration {i + 1}: "
+                f"{self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)} "
+                f"items after loading with continuous backup disabled; the "
+                f"restore must still hold {count_before_disable}")
             self.sleep(self.continuous_backup_interval * 60, "Waiting for backup interval to pass (backup should not run)")
 
             self.log.info("Restoring to latest point in time")
@@ -1239,6 +1246,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._load_data_tolerating_stat_validation()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         count_after_interval_change = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+        self.log.info(f"{count_after_interval_change} items after the "
+                      f"interval change; the final restore has to write all "
+                      f"of them (cbcontbk_cmd_timeout="
+                      f"{self.cont_bk_mgr.cmd_timeout}s)")
 
         # This is the latest state with no mutation after it, so a captured
         # wall-clock timestamp would land one interval past the newest

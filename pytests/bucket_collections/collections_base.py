@@ -233,7 +233,8 @@ class CollectionBase(ClusterSetup, FusionBase):
             obj_staging_dir=self.backup_location.obj_staging_dir)
         if self.cont_bkp_test:
             # cbcontbk reads both the archive and the continuous backup
-            # location, so it needs both providers
+            # location, so it needs both providers. cbcontbk_cmd_timeout
+            # (seconds) overrides CbContBk's default per-command timeout.
             self.cont_bk_mgr = CbContBk(
                 shell,
                 username=self.cluster.master.rest_username,
@@ -241,7 +242,8 @@ class CollectionBase(ClusterSetup, FusionBase):
                 log=self.log,
                 cbcontbk_cloud_provider=self.cont_bkp_location.cloud_provider,
                 backup_cloud_provider=self.backup_location.cloud_provider,
-                obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+                obj_staging_dir=self.cont_bkp_location.obj_staging_dir,
+                cmd_timeout=self.input.param("cbcontbk_cmd_timeout", None))
 
     def _setup_cont_bkp_credential(self, rest):
         """
