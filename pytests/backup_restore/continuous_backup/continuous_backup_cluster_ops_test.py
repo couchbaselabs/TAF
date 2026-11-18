@@ -24,6 +24,8 @@ Note: PITR is supported only on Magma buckets. All tests use
 import time
 
 from backup_restore.continuous_backup.continuous_backup_base import ContinuousBackupBase
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.bucket_collections.collections_base import CollectionBase
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -40,6 +42,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         super(ContinuousBackupClusterOpsTest, self).setUp()
         # Nodes that must be added back in tearDown after a failover
         self._failed_over_nodes = []
+        # Nodes cut off by an unsafe failover: hard-reset, not re-added
+        self._unsafe_failed_over_nodes = []
 
     def tearDown(self):
         # Re-add any failed-over nodes so the cluster is clean for the next test
@@ -53,11 +57,52 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
                 self.task.jython_task_manager.get_task_result(rebalance)
             except Exception as e:
                 self.log.error(f"tearDown: failed to re-add nodes: {e}")
+        # Reset cut-off nodes the test didn't reach, or the next setUp fails
+        # on them; its cleanup rebalances out any still failed over.
+        if self._unsafe_failed_over_nodes:
+            self.log.info(
+                f"tearDown: hard-resetting nodes cut off by unsafe failover: "
+                f"{[n.ip for n in self._unsafe_failed_over_nodes]}")
+            for ip, error in self._hard_reset_nodes(
+                    self._unsafe_failed_over_nodes):
+                self.log.error(f"tearDown: could not reset {ip}: {error}")
         super(ContinuousBackupClusterOpsTest, self).tearDown()
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _hard_reset_nodes(self, nodes):
+        """
+        Hard-reset nodes cut off by an unsafe failover, like
+        CollectionsQuorumLoss.wipe_config_on_removed_nodes().
+
+        They keep the old cluster's config (buckets, credentials) even after
+        the rebalance-out, and the next setUp, which queries every node,
+        fails on them (8.5.0-1443: GET /pools/default/buckets returns 500).
+
+        :return: [(ip, error)] for nodes that could not be reset
+        """
+        failures = []
+        for node in nodes:
+            # What the cut-off node serves before the reset
+            status, content = BucketRestApi(node).get_bucket_info()
+            buckets = [bucket.get("name") for bucket in content] \
+                if status and isinstance(content, list) else content
+            self.log.info(f"{node.ip} before hard reset: GET "
+                          f"/pools/default/buckets status={status}, "
+                          f"buckets={buckets}")
+            status, content = ClusterRestAPI(node).reset_node()
+            if not status:
+                failures.append((node.ip, f"hardResetNode: {content}"))
+        for node in nodes:
+            if not self.cluster_util.wait_for_ns_servers(node, 300):
+                failures.append((node.ip, "ns_server not healthy after reset"))
+                continue
+            status, content = ClusterRestAPI(node).cluster_details()
+            self.log.info(f"{node.ip} after hard reset: GET /pools/default "
+                          f"status={status}, response={content}")
+        return failures
 
     def _wait_for_rebalance(self, rebalance_task, timeout=900):
         """Block until a rebalance task completes; fail if it does not succeed."""
@@ -609,16 +654,20 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
                 self.log.warning(
                     f"Unsafe failover of {node.ip} returned False — "
                     f"may be expected depending on cluster state")
-            self._failed_over_nodes.append(node)
+            self._unsafe_failed_over_nodes.append(node)
 
         # Rebalance out the failed-over nodes to stabilise the cluster
         self.log.info("Rebalancing out quorum-lost nodes")
         rebalance = self.task.async_rebalance(
             self.cluster, [], quorum_loss_nodes)
         self._wait_for_rebalance(rebalance)
-        for node in quorum_loss_nodes:
-            if node in self._failed_over_nodes:
-                self._failed_over_nodes.remove(node)
+
+        # Rebalancing out leaves the old config on them; reset for later tests
+        failures = self._hard_reset_nodes(quorum_loss_nodes)
+        if failures:
+            self.fail(f"Could not reset nodes cut off by the unsafe "
+                      f"failover: {failures}")
+        self._unsafe_failed_over_nodes = []
 
         self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
