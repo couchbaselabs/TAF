@@ -820,8 +820,16 @@ class RestConnection(newRC):
 
     def regenerate_cluster_certificate(self, allow_unreachable_nodes=False):
         api = self.baseUrl + 'controller/regenerateCertificate'
+        # 'allowUnreachableNodes' is rejected ("Unsupported key") by
+        # server builds older than 8.5, so only send it where supported
         if allow_unreachable_nodes:
-            api += '?allowUnreachableNodes=true'
+            try:
+                ver = self.get_nodes_version().split("-")[0].split(".")
+                supported = (int(ver[0]), int(ver[1])) >= (8, 5)
+            except (ValueError, IndexError, AttributeError):
+                supported = False
+            if supported:
+                api += '?allowUnreachableNodes=true'
         status, content, _ = self._http_request(api, 'POST')
         if status:
             return content
