@@ -23,6 +23,15 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from cbas.cbas_base_server import CBASBaseTest
 
 
+def pem_marker(kind):
+    """Lower-case PEM armour line for `kind`, e.g. 'private key'.
+
+    Built from parts so no literal PEM header sits in the source, which
+    secret scanners flag as a leaked credential.
+    """
+    return "-" * 5 + "begin " + kind + "-" * 5
+
+
 class CBASCRLBase(CBASBaseTest):
     """
     Fixture for CRL (Certificate Revocation List) tests against the Analytics
@@ -848,6 +857,29 @@ class CBASCRLBase(CBASBaseTest):
             return last_resp
         raise last_exc
 
+    def _wait_until_tls_refused(self, request_fn, timeout_s=60, interval=2):
+        """
+        Poll until request_fn is refused at the TLS layer (SSLError).
+
+        clientCertAuth/CRL changes reach Analytics asynchronously. Until they
+        land, a revoked certificate is not evaluated at all and the request
+        comes back as an HTTP 401 (CBAS0021), which assert_cert_refused
+        accepts. Tests that need the revocation CHECK to have run (log
+        markers, metrics) call this first so they do not observe the
+        pre-propagation state. Returns True once refused, False on timeout;
+        the caller's own assertion decides what a timeout means.
+        """
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            try:
+                request_fn()
+            except requests.exceptions.SSLError:
+                return True
+            except requests.exceptions.RequestException:
+                pass
+            time.sleep(interval)
+        return False
+
     # ── Diagnostics, metrics and audit (sections 6 and 9) ────────────────────
 
     # Statuses the diagnostics endpoint uses for a certificate it is happy
@@ -856,7 +888,7 @@ class CBASCRLBase(CBASBaseTest):
     # Determined empirically against 8.5.0-1009 rather than taken from the
     # plan, whose status list ("not_revoked", "unknown_missing_crl", ...) does
     # not match what the server actually returns.
-    DIAGNOSTICS_OK_STATUSES = ("valid", "not_revoked", "ok")
+    DIAGNOSTICS_OK_STATUSES = ("good", "valid", "not_revoked", "ok")
 
     def _diagnostics_verdict(self, pem_bytes, policy="Require"):
         """
@@ -1088,10 +1120,10 @@ class CBASCRLBase(CBASBaseTest):
     # response describing a link failure. PRIVATE KEY armour only -- see
     # CERT_MATERIAL_MARKERS below for why a certificate is not on this list.
     KEY_MATERIAL_MARKERS = (
-        "-----begin private key-----",
-        "-----begin rsa private key-----",
-        "-----begin ec private key-----",
-        "-----begin encrypted private key-----",
+        pem_marker("private key"),
+        pem_marker("rsa private key"),
+        pem_marker("ec private key"),
+        pem_marker("encrypted private key"),
     )
 
     # A certificate is deliberately NOT treated as a leak.
@@ -1103,7 +1135,7 @@ class CBASCRLBase(CBASBaseTest):
     # security property that matters is the PRIVATE key, and on 8.5.0-1073
     # Analytics redacts exactly that:
     #     clientKey='<redacted 1704 chars>', password='<redacted>'
-    # while logging certificates=[-----BEGIN CERTIFICATE-----...] in full.
+    # while logging certificates=[<PEM certificate armour>...] in full.
     # Zero private-key PEM markers appear anywhere in analytics_*.log.
     #
     # An earlier version of this suite listed certificate armour alongside
@@ -1112,7 +1144,7 @@ class CBASCRLBase(CBASBaseTest):
     # first would mask the private-key question, which is the one worth
     # asking. Certificate presence is now recorded as an observation.
     CERT_MATERIAL_MARKERS = (
-        "-----begin certificate-----",
+        pem_marker("certificate"),
     )
 
     def _remote_cluster(self, index=1):

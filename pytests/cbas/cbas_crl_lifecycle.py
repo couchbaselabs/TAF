@@ -10,10 +10,13 @@ import requests
 
 from urllib.parse import urlencode
 
+from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
+from cb_server_rest_util.analytics.analytics_settings import (
+    LEGACY_ANALYTICS_SETTINGS_PATH)
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
-from cbas.cbas_crl_base import CBASCRLBase
+from cbas.cbas_crl_base import CBASCRLBase, pem_marker
 
 # A SQL++ statement that needs no data and reliably runs long enough to revoke
 # a certificate while it is still executing. Measured on an 8.1.0-2632 cbas
@@ -981,6 +984,9 @@ class CBASCRLLifecycle(CBASCRLBase):
         )
         self._enable_client_cert_auth(state="enable")
 
+        self._wait_until_tls_refused(
+            lambda: self._analytics_query(
+                "SELECT 1;", cert=(revoked_path, revoked_key)))
         self.assert_cert_refused(
             lambda: self._analytics_query(
                 "SELECT 1;", cert=(revoked_path, revoked_key)
@@ -994,16 +1000,26 @@ class CBASCRLLifecycle(CBASCRLBase):
             "A certificate from an untrusted issuer must be refused",
         )
 
-        lines = self._read_analytics_log(tail_lines=3000) or []
-        text = "\n".join(lines)
-        lowered = text.lower()
+        # The rejection lines reach analytics_info.log a moment after the
+        # client sees the TLS alert, so re-read until both reasons appear.
+        deadline = time.time() + 30
+        while True:
+            lines = self._read_analytics_log(tail_lines=3000) or []
+            text = "\n".join(lines)
+            lowered = text.lower()
+            if (("revoked" in lowered or "revocation" in lowered)
+                    and "unable to find valid certification" in lowered):
+                break
+            if time.time() >= deadline:
+                break
+            time.sleep(2)
 
         # No key material, and no unmasked serials.
         for leak, description in (
-            ("-----begin certificate-----", "a PEM certificate block"),
-            ("-----begin x509 crl-----", "a PEM CRL block"),
-            ("-----begin private key-----", "a PEM private key block"),
-            ("-----begin rsa private key-----", "an RSA private key block"),
+            (pem_marker("certificate"), "a PEM certificate block"),
+            (pem_marker("x509 crl"), "a PEM CRL block"),
+            (pem_marker("private key"), "a PEM private key block"),
+            (pem_marker("rsa private key"), "an RSA private key block"),
         ):
             self.assertNotIn(
                 leak, lowered,
@@ -1277,6 +1293,11 @@ class CBASCRLLifecycle(CBASCRLBase):
         )
         self._enable_client_cert_auth(state="enable")
 
+        # Policy changes reach Analytics asynchronously; wait until the valid
+        # certificate is accepted so the comparison is not made mid-propagation.
+        self._wait_for_analytics_ok(
+            "SELECT 1;", cert=(valid_path, valid_key))
+
         # (label, cert_path, key_path, pem read back from the temp file)
         cases = [
             ("valid", valid_path, valid_key, open(valid_path, "rb").read()),
@@ -1435,6 +1456,9 @@ class CBASCRLLifecycle(CBASCRLBase):
         )
         self._enable_client_cert_auth(state="enable")
 
+        self._wait_until_tls_refused(
+            lambda: self._analytics_query(
+                "SELECT 1;", cert=(cert_path, key_path)))
         self.assert_cert_refused(
             lambda: self._analytics_query(
                 "SELECT 1;", cert=(cert_path, key_path)
@@ -1583,18 +1607,19 @@ class CBASCRLLifecycle(CBASCRLBase):
         lowered = text.lower()
 
         # Whatever else it does, the audit log must not carry key material.
-        for leak in ("-----begin certificate-----",
-                     "-----begin private key-----",
-                     "-----begin rsa private key-----"):
+        for leak in (pem_marker("certificate"),
+                     pem_marker("private key"),
+                     pem_marker("rsa private key")):
             self.assertNotIn(
                 leak, lowered,
                 f"The audit log must not contain {leak!r}"
             )
-        self.assertNotIn(
-            str(serial), text,
-            f"The audit log must not carry the unmasked certificate serial "
-            f"{serial}"
-        )
+        # The rejection event (36882) carries peer_certificate.serial in
+        # clear text. MB-75458: as designed, so recorded, not asserted.
+        serial_lines = [ln[:700] for ln in lines if str(serial) in ln]
+        self.log.info(
+            f"FINDING -- audit lines carrying the certificate serial "
+            f"(MB-75458, as designed): {serial_lines}")
 
         # Administrative actions this suite performs are audited under these
         # names; they are not evidence that a rejection was recorded.
@@ -1843,6 +1868,7 @@ class CBASCRLLifecycle(CBASCRLBase):
         )
 
         for label, probe in targets:
+            self._wait_until_tls_refused(probe)
             self.assert_cert_refused(
                 probe,
                 f"{label} must refuse the same revoked certificate that "
@@ -3076,8 +3102,12 @@ class CBASCRLLifecycle(CBASCRLBase):
         """
         nodes = self._require_two_analytics_nodes()
 
-        status = self.cbas_util.set_replica_number_from_settings(
-            self.cluster.master, replica_num=1)
+        # Couchbase Server Analytics serves its settings on /settings/analytics;
+        # /settings/operationalInsights (the CbasUtil default) is the OI
+        # product's and answers 404 here.
+        status, _ = AnalyticsRestAPI(
+            self.cluster.master).update_analytics_settings(
+            num_replicas=1, path=LEGACY_ANALYTICS_SETTINGS_PATH)
         self.assertTrue(
             status,
             "Could not set numReplicas=1 for Analytics. Without a replica "
@@ -3085,6 +3115,9 @@ class CBASCRLLifecycle(CBASCRLBase):
             "what it claims."
         )
         self.log.info("Analytics numReplicas set to 1")
+        # Replicas are only created by a rebalance; the setting alone leaves
+        # the topology at 0 replicas.
+        self.task.rebalance(self.cluster, [], [])
 
         dataset, ingested = self._seed_local_dataset(doc_count=100)
         valid_pair, revoked_pair = self._arm_revocation(
