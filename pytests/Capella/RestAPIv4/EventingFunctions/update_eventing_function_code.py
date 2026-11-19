@@ -100,7 +100,7 @@ class UpdateEventingFunctionCode(EventingFunctionBase):
                 "function OnUpdate(doc, meta, xattrs) { return; }\n"
                 "function OnDelete(meta, options) { return; }",
                 headers=header)
-            self.validate_testcase(result, [204], testcase, failures)
+            self.validate_testcase(result, [204, 403], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
 

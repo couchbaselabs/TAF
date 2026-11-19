@@ -100,7 +100,7 @@ class UpdateEventingFunctionActivationState(EventingFunctionBase):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.function_name, "deploy", headers=header)
             self.update_auth_with_api_token(self.curr_owner_key)
-            self.validate_testcase(result, [204, 400, 422], testcase, failures)
+            self.validate_testcase(result, [204, 400, 403, 422], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
 

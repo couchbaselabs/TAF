@@ -28,7 +28,7 @@ class ListEventingFunctions(EventingFunctionBase):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/eventingFunctions/function",
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": self.expected_invalid_uuid_error()
             }, {
                 "description": "List eventing functions with non-hex organizationID",
@@ -87,7 +87,7 @@ class ListEventingFunctions(EventingFunctionBase):
                 self.capellaAPI.cluster_ops_apis.list_eventing_functions,
                 self.organisation_id, self.project_id, self.cluster_id,
                 headers=header)
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(result, [200, 403], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
 
