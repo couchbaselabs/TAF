@@ -32,6 +32,40 @@ class ServerInfo:
 
 class SecurityTest(SecurityBase):
     SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase', 18091)
+    # TLS port each service listens on; the node API may report either
+    # the internal or the Capella service name.
+    SERVICE_TLS_PORTS = {
+        "kv": "18092", "data": "18092",
+        "n1ql": "18093", "query": "18093",
+        "fts": "18094", "search": "18094",
+        "cbas": "18095", "analytics": "18095",
+        "eventing": "18096",
+    }
+
+    def get_node_and_service_ports(self, nodes):
+        """
+        Pick the node running the most services and return it with the
+        TLS ports that should accept connections on it. With multiple
+        service groups (e.g. data-query:index:...), a data-only node has
+        nothing listening on 18093-18096, so a "connection refused" there
+        is not an allowlist problem.
+        """
+        def node_ports(n):
+            ports = set(self.SERVICE_TLS_PORTS.get(str(svc).lower())
+                        for svc in (n.get("services") or []))
+            ports.discard(None)
+            return ports
+
+        if not any(n.get("services") for n in nodes):
+            self.log.warning("Node services not in get_nodes response, "
+                             "checking all service ports on the first node")
+            return nodes[0]["hostname"], ["18091", "18092", "18093",
+                                          "18094", "18095", "18096"]
+        node = max(nodes, key=lambda n: len(node_ports(n)))
+        ports = ["18091"] + sorted(node_ports(node))
+        self.log.info("Checking node {} (services: {}) on ports {}".format(
+            node["hostname"], node.get("services"), ports))
+        return node["hostname"], ports
 
     def setUp(self):
         try:
@@ -186,7 +220,7 @@ class SecurityTest(SecurityBase):
                 capella_cluster_config = {"region": "us-west-2", "name": user + "_Cluster",
                                           "cidr": None, "singleAZ": False,
                                           "specs": [{"services": ["kv"], "count": 3,
-                                                     "compute": "m5.xlarge",
+                                                     "compute": "m7g.xlarge",
                                                      "disk": {"type": "gp3", "sizeInGb": 50,
                                                               "iops": 3000}}],
                                           "plan": "Developer Pro",
@@ -260,13 +294,15 @@ class SecurityTest(SecurityBase):
                               "connect to the node")
                 resp = capella_api.get_nodes(self.tenant_id, self.project_id,
                                              self.cluster_id)
-                node = json.loads(resp.content)["data"][0]["data"]["hostname"]
-                valid_ports = ["18091", "18092", "18093", "18094", "18095", "18096"]
+                nodes = [n["data"] for n in json.loads(resp.content)["data"]]
+                node, valid_ports = self.get_node_and_service_ports(nodes)
                 self.connect_node_port(node, valid_ports, expect_to_connect=True)
 
                 invalid_ports = ["3389"]
                 random_ports = random.sample(range(0, 65536), 5)
-                s = set(valid_ports)
+                # Exclude every Couchbase TLS port, not just the ones on
+                # this node, so a random pick can't be a real service port
+                s = set(self.SERVICE_TLS_PORTS.values()) | {"18091"}
                 invalid_ports.extend([str(x) for x in random_ports if str(x) not in s])
                 self.connect_node_port(node, invalid_ports, expect_to_connect=False)
 
@@ -393,7 +429,7 @@ class SecurityTest(SecurityBase):
         capella_cluster_config = {"region": "us-west-2", "name": self.user + "_Cluster",
                                   "cidr": None, "singleAZ": False,
                                   "specs": [{"services": ["kv"], "count": 3,
-                                             "compute": "m5.xlarge",
+                                             "compute": "m7g.xlarge",
                                              "disk": {"type": "gp3", "sizeInGb": 50,
                                                       "iops": 3000}}],
                                   "plan": "Developer Pro",

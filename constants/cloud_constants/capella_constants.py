@@ -24,7 +24,7 @@ class AWS(object):
         "c5.9xlarge",
         "c5.12xlarge",
         "c5.18xlarge",
-        "m5.xlarge",
+        "m7g.xlarge",
         "m5.2xlarge",
         "m5.4xlarge",
         "m5.8xlarge",
@@ -42,7 +42,7 @@ class AWS(object):
         US_EAST_1 = "us-east-1"
 
     class ComputeNode(object):
-        VCPU4_RAM16 = "m5.xlarge"
+        VCPU4_RAM16 = "m7g.xlarge"
         VCPU4_RAM32 = "r6g.xlarge"
 
     class StorageType(object):

@@ -1,4 +1,6 @@
 import json
+import os
+import re
 import shlex
 import subprocess
 import time
@@ -115,13 +117,14 @@ class SecurityBase(CouchbaseBaseTest):
                         self.project_id, resp.content))
                 self.project_id = None
         if self.project_id is None:
+            project_name = self.get_run_project_name()
             self.project_id = self.find_project_by_name(
-                self.tenant_id, self.prefix + "Project")
+                self.tenant_id, project_name)
             if self.project_id:
-                self.log.info("Reusing existing project: {}"
-                              .format(self.project_id))
+                self.log.info("Reusing existing project {}: {}"
+                              .format(project_name, self.project_id))
             else:
-                self.create_project(self.prefix + "Project")
+                self.create_project(project_name)
             self.input.capella["project_id"] = self.project_id
 
         self.cluster_id = self.input.capella.get("cluster_id", None)
@@ -188,6 +191,23 @@ class SecurityBase(CouchbaseBaseTest):
             self.log.critical(resp.content)
             raise Exception("Adding allowed IP failed.")
         self.log.info("IP added successfully")
+
+    def get_run_project_name(self):
+        """
+        Name of the project shared by all TCs/confs of this run.
+
+        Scoped to the Jenkins build (BUILD_TAG = jenkins-<job>-<build#>),
+        so concurrent builds against the same org don't find and reuse
+        each other's project - otherwise one build deletes the project
+        (or fails to, because the other build's cluster is still in it)
+        while the other is still using it. Local runs keep the old
+        fixed name.
+        """
+        build_tag = os.environ.get("BUILD_TAG")
+        if not build_tag:
+            return self.prefix + "Project"
+        build_tag = re.sub(r"[^A-Za-z0-9_-]", "_", build_tag)
+        return (self.prefix + "Project_" + build_tag)[:120]
 
     def find_project_by_name(self, org_id, name):
         """
@@ -259,7 +279,22 @@ class SecurityBase(CouchbaseBaseTest):
                                                                            id)
                 self.sleep(15, "Waiting for clusters to be deleted in the project")
 
-        resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id, self.project_id)
+        # Cluster deletion is async on the control plane: fetch_cluster_info
+        # can already return 404 while the project still counts the
+        # cluster ("If already deleted, please retry in a few minutes").
+        end_time = time.time() + 600
+        while True:
+            resp = self.capellaAPI.org_ops_apis.delete_project(
+                self.tenant_id, self.project_id)
+            if (resp.status_code == 400 and
+                    "retry in a few minutes" in resp.content and
+                    time.time() < end_time):
+                self.log.warning("Project {} still has cluster resources "
+                                 "being cleaned up: {}".format(
+                                     self.project_id, resp.content))
+                self.sleep(30, "Waiting before retrying project deletion")
+                continue
+            break
         if resp.status_code != 204:
             self.fail("Project Deletion failed in SecurityBase Teardown. Reason: {}".format(
                 resp.content))
@@ -796,7 +831,7 @@ class SecurityBase(CouchbaseBaseTest):
                         {'type': 'kv'}
                     ],
                     'compute': {
-                        'type': 'm5.xlarge'
+                        'type': 'm7g.xlarge'
                     },
                     'disk': {
                         'type': 'gp3',

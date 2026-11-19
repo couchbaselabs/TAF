@@ -457,7 +457,7 @@ class SecurityBase(CouchbaseBaseTest):
                          {'type': 'kv'}
                      ],
                      'compute': {
-                         'type': 'm5.xlarge'
+                         'type': 'm7g.xlarge'
                      },
                     'disk': {
                         'type': 'gp3',
