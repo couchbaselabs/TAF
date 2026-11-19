@@ -365,8 +365,15 @@ class WormBackupBase(ContinuousBackupBase):
         script = self._join_shell_statements(commands)
         self.log.debug("Concurrent WORM enable script: %s" % script)
         output, error = self.shell.execute_command(script)
-        command_text = self._assert_command_success(output, error)
-        success_count = len(re.findall(r"EXIT_\d+=0", command_text))
+        command_text = self._command_text(output, error)
+        # Only the wrapper script is checked here. The losers' "Failed to
+        # configure WORM" lines are expected; callers judge success_count.
+        exit_codes = re.findall(r"^EXIT_\d+=(\S+)\s*$", command_text, re.M)
+        if error or len(exit_codes) != command_count \
+                or "missing" in exit_codes:
+            self.fail(f"Concurrent WORM enable script errored or lost a "
+                      f"command's exit code. Output: {command_text}")
+        success_count = exit_codes.count("0")
         # Log at info, not just on the failure path: for a race test, which
         # invocation won and how the losers were rejected is the result, and a
         # passing run would otherwise discard it.
