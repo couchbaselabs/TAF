@@ -98,20 +98,31 @@ class DownloadCategories(CategorizedBilling):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+             "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+             "endDate": today.strftime(date_fmt)
+        }
         failures = list()
         count = 0
+        # Per the v4 API docs only Organization Owner, Billing Admin and
+        # Billing Viewer can download categorized billing; of the roles
+        # generated here that is only organizationOwner.
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectCreator", "organizationMember"
+            "organizationOwner"
         ], None):
             time.sleep(5)
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
-            result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(header)
+            result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
+                self.organisation_id, json_body, headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(header)
-            self.validate_testcase(result, [200, 403], testcase, failures)
+                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
+                    self.organisation_id, json_body, headers=header)
+            self.validate_testcase(result, [200], testcase, failures)
             count += 1
 
         print("*" * 80)
