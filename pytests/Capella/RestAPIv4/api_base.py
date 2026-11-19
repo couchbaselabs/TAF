@@ -13,6 +13,7 @@ import time
 import string
 import random
 import base64
+import calendar
 import itertools
 import threading
 from datetime import datetime
@@ -113,9 +114,13 @@ class APIBase(CouchbaseBaseTest):
             self.other_project_id = None
             self.create_v2_control_plane_api_key()
 
+            # Free up API key quota held by keys leaked from earlier
+            # aborted/crashed runs (any shard) before creating our own.
+            self.cleanup_stale_automation_api_keys("start of run")
+
             # create the first V4 API KEY WITH organizationOwner role, which
             # will be used to perform further V4 api operations
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
+            resp = self.create_api_key_with_quota_retry(
                 self.organisation_id, self.prefix + "OrgOwnerKey-1",
                 ["organizationOwner"], self.prefix, 1)
             if resp.status_code == 201:
@@ -125,11 +130,12 @@ class APIBase(CouchbaseBaseTest):
                 self.capella["tenant_id"]["key1"] = self.org_owner_key1
             else:
                 self.fail("!!!...Error while creating first OrgOwner v4 "
-                          "API key...!!!")
+                          "API key: status={} body={}...!!!".format(
+                              resp.status_code, resp.content))
 
             # Create another API key with Org Owner Privileges to tap out for
             # one another at time of Rate Limiting.
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
+            resp = self.create_api_key_with_quota_retry(
                 self.organisation_id, self.prefix + "OrgOwnerKey-2",
                 ["organizationOwner"], self.prefix, 1)
             if resp.status_code == 201:
@@ -139,7 +145,8 @@ class APIBase(CouchbaseBaseTest):
                 self.capella["tenant_id"]["key2"] = self.org_owner_key2
             else:
                 self.fail("!!!...Error while creating second OrgOwner v4 "
-                          "API key...!!!")
+                          "API key: status={} body={}...!!!".format(
+                              resp.status_code, resp.content))
 
             # update the token for capellaAPI object, so that is it being used
             # for api auth.
@@ -178,16 +185,8 @@ class APIBase(CouchbaseBaseTest):
 
                 if "apiKeys" not in self.capella["tenant_id"] or not \
                         self.capella["tenant_id"]["apiKeys"]:
-                    # Clean up leftover security keys from any prior aborted
-                    # run to avoid hitting the org-level API key limit.
-                    resp = self.capellaAPI.org_ops_apis.list_api_keys(
-                        self.organisation_id)
-                    if resp.status_code == 200:
-                        for key in resp.json().get("data", []):
-                            if key.get("name", "").startswith(
-                                    self.security_key_prefix):
-                                self.capellaAPI.org_ops_apis.delete_api_key(
-                                    self.organisation_id, key["id"])
+                    # (Leftover keys from aborted runs were already cleaned
+                    # up by cleanup_stale_automation_api_keys above.)
                     # Create security API keys (size-1 + size-2 combos = 36).
                     self.api_keys.update(
                         self.create_api_keys_for_all_combinations_of_roles(
@@ -899,14 +898,9 @@ class APIBase(CouchbaseBaseTest):
                 if "organizationMember" not in o_roles:
                     o_roles.append("organizationMember")
 
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
+            resp = self.create_api_key_with_quota_retry(
                 self.organisation_id, self.security_key_prefix, o_roles,
                 "", 0.5, ["0.0.0.0/0"], resource)
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id, self.security_key_prefix, o_roles,
-                    "", 0.5, ["0.0.0.0/0"], resource)
             if resp.status_code == 201:
                 api_key_dict["-".join(role_combination)] = {
                     "id": resp.json()["id"],
@@ -923,13 +917,191 @@ class APIBase(CouchbaseBaseTest):
                         self.log.error("Error Message - {}".format(resp["message"]))
                 except (Exception,):
                     self.log.error("Error received - {}".format(resp.content))
-                # In order to delete the created keys.
-                self.api_keys = api_key_dict
+                # This runs from setUp, and unittest skips tearDown when
+                # setUp fails - delete the keys created so far here, or
+                # they leak and eat into the org-wide API key quota.
+                if api_key_dict:
+                    self.log.warning(
+                        "Deleting {} API keys created before the failure"
+                        .format(len(api_key_dict)))
+                    self.delete_api_keys(api_key_dict)
+                self.api_keys = dict()
                 self.fail("Error while generating API keys for role {}".format(
                     "-".join(role_combination)))
         self.log.info("{} API keys created, for all combination of roles"
                       .format(len(api_key_dict)))
         return api_key_dict
+
+    # Names of short-lived keys auth_test_setup creates without the
+    # automation prefix.
+    AUTH_TEST_KEY_NAMES = ("MultiProj_Key", "Expiry_Key", "Revoked_Key")
+
+    @staticmethod
+    def is_api_key_limit_error(resp):
+        try:
+            return "limit has been reached" in resp.content
+        except Exception:
+            return False
+
+    @staticmethod
+    def _api_key_created_epoch(key):
+        """createdAt (e.g. 2026-11-19T07:09:12.123456789Z) as UTC epoch."""
+        created = (key.get("audit") or {}).get("createdAt")
+        if not created:
+            return None
+        try:
+            return calendar.timegm(time.strptime(
+                created[:19], "%Y-%m-%dT%H:%M:%S"))
+        except (ValueError, TypeError):
+            return None
+
+    def cleanup_stale_automation_api_keys(self, reason=""):
+        """
+        Delete API keys leaked by earlier automation runs that never got
+        to their tearDown (aborted/killed builds, setUp crashes), from
+        ANY shard sharing this org, so they stop counting against the
+        org-wide API key quota ("Unable to create an API key - the limit
+        has been reached").
+
+        Only automation-named keys are touched, and only once they are
+        older than anything a live run could still be using:
+          - per-TC security role keys (<prefix>security_*) and the
+            auth-test keys: older than stale_role_key_age_hours (def. 1h;
+            a run deletes them in each TC's tearDown, and the longest
+            auth TC observed holds them ~16 min)
+          - org owner keys (<prefix>OrgOwnerKey-*), which live for a
+            whole conf run: older than stale_owner_key_age_hours (def.
+            25h; they're created with a 1-day expiry anyway)
+        Never raises; returns the number of keys deleted.
+        """
+        role_age = float(self.input.param("stale_role_key_age_hours", 1)) \
+            * 3600
+        owner_age = float(self.input.param("stale_owner_key_age_hours",
+                                           25)) * 3600
+        keep_ids = set()
+        for key in [getattr(self, "org_owner_key1", None),
+                    getattr(self, "org_owner_key2", None),
+                    getattr(self, "curr_owner_key", None)]:
+            if isinstance(key, dict) and key.get("id"):
+                keep_ids.add(key["id"])
+        for key in (getattr(self, "api_keys", None) or {}).values():
+            if isinstance(key, dict) and key.get("id"):
+                keep_ids.add(key["id"])
+
+        now = time.time()
+        stale, by_name, total = [], {}, 0
+        page = 1
+        throttled = 0
+        try:
+            while True:
+                resp = self.capellaAPI.org_ops_apis.list_api_keys(
+                    self.organisation_id, page=page, perPage=100)
+                if resp.status_code == 429 and throttled < 3:
+                    throttled += 1
+                    time.sleep(int(resp.headers.get("Retry-After", 60)))
+                    continue
+                if resp.status_code != 200:
+                    self.log.warning(
+                        "API key cleanup ({}): could not list keys: "
+                        "status={} body={}".format(
+                            reason, resp.status_code, resp.content))
+                    break
+                body = resp.json()
+                for key in body.get("data", []) or []:
+                    total += 1
+                    name = key.get("name", "") or ""
+                    group = name.split("_security_")[0] + "_security_*" \
+                        if "_security_" in name else name
+                    by_name[group] = by_name.get(group, 0) + 1
+                    if key.get("id") in keep_ids:
+                        continue
+                    if name.startswith(self.prefix + "security_") or \
+                            name in self.AUTH_TEST_KEY_NAMES:
+                        max_age = role_age
+                    elif name.startswith(self.prefix + "OrgOwnerKey-"):
+                        max_age = owner_age
+                    else:
+                        continue
+                    created = self._api_key_created_epoch(key)
+                    if created is not None and now - created > max_age:
+                        stale.append((key["id"], name, now - created))
+                pages = (body.get("cursor") or {}).get("pages") or {}
+                if not pages.get("next") or page >= 100:
+                    break
+                page += 1
+        except Exception as e:
+            self.log.warning("API key cleanup ({}): error while listing "
+                             "keys: {}".format(reason, e))
+
+        self.log.info("API key cleanup ({}): {} key(s) in org, by name: {}"
+                      .format(reason, total, sorted(
+                          by_name.items(), key=lambda x: -x[1])[:10]))
+        deleted = 0
+        for key_id, name, age in stale:
+            try:
+                resp = self.capellaAPI.org_ops_apis.delete_api_key(
+                    self.organisation_id, key_id)
+                if resp.status_code == 429:
+                    time.sleep(int(resp.headers.get("Retry-After", 60)))
+                    resp = self.capellaAPI.org_ops_apis.delete_api_key(
+                        self.organisation_id, key_id)
+                if resp.status_code in [204, 404]:
+                    deleted += 1
+                else:
+                    self.log.warning(
+                        "API key cleanup: could not delete {} ({}): "
+                        "status={}".format(name, key_id, resp.status_code))
+            except Exception as e:
+                self.log.warning("API key cleanup: error deleting {}: {}"
+                                 .format(key_id, e))
+        self.log.info("API key cleanup ({}): deleted {} of {} stale "
+                      "automation key(s)".format(reason, deleted, len(stale)))
+        return deleted
+
+    def create_api_key_with_quota_retry(self, *args, **kwargs):
+        """
+        create_api_key, plus:
+        - 429: retried up to 3 times (owner-key swap when the owner keys
+          exist, else a plain wait for Retry-After).
+        - org-wide API key limit reached: clean up stale automation keys
+          and retry at once; if still full (other builds sharing the org
+          are holding keys for their running TCs), keep cleaning up and
+          retrying every 60s for up to api_key_quota_wait_mins (def. 20)
+          before giving up with the last response.
+        """
+        wait_secs = float(self.input.param("api_key_quota_wait_mins",
+                                           20)) * 60
+        deadline = None
+        throttled = 0
+        while True:
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                *args, **kwargs)
+            if resp.status_code == 429 and throttled < 3:
+                throttled += 1
+                retry_after = int(resp.headers.get("Retry-After", 60))
+                if getattr(self, "org_owner_key2", None) and \
+                        getattr(self, "curr_owner_key", None):
+                    self.handle_rate_limit(retry_after)
+                else:
+                    time.sleep(retry_after)
+                continue
+            if not self.is_api_key_limit_error(resp):
+                return resp
+            if deadline is None:
+                deadline = time.time() + wait_secs
+                self.log.warning("Org API key limit reached, cleaning up "
+                                 "stale automation keys and retrying")
+                self.cleanup_stale_automation_api_keys("key limit reached")
+                continue
+            if time.time() >= deadline:
+                self.log.error("Org API key limit still reached after "
+                               "waiting {:.0f} min".format(wait_secs / 60))
+                return resp
+            self.log.warning("Org API key limit still reached, waiting 60s "
+                             "for keys to be freed ({:.0f}s left)".format(
+                                 deadline - time.time()))
+            time.sleep(60)
+            self.cleanup_stale_automation_api_keys("waiting for key quota")
 
     def delete_api_keys(self, api_key_dict):
         """
@@ -1302,20 +1474,13 @@ class APIBase(CouchbaseBaseTest):
                     "message": "Unauthorized"
                 }
             }, {
-                "description": "calling API with expired API keys",
-                "expire_key": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
+                # No "expired API key" case: the backend no longer accepts
+                # sub-minute expiry values (see 5f21eea51), so the key
+                # created for it was a regular organizationOwner key valid
+                # for 180 days. Its calls succeeded and the 401 mismatch
+                # was silently ignored by validate_testcase - and for
+                # delete tests it deleted the resource under test as the
+                # owner (DeleteAdminUsers/DeleteScope then got 404).
                 "description": "calling API with revoked API keys",
                 "revoke_key": True,
                 "expected_status_code": 401,
@@ -1447,7 +1612,7 @@ class APIBase(CouchbaseBaseTest):
             refreshed_project = False
             resp = None
             for attempt in range(1, 4):
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                resp = self.create_api_key_with_quota_retry(
                     self.organisation_id, "MultiProj_Key", org_roles,
                     expiry=0.5, allowedCIDRs=["0.0.0.0/0"],
                     resources=build_resources(other_project_id))
@@ -1463,6 +1628,7 @@ class APIBase(CouchbaseBaseTest):
                     self.handle_rate_limit(
                         int(resp.headers.get("Retry-After", 60)))
                 elif (resp.status_code in [400, 404, 422] and
+                        not self.is_api_key_limit_error(resp) and
                         not refreshed_project):
                     # other_project_id may be stale - re-resolve it
                     refreshed_project = True
