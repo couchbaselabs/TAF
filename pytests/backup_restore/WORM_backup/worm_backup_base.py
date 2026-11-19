@@ -1,3 +1,4 @@
+import json
 import re
 import shlex
 import time
@@ -745,8 +746,32 @@ class WormBackupBase(ContinuousBackupBase):
                     self.backup_archive_dir, self.backup_repo_name)
                 if self.BACKUP_DIR_PATTERN.match(name)]
 
+    # Final plan.json steps, in order. cbbackupmgr won't resume a backup
+    # interrupted after compress_backup_metadata and before
+    # upload_backup_metadata ("can't be resumed ... re-run with '--purge'").
+    PLAN_FINAL_STEPS = ("compress_backup_metadata", "upload_backup_metadata",
+                        "transfer_complete")
+
+    def _running_backup_plan_steps(self, backup_name):
+        """{step: complete} for PLAN_FINAL_STEPS from the running backup's
+        plan.json in the node's staging dir, or None if unreadable."""
+        output, _ = self.shell.execute_command(
+            f"find {self.obj_staging_dir_cbbackup} -path "
+            f"'*/{self.backup_repo_name}/{backup_name}/plan.json' "
+            f"2>/dev/null | head -1 | xargs -r cat")
+        try:
+            plan = json.loads("\n".join(output))
+        except ValueError:
+            return None
+        return {step: (plan.get(step) or {}).get("complete")
+                for step in self.PLAN_FINAL_STEPS}
+
     def _wait_for_backup_in_progress(self, helper, pid, timeout):
         """Wait until the running backup has written real data.
+
+        Polls every second: a small backup reaches its final metadata
+        upload ~2s after its first data object, and can't be resumed if
+        killed there. Fails if the backup is already that far.
 
         Returns the backup name, or None if the process died or nothing
         appeared before the timeout.
@@ -763,9 +788,19 @@ class WormBackupBase(ContinuousBackupBase):
                         contains="%s/" % name)
                     if not path.endswith(metadata_names)]
                 if data_paths:
+                    plan_steps = self._running_backup_plan_steps(name)
                     self.log.info(
-                        "Backup '%s' is mid-flight (%s data objects written)"
-                        % (name, len(data_paths)))
+                        f"Backup '{name}' is mid-flight ({len(data_paths)} "
+                        f"data objects written), plan steps complete: "
+                        f"{plan_steps}")
+                    if plan_steps and plan_steps["compress_backup_metadata"]:
+                        self.fail(
+                            f"Backup '{name}' had already compressed its "
+                            f"metadata (plan steps complete: {plan_steps}) "
+                            f"when its data objects showed up, so it can only "
+                            f"be interrupted at a point cbbackupmgr refuses "
+                            f"to resume from. The backup is too small for "
+                            f"this interrupt; give it more data.")
                     return name
-            self.sleep(5, "Waiting for backup data objects to appear")
+            self.sleep(1, "Waiting for backup data objects to appear")
         return None
