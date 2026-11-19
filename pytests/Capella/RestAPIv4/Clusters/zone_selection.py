@@ -516,11 +516,21 @@ class ClusterZoneSelection(GetProject):
         failures.extend(self.list_zones_failures())
         self.report(failures, 2)
 
-    def test_support_api_create_with_zones(self):
+    def require_support_api(self):
+        # Skipped from the test body, not setUp, so tearDown still runs and
+        # the last test of the run can delete the wrapper resources.
+        if self._internal_support_token_env() != \
+                "sbx_token_for_internal_support":
+            self.skipTest("Support API tests run only on sandbox pods; there "
+                          "is no internal support token for {}"
+                          .format(self.url))
         if not self.internal_support_token():
             self.fail("No internal support token: pass "
                       "internal_support_token or export {}".format(
                           self._internal_support_token_env()))
+
+    def test_support_api_create_with_zones(self):
+        self.require_support_api()
         cases = self.selected(self.support_valid_cases)
         failures = list()
         for case in cases:
@@ -541,10 +551,7 @@ class ClusterZoneSelection(GetProject):
         self.report(failures, len(cases))
 
     def test_support_api_invalid_zones(self):
-        if not self.internal_support_token():
-            self.fail("No internal support token: pass "
-                      "internal_support_token or export {}".format(
-                          self._internal_support_token_env()))
+        self.require_support_api()
         cases = self.selected(self.support_invalid_cases)
         failures = list()
         for case in cases:
