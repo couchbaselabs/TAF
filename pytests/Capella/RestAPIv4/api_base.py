@@ -1720,6 +1720,18 @@ class APIBase(CouchbaseBaseTest):
         testDescriptionKey = "description"
         if payloadTest:
             testDescriptionKey = "desc"
+        description = testcase.get(testDescriptionKey,
+                                   testcase.get("description",
+                                                testcase.get("desc")))
+        # One line per testcase, so a failure can always be tied back to
+        # the role/case that caused it (the failure lines below don't
+        # otherwise say which case they belong to).
+        self.log.info("[validate] '{}' -> HTTP {} (expected {}) "
+                      "request_id={}".format(
+                          description, result.status_code,
+                          testcase.get("expected_status_code", success_codes),
+                          result.headers.get(
+                              "Vnd-Cloud-Couchbase-Com-Request-Id")))
 
         try:
             # Condition for Sample Buckets delete testcases.
@@ -1741,14 +1753,28 @@ class APIBase(CouchbaseBaseTest):
         # Acceptor for expected error codes.
         if ("expected_status_code" in testcase and
                 "expected_error" in testcase):
-            if isinstance(testcase["expected_status_code"], list):
-                for code in testcase["expected_status_code"]:
-                    if code == result.status_code:
-                        self.log.debug("The test expected one of the "
-                                       "following error responses to the "
-                                       "user: {}".format(
-                                        testcase["expected_error"]))
-            elif result.status_code == testcase["expected_status_code"]:
+            expected_codes = testcase["expected_status_code"]
+            if not isinstance(expected_codes, list):
+                expected_codes = [expected_codes]
+            if result.status_code not in expected_codes:
+                # Fall through to the checks below, which record the
+                # mismatch as a failure. (This used to return False
+                # silently, so e.g. a role that should get 403 but got a
+                # 2xx/404 passed without any log line.) The old lenient
+                # behaviour can be restored with strict_status_check=False.
+                if not self.input.param("strict_status_check", True):
+                    self.log.warning(
+                        "'{}': expected HTTP {}, got {} - ignored "
+                        "(strict_status_check=False)".format(
+                            description, expected_codes,
+                            result.status_code))
+                    return False
+            elif isinstance(testcase["expected_status_code"], list):
+                self.log.debug("The test expected one of the following "
+                               "error responses to the user: {}".format(
+                                   testcase["expected_error"]))
+                return False
+            else:
                 try:
                     if result.content and result.content.strip(): # checking if the response is not empty
                         try:
@@ -1799,13 +1825,22 @@ class APIBase(CouchbaseBaseTest):
                                "{}".format(testcase["expected_status_code"],
                                            testcase["expected_error"]))
                 self.log.debug("Response : {}".format(result))
-            return False
+                return False
+
+        # Error bodies aren't always JSON (e.g. an empty 401/502).
+        try:
+            resp_message = result.json().get("message", "") or ""
+        except Exception:
+            resp_message = ""
 
         if result.status_code in success_codes:
             if ("expected_error" in testcase and
                     testcase["expected_status_code"] != 404):
-                self.log.error("NO ERRORS in Response, But Test expected "
-                               "error: {}".format(testcase["expected_error"]))
+                self.log.error("'{}': NO ERRORS in Response (HTTP {}), But "
+                               "Test expected HTTP {} with error: {}".format(
+                                   description, result.status_code,
+                                   testcase["expected_status_code"],
+                                   testcase["expected_error"]))
                 try:
                     self.log.warning("Result : {}".format(result.json()))
                 except (Exception,):
@@ -1823,24 +1858,26 @@ class APIBase(CouchbaseBaseTest):
                     return True
             else:
                 return True
-        elif result.status_code >= 500 and result.json()['message'] != "Private endpoints aren't enabled for this cluster. Please select another cluster.":
+        elif result.status_code >= 500 and resp_message != "Private endpoints aren't enabled for this cluster. Please select another cluster.":
             self.log.critical(testcase[testDescriptionKey])
             self.log.warning(result.content)
             self.log.warning("Request ID (for backend log lookup): {}".format(
                 result.headers.get("Vnd-Cloud-Couchbase-Com-Request-Id")))
             failures.append(testcase[testDescriptionKey])
         elif "expected_status_code" not in testcase:
-            self.log.error("Expected NO ERRORS but got {}".format(result))
+            self.log.error("'{}': Expected NO ERRORS but got {}".format(
+                description, result))
             self.log.error(result.content)
             failures.append(testcase[testDescriptionKey])
-        elif result.json()['message'] == "Private endpoints aren't enabled for this cluster. Please select another cluster.":
+        elif resp_message == "Private endpoints aren't enabled for this cluster. Please select another cluster.":
             return True
-        elif result.status_code == 400 and "Bad Request" in result.json()['message']:
+        elif result.status_code == 400 and "Bad Request" in resp_message:
             return True
         else:
-            self.log.error("Expected HTTP status code {}, Actual HTTP status "
-                           "code {}".format(testcase["expected_status_code"],
-                                            result.status_code))
+            self.log.error("'{}': Expected HTTP status code {}, Actual HTTP "
+                           "status code {}".format(
+                               description, testcase["expected_status_code"],
+                               result.status_code))
             self.log.warning("Result : {}".format(result.content))
             failures.append(testcase[testDescriptionKey])
         return False
