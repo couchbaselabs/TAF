@@ -1417,34 +1417,70 @@ class APIBase(CouchbaseBaseTest):
                 self.user, self.passwd).encode()).decode()
             header["Authorization"] = 'Basic {}'.format(basic)
         elif "has_multi_project_access" in testcase and other_project_id:
+            def build_resources(other_proj):
+                res = [{
+                    "type": "project",
+                    "id": other_proj,
+                    "roles": ["projectOwner"]
+                }]
+                if testcase["has_multi_project_access"]:
+                    res.append({
+                        "type": "project",
+                        "id": project_id,
+                        "roles": ["projectOwner"]
+                    })
+                return res
+
             org_roles = ["organizationMember"]
-            resource = [{
-                "type": "project",
-                "id": other_project_id,
-                "roles": ["projectOwner"]
-            }]
             if testcase["has_multi_project_access"]:
                 key = "multi_project_1"
-                resource.append({
-                    "type": "project",
-                    "id": project_id,
-                    "roles": ["projectOwner"]
-                })
             else:
                 key = "multi_project_2"
                 org_roles.append("projectCreator")
 
             self.update_auth_with_api_token(self.curr_owner_key)
 
-            # create a new API key with expiry of approx 2 mins
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id, "MultiProj_Key", org_roles,
-                expiry=0.5, allowedCIDRs=["0.0.0.0/0"], resources=resource)
+            # create a new API key with expiry of approx 2 mins. This runs
+            # right after the expired/revoked key cases, which also create
+            # keys, so it can hit the key-creation rate limit (429); the
+            # shared Auth_Project can also have been deleted since setUp.
+            refreshed_project = False
+            resp = None
+            for attempt in range(1, 4):
+                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                    self.organisation_id, "MultiProj_Key", org_roles,
+                    expiry=0.5, allowedCIDRs=["0.0.0.0/0"],
+                    resources=build_resources(other_project_id))
+                if resp.status_code == 201:
+                    break
+                self.log.warning(
+                    "Multi-project API key creation attempt {}/3 failed: "
+                    "status={} request_id={} body={}".format(
+                        attempt, resp.status_code,
+                        resp.headers.get("Vnd-Cloud-Couchbase-Com-Request-Id"),
+                        resp.content))
+                if resp.status_code == 429:
+                    self.handle_rate_limit(
+                        int(resp.headers.get("Retry-After", 60)))
+                elif (resp.status_code in [400, 404, 422] and
+                        not refreshed_project):
+                    # other_project_id may be stale - re-resolve it
+                    refreshed_project = True
+                    other_project_id = self.get_or_create_auth_project()
+                    self.other_project_id = other_project_id
+                    try:
+                        self.capella["tenant_id"]["otherProj"] = \
+                            other_project_id
+                    except (KeyError, TypeError):
+                        pass
+                else:
+                    break
             if resp.status_code == 201:
                 self.api_keys[key] = resp.json()
             else:
                 self.fail("Error while creating API key for role having "
-                          "access to multiple projects")
+                          "access to multiple projects: status={} body={}"
+                          .format(resp.status_code, resp.content))
             self.update_auth_with_api_token(self.api_keys[key])
             if testcase["has_multi_project_access"]:
                 # This key actually has access to project_id, so the
