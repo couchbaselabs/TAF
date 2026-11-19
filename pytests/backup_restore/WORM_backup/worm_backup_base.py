@@ -776,7 +776,9 @@ class WormBackupBase(ContinuousBackupBase):
         Returns the backup name, or None if the process died or nothing
         appeared before the timeout.
         """
-        metadata_names = (".worm", ".status_flag", ".obj_versions", "plan.json")
+        # .version and .worm are written before any data
+        metadata_names = (".worm", ".version", ".status_flag",
+                          ".obj_versions", ".obj_list", "plan.json")
         end_time = time.time() + timeout
         while time.time() < end_time:
             if not self._remote_pid_alive(pid):

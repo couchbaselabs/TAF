@@ -41,19 +41,29 @@ class WormIntegrityTest(WormBackupBase):
             self.cluster, self.cluster.buckets)
         self._verify_doc_count(expected_count, bucket_name=restore_bucket_name)
 
+    # cbbackupmgr records each uploaded object's version ID in
+    # <backup>/.obj_list in the staging dir (no ".obj_versions" exists).
+    # Resume treats a missing .obj_list as empty; completion then fails
+    # with "object ... is missing from the provided list".
+    OBJ_LIST_FILE = ".obj_list"
+
     def _delete_local_obj_versions(self):
-        command = "find %s -name .obj_versions -type f -print -delete" \
-                  % self.obj_staging_dir_cbbackup
-        output, error = self.shell.execute_command(command)
+        output, error = self.shell.execute_command(
+            f"find {self.obj_staging_dir_cbbackup} -name {self.OBJ_LIST_FILE} "
+            f"-type f")
         self._assert_command_success(output, error)
-        if not output:
-            # cbbackupmgr 8.5.0-1442 writes no .obj_versions; log what the
-            # interrupted backup left locally and remotely instead
+        paths = [path.strip() for path in output if path.strip()]
+        if not paths:
             self._log_interrupted_backup_state()
-            self.fail(f"No local .obj_versions file found in "
-                      f"{self.obj_staging_dir_cbbackup}. This cbbackupmgr "
-                      f"build may not write one; see the staging and remote "
-                      f"listings logged above")
+            self.fail(f"No local {self.OBJ_LIST_FILE} file found in "
+                      f"{self.obj_staging_dir_cbbackup}; see the staging and "
+                      f"remote listings logged above")
+        for path in paths:
+            content, _ = self.shell.execute_command(f"cat {path}")
+            self.log.info(f"{path} before deleting it:\n" + "\n".join(content))
+            output, error = self.shell.execute_command(f"rm -f {path}")
+            self._assert_command_success(output, error)
+        return paths
         return output
 
     def _log_interrupted_backup_state(self):
@@ -230,8 +240,8 @@ class WormIntegrityTest(WormBackupBase):
     def test_resume_with_missing_obj_versions_fails_safely(self):
         self._prepare_interrupted_backup()
         deleted_paths = self._delete_local_obj_versions()
-        self.log.info("Deleted local .obj_versions files before resume: %s"
-                      % deleted_paths)
+        self.log.info(f"Deleted local {self.OBJ_LIST_FILE} files before "
+                      f"resume: {deleted_paths}")
         output, error = self.backup_mgr.backup(
             self.backup_archive_dir, self.backup_repo_name, resume=True,
             no_progress_bar=True, obj_staging_dir=self.obj_staging_dir_cbbackup)
