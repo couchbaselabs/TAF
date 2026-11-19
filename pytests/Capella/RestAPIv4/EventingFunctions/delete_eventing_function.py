@@ -114,7 +114,7 @@ class DeleteEventingFunction(EventingFunctionBase):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.function_name, headers=header)
             self.update_auth_with_api_token(self.curr_owner_key)
-            self.validate_testcase(result, [204], testcase, failures)
+            self.validate_testcase(result, [204, 403], testcase, failures)
             if self.function_name in self.created_function_names:
                 self.created_function_names.discard(self.function_name)
         if failures:

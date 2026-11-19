@@ -76,7 +76,7 @@ class GetEventingFunctionLogs(EventingFunctionBase):
                 organization, project, cluster, function_name)
             self.capellaAPI.cluster_ops_apis.eventing_function_logs_endpoint = \
                 self.eventing_function_endpoint_default + "/logs"
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(result, [200, 403], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
 

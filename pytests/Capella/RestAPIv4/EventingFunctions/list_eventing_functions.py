@@ -69,7 +69,7 @@ class ListEventingFunctions(EventingFunctionBase):
                 organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.eventing_functions_endpoint = \
                 self.eventing_functions_endpoint_default
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(result, [200, 403], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
 

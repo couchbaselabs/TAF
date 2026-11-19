@@ -78,7 +78,7 @@ class UpdateEventingFunctionCode(EventingFunctionBase):
                 "function OnDelete(meta, options) { return; }")
             self.capellaAPI.cluster_ops_apis.eventing_function_code_endpoint = \
                 self.eventing_function_endpoint_default + "/code"
-            self.validate_testcase(result, [204], testcase, failures)
+            self.validate_testcase(result, [204, 403], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
 

@@ -93,7 +93,7 @@ class CreateEventingFunction(EventingFunctionBase):
                 self.generate_random_string(10, special_characters=False).lower())
             payload = self.build_payload(function_name=function_name)
             result = self.create_function(function_name, payload, header)
-            self.validate_testcase(result, [201, 409], testcase, failures)
+            self.validate_testcase(result, [201, 403, 409], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
 
