@@ -10,6 +10,38 @@ small_ver=${version_number:0:3}
 py_executable=python3
 jython_path=/opt/jython/bin/jython
 
+# guides/gradlew is Gradle 6.2.2, which cannot run on Java 16+ (fails with
+# "Could not initialize class org.codehaus.groovy.vmplugin.v7.Java7").
+# Slaves moving to Python 3.14 make Java 17 the default `java`, so when the
+# JVM gradle would use is 16+, point JAVA_HOME at an installed Java 8 for the
+# gradle/jython runs. No-op on slaves already on Java 8/11.
+pin_java8_for_gradle() {
+  local java_bin="java" version major home candidate java8_home=""
+  [ -n "$JAVA_HOME" ] && java_bin="$JAVA_HOME/bin/java"
+  version=$("$java_bin" -version 2>&1 | awk -F'"' '/version/ {print $2; exit}') || true
+  case "$version" in
+    1.*) major=$(echo "$version" | cut -d. -f2) ;;
+    *)   major=$(echo "$version" | cut -d. -f1) ;;
+  esac
+  case "$major" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$major" -lt 16 ] && return 0
+  for candidate in /usr/lib/jvm/java-8-openjdk-* /usr/lib/jvm/java-1.8.0-openjdk* /usr/lib/jvm/jre-1.8.0-openjdk*; do
+    for home in "$candidate" "$candidate/jre"; do
+      if [ -x "$home/bin/java" ]; then
+        java8_home="$home"
+        break 2
+      fi
+    done
+  done
+  if [ -n "$java8_home" ]; then
+    export JAVA_HOME="$java8_home"
+    echo "Default Java is $version; using JAVA_HOME=$JAVA_HOME for gradle/jython"
+  else
+    echo "WARNING: default Java is $version and no Java 8 under /usr/lib/jvm; gradle may fail"
+  fi
+}
+pin_java8_for_gradle
+
 echo "###########################################"
 echo "  Populating env file for downstream jobs"
 echo "1/4 Extracting is_dynamic_vms value"
