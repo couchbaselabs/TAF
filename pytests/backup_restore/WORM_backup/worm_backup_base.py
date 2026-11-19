@@ -174,14 +174,16 @@ class WormBackupBase(ContinuousBackupBase):
         re.IGNORECASE)
     ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
+    def _fatal_output_lines(self, output):
+        return [line for line in (self.ANSI_ESCAPE.sub("", line).strip()
+                                  for line in output or [])
+                if self.FATAL_OUTPUT_LINE.match(line)]
+
     def _assert_command_success(self, output, error, expected_text=None):
         command_text = self._command_text(output, error)
         if error:
             self.fail("Command failed unexpectedly: %s" % command_text)
-        fatal_lines = [
-            line for line in (self.ANSI_ESCAPE.sub("", line).strip()
-                              for line in output or [])
-            if self.FATAL_OUTPUT_LINE.match(line)]
+        fatal_lines = self._fatal_output_lines(output)
         if fatal_lines:
             self.fail(f"Command failed: {fatal_lines[0]}\n"
                       f"Output: {command_text}")

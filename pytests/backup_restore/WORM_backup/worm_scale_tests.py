@@ -12,13 +12,18 @@ class WormScaleTest(WormBackupBase):
 
         output, error = self._run_backup_with_shell_prefix(
             "ulimit -n %d" % fd_limit, threads=threads)
-        if error:
+        self.log.info(f"Backup under ulimit -n {fd_limit}: "
+                      f"{self._command_text(output, error)}")
+        # cbbackupmgr prints errors on stdout, not stderr. It needs a hard
+        # limit of 512 + 2 per vBucket, else it refuses up front:
+        # "open max file limit (256) is smaller than required (768)"
+        if error or self._fatal_output_lines(output):
             self._assert_command_failure(
                 output, error,
-                expected_texts=["file", "descriptor", "ulimit", "too many",
-                                "connection", "limit", "csp", "worm"])
-            return
-        self._assert_command_success(output, error)
+                expected_texts=["file limit", "too many open files",
+                                "file descriptor", "ulimit"])
+        else:
+            self._assert_command_success(output, error)
         self._assert_repo_reports_worm()
 
     def test_scale_gsi_restore_metadata_and_high_concurrency_backup(self):
