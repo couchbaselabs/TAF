@@ -84,9 +84,10 @@ class UpdateEventingFunctionCode(EventingFunctionBase):
 
     def test_authorization(self):
         failures = list()
+        # Per the v4 API docs this endpoint is limited to Organization
+        # Owner, Project Owner and Project Manager (no data roles).
         allowed_roles = [
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectDataReaderWriter"
+            "organizationOwner", "projectOwner", "projectManager"
         ]
         for testcase in self.v4_RBAC_injection_init(allowed_roles):
             header = dict()

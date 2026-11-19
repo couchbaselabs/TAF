@@ -75,23 +75,31 @@ class UpdateEventingFunctionActivationState(EventingFunctionBase):
 
     def test_authorization(self):
         failures = list()
+        # Per the v4 API docs this endpoint is limited to Organization
+        # Owner, Project Owner and Project Manager (no data roles).
         allowed_roles = [
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectDataReaderWriter"
+            "organizationOwner", "projectOwner", "projectManager"
         ]
         for testcase in self.v4_RBAC_injection_init(allowed_roles):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
+            # auth_test_setup authenticates the role via the client's
+            # bearer token. Undeploy as the owner, then switch back to the
+            # role's token for the call under test - otherwise every
+            # role's deploy runs as the owner.
+            role_token = self.capellaAPI.cluster_ops_apis.bearer_token
             self.update_auth_with_api_token(self.curr_owner_key)
             self.api_call_with_retry(
                 self.capellaAPI.cluster_ops_apis.update_eventing_function_activation_state_v4,
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.function_name, "undeploy")
+            self.update_auth_with_api_token({"token": role_token})
             result = self.api_call_with_retry(
                 self.capellaAPI.cluster_ops_apis.update_eventing_function_activation_state_v4,
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.function_name, "deploy", headers=header)
+            self.update_auth_with_api_token(self.curr_owner_key)
             self.validate_testcase(result, [204, 400, 422], testcase, failures)
         if failures:
             self.fail("{} tests FAILED".format(len(failures)))
