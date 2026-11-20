@@ -29,7 +29,12 @@ class ListEventingFunctions(EventingFunctionBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/eventingFunctions/function",
                 "expected_status_code": 404,
-                "expected_error": self.expected_invalid_uuid_error()
+                "expected_error": {
+                    "code": 404,
+                    "hint": "Please review your request and ensure that all required parameters are correctly provided.",
+                    "httpStatusCode": 404,
+                    "message": "The requested eventing function could not be found."
+            }
             }, {
                 "description": "List eventing functions with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
