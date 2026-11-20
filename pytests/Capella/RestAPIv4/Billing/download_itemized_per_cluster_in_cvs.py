@@ -40,32 +40,14 @@ class DownloadItemizedPerCluster(CategorizedBilling):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/billing/bill",
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -155,13 +137,13 @@ class DownloadItemizedPerCluster(CategorizedBilling):
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0])]):
-                    testcase["expected_status_code"] = 400
+                    testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
                         "code": 1000,
                         "hint": "Check if you have provided a valid URL and "
                                 "all the required params are present in the "
                                 "request body.",
-                        "httpStatusCode": 400,
+                        "httpStatusCode": 404,
                         "message": "The server cannot or will not process the "
                                    "request due to something that is "
                                    "perceived to be a client error."
