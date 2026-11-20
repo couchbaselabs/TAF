@@ -36,7 +36,8 @@ class PayAsYouGo(CategorizedBilling):
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/billing",
                 "expected_status_code": 405,
-                "expected_error": "404 page not found"
+                # 405 Method Not Allowed comes with an empty body.
+                "expected_error": ""
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/billing/bill",
@@ -47,16 +48,8 @@ class PayAsYouGo(CategorizedBilling):
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "expected_status_code": 405,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 405,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                # 405 Method Not Allowed comes with an empty body.
+                "expected_error": ""
             }
         ]
         failures = list()
@@ -138,17 +131,23 @@ class PayAsYouGo(CategorizedBilling):
                 "organizationID": combination[0]
             }
             if not (combination[0] == self.organisation_id):
-                if combination[0] == "" or any(variable in [
+                if combination[0] == "":
+                    # No org ID in the path: no route matches.
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = "404 page not found"
+                elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0])]):
-                    testcase["expected_status_code"] = 404
+                    # Non-string IDs are sent as e.g. "True"/"None" - not
+                    # a UUID, so the API rejects the path with a 400.
+                    testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
                         "hint": "Check if you have provided a valid URL and "
                                 "all the required params are present in the "
                                 "request body.",
-                        "httpStatusCode": 404,
+                        "httpStatusCode": 400,
                         "message": "The server cannot or will not process the "
                                    "request due to something that is "
                                    "perceived to be a client error."

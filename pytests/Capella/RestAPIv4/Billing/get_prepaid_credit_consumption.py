@@ -109,10 +109,16 @@ class GetPrepaidCreditConsumption(GetCluster):
                 "organizationID": combination[0]
             }
             if not (combination[0] == self.organisation_id):
-                if combination[0] == "" or any(variable in [
+                if combination[0] == "":
+                    # No org ID in the path: no route matches.
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = "404 page not found"
+                elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0])]):
+                    # Non-string IDs are sent as e.g. "True"/"None" - not
+                    # a UUID, so the API rejects the path with a 400.
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,

@@ -140,17 +140,24 @@ class CategorizedBilling(GetCluster):
                 "organizationID": combination[0]
             }
             if not (combination[0] == self.organisation_id):
-                if combination[0] == "" or any(variable in [
+                if combination[0] == "":
+                    # No org ID in the path matches another route, which
+                    # returns 405 with an empty body.
+                    testcase["expected_status_code"] = 405
+                    testcase["expected_error"] = ""
+                elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0])]):
-                    testcase["expected_status_code"] = 405
+                    # Non-string IDs are sent as e.g. "True"/"None" - not
+                    # a UUID, so the API rejects the path with a 400.
+                    testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
                         "hint": "Check if you have provided a valid URL and "
                                 "all the required params are present in the "
                                 "request body.",
-                        "httpStatusCode": 405,
+                        "httpStatusCode": 400,
                         "message": "The server cannot or will not process the "
                                    "request due to something that is "
                                    "perceived to be a client error."

@@ -144,17 +144,23 @@ class DownloadCategories(CategorizedBilling):
                 "organizationID": combination[0]
             }
             if not (combination[0] == self.organisation_id):
-                if combination[0] == "" or any(variable in [
+                if combination[0] == "":
+                    # No org ID in the path: no route matches.
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = "404 page not found"
+                elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0])]):
-                    testcase["expected_status_code"] = 404
+                    # Non-string IDs are sent as e.g. "True"/"None" - not
+                    # a UUID, so the API rejects the path with a 400.
+                    testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
                         "hint": "Check if you have provided a valid URL and "
                                 "all the required params are present in the "
                                 "request body.",
-                        "httpStatusCode": 404,
+                        "httpStatusCode": 400,
                         "message": "The server cannot or will not process the "
                                    "request due to something that is "
                                    "perceived to be a client error."
