@@ -88,10 +88,12 @@ class DeleteEventingFunction(EventingFunctionBase):
 
     def test_authorization(self):
         failures = list()
-        # Per the v4 API docs this endpoint is limited to Organization
-        # Owner, Project Owner and Project Manager (no data roles).
+        # Per the RBAC role access tables (clusterEventing permission),
+        # projectDataWriter (projectDataReaderWriter) has full CRUD access
+        # to eventing functions, including delete.
         allowed_roles = [
-            "organizationOwner", "projectOwner", "projectManager"
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectDataReaderWriter"
         ]
         for testcase in self.v4_RBAC_injection_init(allowed_roles):
             header = dict()
