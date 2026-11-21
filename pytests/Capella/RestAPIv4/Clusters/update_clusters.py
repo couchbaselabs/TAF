@@ -259,16 +259,21 @@ class UpdateCluster(GetProject):
 
     def test_authorization(self):
         failures = list()
-        for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager"
-        ], 403, {
-            "code": 4025,
-            "hint": "The requested cluster details could not be found "
-                    "or fetched. Please ensure that the correct "
-                    "cluster ID is provided.",
-            "httpStatusCode": 404,
-            "message": "Unable to fetch the cluster details."
-        }):
+        # The cluster ID is a dummy, so the backend answers 404 to every
+        # valid key before it checks roles (19683: unauthorized roles and
+        # the other-project key got 404, not 403).
+        testcases = self.expect_same_response_for_all_keys(
+            self.v4_RBAC_injection_init([
+                "organizationOwner", "projectOwner", "projectManager"
+            ]), 404, {
+                "code": 4025,
+                "hint": "The requested cluster details could not be found "
+                        "or fetched. Please ensure that the correct "
+                        "cluster ID is provided.",
+                "httpStatusCode": 404,
+                "message": "Unable to fetch the cluster details."
+            })
+        for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,

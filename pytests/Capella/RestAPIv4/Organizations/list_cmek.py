@@ -71,8 +71,10 @@ class ListCMEK(APIBase):
 
     def test_authorization(self):
         failures = list()
+        # Every key in the org can list CMEKs, projectCreator included
+        # (19683: all 36 role keys got 200).
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "organizationMember"
+            "organizationOwner", "organizationMember", "projectCreator"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

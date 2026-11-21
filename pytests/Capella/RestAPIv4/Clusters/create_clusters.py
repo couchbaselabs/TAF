@@ -160,14 +160,15 @@ class CreateCluster(GetProject):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ], 422, {
-            "code": 4002,
-            "hint": "Please ensure that payload or body of the "
-                    "request is not empty.",
+        ], expected_failure_code=422, expected_failure_error={
+            # The payload has no cluster plan, so authorized callers get
+            # this 422 instead of actually creating a cluster.
+            "code": 422,
+            "hint": "Please review your request and ensure that all "
+                    "required parameters are correctly provided.",
             "httpStatusCode": 422,
-            "message": "Unable to process request. Support package is "
-                       "not valid. Please provide a valid support "
-                       "package and try again."
+            "message": "Unable to process request. The cluster plan '' is "
+                       "invalid."
         }):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

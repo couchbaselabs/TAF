@@ -72,6 +72,11 @@ class DeleteCMEK(GetCMEK):
         for testcase in self.v4_RBAC_injection_init(["organizationOwner"], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
+            if not self.cmek_created:
+                # No CMEK to look up: the backend returns 404 to every valid
+                # key before checking roles (19683), so RBAC can't be
+                # verified - only the 401 cases keep their expectation.
+                self.expect_same_response_for_all_keys([testcase])
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                 self.organisation_id, self.cmek_id, headers=header)

@@ -29,7 +29,11 @@ class GetCluster(GetProject):
             "connectionString": None,
             "configurationType": None,
             "expressScaling": "disabled",
-            "deletionProtection":False
+            "deletionProtection":False,
+            # Availability zones the cluster was deployed in, e.g.
+            # ["euw1-az1", ...] - depends on the deployment, so only the
+            # key's presence is checked.
+            "zones": None
         }
         cluster_template = self.input.param("cluster_template",
                                             "AWS_r5_xlarge")

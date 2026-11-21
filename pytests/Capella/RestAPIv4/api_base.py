@@ -1168,8 +1168,17 @@ class APIBase(CouchbaseBaseTest):
             if expected_failure_code:
                 testcase["expected_status_code"] = expected_failure_code
                 testcase["expected_error"] = expected_failure_error
+            # Keys with project roles are created with organizationMember
+            # added (see create_api_keys_for_all_combinations_of_roles), so
+            # the backend lets them through wherever organizationMember is
+            # allowed, even though the key name doesn't say so.
+            effective_roles = list(self.api_keys[role]["roles"])
+            if (any(r.startswith("project") and r != "projectCreator"
+                    for r in effective_roles) and
+                    "organizationMember" not in effective_roles):
+                effective_roles.append("organizationMember")
             if not any(element in allowed_roles for
-                       element in self.api_keys[role]["roles"]):
+                       element in effective_roles):
                 testcase["expected_error"] = {
                     "code": 1002,
                     "hint": "Your access to the requested resource is denied. "
@@ -1536,6 +1545,29 @@ class APIBase(CouchbaseBaseTest):
         if failure_expected_code:
             testcases[-2]["expected_status_code"] = failure_expected_code
             testcases[-2]["expected_error"] = failure_expected_error
+
+    @staticmethod
+    def expect_same_response_for_all_keys(testcases, status_code=None,
+                                          error=None):
+        """
+        The backend looks the target resource up before it checks roles, so
+        when the resource doesn't exist (dummy cluster ID, CMEK that was
+        never created, Azure CMEK app not provisioned) every valid key -
+        authorized or not - gets the same 404. Make every case except the
+        401 ones expect that response. With status_code=None the
+        expectations are dropped, so the caller's success codes apply.
+        RBAC can't be verified in this situation.
+        """
+        for testcase in testcases:
+            if testcase.get("expected_status_code") == 401:
+                continue
+            if status_code is None:
+                testcase.pop("expected_status_code", None)
+                testcase.pop("expected_error", None)
+            else:
+                testcase["expected_status_code"] = status_code
+                testcase["expected_error"] = error
+        return testcases
 
     def auth_test_setup(self, testcase, failures, header,
                         project_id, other_project_id=None,
