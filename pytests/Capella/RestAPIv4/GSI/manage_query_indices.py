@@ -20,7 +20,7 @@ class PostIndex(GetCluster):
                 }, {
                     "definition": "build index on `travel-sample`.`_default`.`_default`(def_city, def_faa, def_icao)"
                 }, {
-                    "definition": "alter index idx on `travel-sample`._default`.`_default with { \"action\": \"replica_count\", \"num_replica\": 2 }"
+                    "definition": "alter index idx on `travel-sample`.`_default`.`_default` with { \"action\": \"replica_count\", \"num_replica\": 2 }"
                 }, {
                     "definition": "drop index idx on `travel-sample`._default._default"
                 }
@@ -49,33 +49,14 @@ class PostIndex(GetCluster):
 
     def test_api_path(self):
         testcases = list()
+        # Each definition is valid and now succeeds with 200 (19752). The
+        # old 500 "Build Already In Progress" expectation was a transient
+        # backend error.
         for definition in self.expected_res["defs"]:
             testcases.append({
                 "description": "Send valid call for: `{}`"
                 .format(definition["definition"]),
-                "definition": definition["definition"],
-                "expected_status_code": 500,
-                "expected_error": {
-                    "code": 500,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 500,
-                    "message": "GSI CreateIndex() - cause:  Encountered "
-                               "transient error. Index idx will retry "
-                               "building in the background for reason: Build "
-                               "Already In Progress. Keyspace travel-sample. "
-                               "Encountered transient error. Index idx will "
-                               "retry building in the background for reason: "
-                               "Build Already In Progress. Keyspace "
-                               "travel-sample. Encountered transient error. "
-                               "Index idx will retry building in the "
-                               "background for reason: Build Already In "
-                               "Progress. Keyspace travel-sample. Encountered "
-                               "transient error. Index idx will retry "
-                               "building in the background for reason: Build "
-                               "Already In Progress. Keyspace travel-sample."
-                               "  \n"
-                }
+                "definition": definition["definition"]
             })
         testcases.extend([
             {

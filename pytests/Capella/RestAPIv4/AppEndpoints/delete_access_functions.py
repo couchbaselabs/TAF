@@ -97,18 +97,18 @@ class DeleteAccessControlFunction(GetAppEndpoints):
                 }
             }, {
                 "description": "Call API with non-hex appEndpointKeyspace",
+                # The App Endpoint name is checked by the access layer first, so a
+                # name that doesn't exist gets 403, not 400 (19752).
                 "invalid_appEndpointKeyspace": self.replace_last_character(
                     self.appEndpointName, non_hex=True),
-                "expected_status_code": 400,
+                "expected_status_code": 403,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
             }
         ]

@@ -24,10 +24,7 @@ class DeleteResync(GetAppEndpoints):
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/resync",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/resyn",
@@ -100,18 +97,18 @@ class DeleteResync(GetAppEndpoints):
                 }
             }, {
                 "description": "Call API with non-hex appEndpointName",
+                # The App Endpoint name is checked by the access layer first, so a
+                # name that doesn't exist gets 403, not 400 (19752).
                 "invalid_appEndpointName": self.replace_last_character(
                     self.appEndpointName, non_hex=True),
-                "expected_status_code": 400,
+                "expected_status_code": 403,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
             }
         ]
@@ -125,7 +122,7 @@ class DeleteResync(GetAppEndpoints):
             appEndpointNa = self.appEndpointName
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.deleteAppEndpointResync = \
+                self.capellaAPI.cluster_ops_apis.app_endpoint_resync_endpoint = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
@@ -144,7 +141,7 @@ class DeleteResync(GetAppEndpoints):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.stop_resync(
                     organization, project, cluster, appService, appEndpointNa)
-            self.capellaAPI.cluster_ops_apis.deleteAppEndpointResync = \
+            self.capellaAPI.cluster_ops_apis.app_endpoint_resync_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints/{}/resync"
             self.validate_testcase(result, [202], testcase, failures)

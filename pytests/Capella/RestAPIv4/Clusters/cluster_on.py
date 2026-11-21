@@ -279,7 +279,9 @@ class ClusterOn(GetCluster):
                 "desc": "Testing payload with value `{}` of {}"
                 .format(val, type(val))
             }
-            if type(val) is not bool:
+            # None is sent as JSON null, which the backend treats as "not
+            # set", so it is a valid payload (409/202), not a type error.
+            if val is not None and type(val) is not bool:
                 testcase["expected_status_code"] = 400
                 testcase["expected_error"] = {
                     "code": 1000,

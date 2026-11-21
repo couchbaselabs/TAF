@@ -24,10 +24,7 @@ class PutAdminUsers(GetAdminUsers):
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/appservices/{}/adminUsers",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/adminUser",
@@ -125,7 +122,7 @@ class PutAdminUsers(GetAdminUsers):
             user = self.user_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.admin_users_endpoint = \
+                self.capellaAPI.cluster_ops_apis.app_service_admin_users = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
@@ -144,7 +141,7 @@ class PutAdminUsers(GetAdminUsers):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_app_service_admin_user(
                     organization, project, cluster, appService, user)
-            self.capellaAPI.cluster_ops_apis.admin_users_endpoint = \
+            self.capellaAPI.cluster_ops_apis.app_service_admin_users = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/adminUsers"
             self.validate_testcase(result, [204], testcase, failures)
 
@@ -341,7 +338,7 @@ class PutAdminUsers(GetAdminUsers):
                 testcase["description"] = "Testing `{}` with val: `{}` of {}"\
                     .format(k, v, type(v))
                 if k == "endpoints" and type(v) == str and len(v) > 1:
-                    testcase["expected_status_code"] = 400
+                    testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 422,
                         "hint": "Please review your request and ensure that "
@@ -353,7 +350,7 @@ class PutAdminUsers(GetAdminUsers):
                         "httpStatusCode": 422
                     }
                 else:
-                    testcase["expected_status_code"] = 400
+                    testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 422,
                         "hint": "Please review your request and ensure that "

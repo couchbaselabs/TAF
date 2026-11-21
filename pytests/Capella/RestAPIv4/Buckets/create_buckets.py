@@ -389,8 +389,10 @@ class CreateBucket(GetBucket):
                  (key == 'flush' and isinstance(value, bool)) or
                  (key == 'bucketConflictResolution'
                      and value in ['seqno', 'lww']) or
+                 # 0 means "use the default size", so the bucket is created
+                 # (19752).
                  (key == 'memoryAllocationInMb' and isinstance(value, int)
-                     and value >= 100) or
+                     and (value >= 100 or value == 0)) or
                  (key == 'durabilityLevel' and value in [
                             "none", "majority", "majorityAndPersistActive",
                             "persistToMajority"]) or

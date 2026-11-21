@@ -79,8 +79,10 @@ class CreateAppService(GetProject):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/extra",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                # Matches the GET /appservices/{appServiceId} route, which
+                # doesn't allow POST (19752).
+                "expected_status_code": 405,
+                "expected_error": ""
             }, {
                 "description": "Create App Service but with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(

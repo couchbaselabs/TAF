@@ -19,7 +19,9 @@ class PostPrivateEndpointService(GetCluster):
         testcases = [
             {
                 "description": "Send call with valid path params",
-                "expected_status_code": 500,
+                # 202 when this call enables the service (a new cluster, as
+                # in 19752); 500 "already enabled" if it was enabled before.
+                "expected_status_code": [202, 500],
                 "expected_error": {
                     "code": 500,
                     "hint": "Please review your request and ensure that all "

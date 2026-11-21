@@ -259,26 +259,27 @@ class UpdateProject(GetProject):
                         "message": "Unable to save project. The description "
                                    "provided exceeds 256 characters."
                     }
-                elif key == "name" and len(value) >= 128:
-                    testcase["expected_status_code"] = 422
+                # Name length is now validated up front: 400 with these
+                # messages, not the old 422s (19752).
+                elif key == "name" and len(value) > 128:
+                    testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
-                        "code": 2004,
-                        "hint": "Retry with a name with a maximum length 128 "
-                                "characters.",
-                        "httpStatusCode": 422,
-                        "message": "Unable to save project. A project name "
-                                   "must be less than 128 characters."
-                    }
-                elif key == "name" and value == "":
-                    testcase["expected_status_code"] = 422
-                    testcase["expected_error"] = {
-                        "code": 422,
+                        "code": 400,
                         "hint": "Please review your request and ensure that "
                                 "all required parameters are correctly "
                                 "provided.",
-                        "httpStatusCode": 422,
-                        "message": "Unable to save project. A project name is "
-                                   "required. Please provide a project name."
+                        "httpStatusCode": 400,
+                        "message": "Name must be at most 128 characters long"
+                    }
+                elif key == "name" and len(value) < 2:
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 400,
+                        "message": "Name must be at least 2 characters long"
                     }
                 testcases.append(testcase)
 

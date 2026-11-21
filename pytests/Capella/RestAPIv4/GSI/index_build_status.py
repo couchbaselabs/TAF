@@ -35,17 +35,9 @@ class GetBuildStatus(GetIndex):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/queryService/indexBuildStatus/indexBuildStatu",
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                # No route matches the extra segment (19752).
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
@@ -95,16 +87,14 @@ class GetBuildStatus(GetIndex):
                 "description": "Call API with non-hex indexName",
                 "invalid_indexName": self.replace_last_character(
                     self.indexName, non_hex=True),
-                "expected_status_code": 400,
+                # The index name is looked up, not validated (19752).
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 404,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 404,
+                    "message": "Index not found in key space"
                 }
             }
         ]

@@ -52,16 +52,14 @@ class ListIndices(PostIndex):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/queryService/indexes/indexe",
-                "expected_status_code": 400,
+                # /indexes/indexe matches the get-index route, so it's an index lookup (19752).
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 404,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 404,
+                    "message": "Index not found in key space"
                 }
             }, {
                 "description": "Call API with non-hex organizationId",

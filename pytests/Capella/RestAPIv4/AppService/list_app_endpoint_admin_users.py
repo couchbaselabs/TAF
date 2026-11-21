@@ -44,10 +44,7 @@ class ListAdminUsers(GetAppEndpoints):
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/adminUsers",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/adminUser",
@@ -120,19 +117,10 @@ class ListAdminUsers(GetAppEndpoints):
                 }
             }, {
                 "description": "Call API with non-hex appEndpointName",
+                # The list is filtered by App Endpoint name, so a name that
+                # doesn't exist returns 200 (an empty list), not an error (19752).
                 "invalid_appEndpointName": self.replace_last_character(
-                    self.appEndpointName, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                    self.appEndpointName, non_hex=True)
             }
         ]
         failures = list()
@@ -145,7 +133,7 @@ class ListAdminUsers(GetAppEndpoints):
             appEndpointName = self.appEndpointName
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.admin_users_endpoint = \
+                self.capellaAPI.cluster_ops_apis.app_endpoint_admin_users = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
@@ -164,7 +152,7 @@ class ListAdminUsers(GetAppEndpoints):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_admin_user(
                     organization, project, cluster, appService, appEndpointName)
-            self.capellaAPI.cluster_ops_apis.admin_users_endpoint = \
+            self.capellaAPI.cluster_ops_apis.app_endpoint_admin_users = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/adminUsers"
             self.validate_testcase(result, [200], testcase, failures)
 
