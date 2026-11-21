@@ -149,7 +149,8 @@ class PostDataAPIAssociate(GetCluster):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ], self.expected_code, self.expected_err):
+        ], expected_failure_code=self.expected_code,
+                expected_failure_error=self.expected_err):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,

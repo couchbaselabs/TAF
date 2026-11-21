@@ -117,68 +117,88 @@ class DeletePrivateEndpointService(GetCluster):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
+        """
+        Disabling the private endpoint service can't be repeated: once the
+        first allowed role has disabled it, the next allowed roles get a
+        "Private endpoints aren't enabled" error instead of 202. Re-enabling
+        after every allowed role took 5-15 minutes per role (over 2 hours
+        for this test in 19760, during which the shared cluster was lost),
+        so instead accept that error for allowed roles once the service is
+        disabled. Denied roles still have to get 403, which is what proves
+        the RBAC check. The service is re-enabled once at the end.
+        """
+        not_enabled_err = {
+            "hint": "Please review your request and ensure that all "
+                    "required parameters are correctly provided.",
+            "message": "Private endpoints aren't enabled for this cluster. "
+                       "Please select another cluster."
+        }
+        disabled_by_test = False
         failures = list()
-        for testcase in self.v4_RBAC_injection_init([
+        testcases = self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ]):
-            self.log.info("Executing test: {}".format(testcase["description"]))
-            header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.disable_private_endpoint_service(
-                self.organisation_id, self.project_id, self.cluster_id,
-                header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.disable_private_endpoint_service(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    header)
-            if self.validate_testcase(result, [202, 500], testcase, failures):
-                self.log.debug("Deletion Successful")
-                if result.status_code == 202:
-                    # Disabling isn't repeatable - without re-enabling,
-                    # every subsequent "should succeed" role would
-                    # deterministically fail with "Private endpoints
-                    # aren't enabled for this cluster", since by then it
-                    # genuinely isn't.
-                    self.update_auth_with_api_token(self.curr_owner_key)
-                    # Disabling is itself async - calling enable right
-                    # away can race ahead of the backend's own state
-                    # transition and get rejected with "already
-                    # enabled", leaving the service disabled with no
-                    # successful re-enable to undo it.
-                    if not self.wait_for_deployment(pes=True,
-                                                    pes_enabled=False):
-                        self.log.error(
-                            "Private endpoint service did not report "
-                            "disabled before attempting to re-enable "
-                            "it for the next role.")
-                    enable_res = self.capellaAPI.cluster_ops_apis.\
-                        enable_private_endpoint_service(
+        ])
+        try:
+            for testcase in testcases:
+                self.log.info("Executing test: {}".format(
+                    testcase["description"]))
+                if (disabled_by_test and
+                        "expected_status_code" not in testcase):
+                    # Allowed role, service already disabled (or still
+                    # disabling) by an earlier role.
+                    testcase["expected_status_code"] = [202, 400, 409, 422,
+                                                       500]
+                    testcase["expected_error"] = not_enabled_err
+                header = dict()
+                self.auth_test_setup(testcase, failures, header,
+                                     self.project_id, self.other_project_id)
+                result = self.capellaAPI.cluster_ops_apis.\
+                    disable_private_endpoint_service(
+                        self.organisation_id, self.project_id,
+                        self.cluster_id, header)
+                if result.status_code == 429:
+                    self.handle_rate_limit(int(result.headers["Retry-After"]))
+                    result = self.capellaAPI.cluster_ops_apis.\
+                        disable_private_endpoint_service(
                             self.organisation_id, self.project_id,
-                            self.cluster_id)
-                    if enable_res.status_code == 429:
-                        self.handle_rate_limit(
-                            int(enable_res.headers["Retry-After"]))
-                        enable_res = self.capellaAPI.cluster_ops_apis.\
-                            enable_private_endpoint_service(
-                                self.organisation_id, self.project_id,
-                                self.cluster_id)
-                    if enable_res.status_code != 202:
-                        self.log.error(
-                            "Error while re-enabling private endpoint "
-                            "service for the next role: {}".format(
-                                enable_res.content))
-                    elif not self.wait_for_deployment(pes=True):
-                        self.log.error(
-                            "Private endpoint service did not report "
-                            "enabled after re-enabling for the next "
-                            "role.")
+                            self.cluster_id, header)
+                if self.validate_testcase(result, [202, 500], testcase,
+                                          failures):
+                    self.log.debug("Deletion Successful")
+                if result.status_code == 202:
+                    disabled_by_test = True
+        finally:
+            if disabled_by_test:
+                self.restore_private_endpoint_service()
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED.".format(len(failures)))
+
+    def restore_private_endpoint_service(self):
+        """Re-enable the service this test disabled, so the cluster is left
+        the way the suite found it."""
+        self.update_auth_with_api_token(self.curr_owner_key)
+        # Disabling is async - enabling too early is rejected with
+        # "already enabled", leaving the service disabled.
+        if not self.wait_for_deployment(pes=True, pes_enabled=False):
+            self.log.error("Private endpoint service did not report "
+                           "disabled before re-enabling it.")
+        enable_res = self.capellaAPI.cluster_ops_apis.\
+            enable_private_endpoint_service(
+                self.organisation_id, self.project_id, self.cluster_id)
+        if enable_res.status_code == 429:
+            self.handle_rate_limit(int(enable_res.headers["Retry-After"]))
+            enable_res = self.capellaAPI.cluster_ops_apis.\
+                enable_private_endpoint_service(
+                    self.organisation_id, self.project_id, self.cluster_id)
+        if enable_res.status_code != 202:
+            self.log.error("Error while re-enabling private endpoint "
+                           "service: {}".format(enable_res.content))
+        elif not self.wait_for_deployment(pes=True):
+            self.log.error("Private endpoint service did not report "
+                           "enabled after re-enabling it.")
 
     def test_query_parameters(self):
         self.log.debug(

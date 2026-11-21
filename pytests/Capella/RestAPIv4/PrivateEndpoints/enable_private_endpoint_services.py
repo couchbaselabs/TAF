@@ -126,9 +126,11 @@ class PostPrivateEndpointService(GetCluster):
 
     def test_authorization(self):
         failures = list()
+        # Allowed roles get 202 while the service is being enabled (the
+        # first call starts it) and 500 "already enabled" once it is.
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ], True, 500, {
+        ], True, [202, 500], {
             "code": 500,
             "hint": "Please review your request and ensure that all "
                     "required parameters are correctly provided.",

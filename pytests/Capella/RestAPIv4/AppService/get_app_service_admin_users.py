@@ -230,7 +230,9 @@ class GetAdminUsers(GetAppService):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-             "organizationOwner", "projectOwner", "projectManager"
+             # Reading admin users is allowed for every project role.
+             "organizationOwner", "projectOwner", "projectManager",
+             "projectViewer", "projectDataReaderWriter", "projectDataReader"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

@@ -164,7 +164,8 @@ class DeleteAppEndpoints(GetAppEndpoints):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager"
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectDataReaderWriter"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

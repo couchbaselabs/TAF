@@ -25,16 +25,42 @@ class PostAssociate(GetCluster):
             }
         else:
             self.expected_code = 400
+            # The dummy endpoint ID is only looked up once the private
+            # endpoint service is enabled (e.g. by
+            # PostPrivateEndpointService earlier in the suite).
+            if self.is_private_endpoint_service_enabled():
+                message = ("Invalid endpoint ID. Did you run the connection "
+                           "command?")
+            else:
+                message = ("Private endpoints aren't enabled for this "
+                           "cluster. Please select another cluster.")
             self.expected_err = {
                 "code": 400,
                 "hint": "Please review your request and ensure that all "
                         "required parameters are correctly provided.",
                 "httpStatusCode": 400,
-                "message": "Private endpoints aren't enabled for this cluster. Please select another cluster."
+                "message": message
             }
 
     def tearDown(self):
         super(PostAssociate, self).tearDown()
+
+    def is_private_endpoint_service_enabled(self):
+        res = self.capellaAPI.cluster_ops_apis.\
+            fetch_private_endpoint_service_status_info(
+                self.organisation_id, self.project_id, self.cluster_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers.get("Retry-After", 60)))
+            res = self.capellaAPI.cluster_ops_apis.\
+                fetch_private_endpoint_service_status_info(
+                    self.organisation_id, self.project_id, self.cluster_id)
+        if res.status_code != 200:
+            self.log.warning("Could not fetch private endpoint service "
+                             "status: {}".format(res.content))
+            return False
+        enabled = bool(res.json().get("enabled", False))
+        self.log.info("Private endpoint service enabled: {}".format(enabled))
+        return enabled
 
     def test_api_path(self):
         testcases = [
@@ -151,7 +177,8 @@ class PostAssociate(GetCluster):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ], self.expected_code, self.expected_err):
+        ], expected_failure_code=self.expected_code,
+                expected_failure_error=self.expected_err):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
