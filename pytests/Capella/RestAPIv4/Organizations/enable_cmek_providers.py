@@ -32,8 +32,14 @@ class EnableCMEKProvider(APIBase):
                 "description": "Replace providers with provider in URI",
                 "url": "/v4/organizations/{}/cmek/provider",
                 "cloudProvider": "aws",
-                "expected_status_code": 404,
-                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
+                # The extra segment is taken as a resource ID, which isn't a UUID (19750).
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all the required params are present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the request due to something that is perceived to be a client error."
+                }
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/cmek/providers/provider",
@@ -45,8 +51,14 @@ class EnableCMEKProvider(APIBase):
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "cloudProvider": "aws",
-                "expected_status_code": 404,
-                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
+                # Non-UUID IDs are rejected with 400 before the route is looked up (19750).
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all the required params are present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the request due to something that is perceived to be a client error."
+                }
             }
         ]
 
@@ -165,14 +177,30 @@ class EnableCMEKProvider(APIBase):
             }
             if value in ["aws", "gcp", "azure"]:
                 testcase["expected_status_code"] = [204, 422]
-            else:
-                testcase["expected_status_code"] = [422],
+            elif value is None or isinstance(value, str):
+                # Unsupported provider (None is sent as JSON null): 422.
+                # This was "[422]," - a tuple, so it never matched (19750).
+                testcase["expected_status_code"] = 422
                 testcase["expected_error"] = {
-                        "code": 1000,
-                        "hint": "Please review your request and ensure that all required parameters are correctly provided.",
-                        "httpStatusCode": 422,
-                        "message": "Unable to process request. The specified provider is not supported for CMEK. Please ensure the provider is either AWS, GCP, or Azure and try again."
-                    }
+                    "code": 422,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 422,
+                    "message": "Unable to process request. The specified "
+                               "provider is not supported for CMEK. Please "
+                               "ensure the provider is either AWS, GCP, or "
+                               "Azure and try again."
+                }
+            else:
+                # Not a string: rejected by the JSON decoder (19750).
+                testcase["expected_status_code"] = 400
+                testcase["expected_error"] = {
+                    "code": 1000,
+                    "hint": "The request was malformed or invalid.",
+                    "httpStatusCode": 400,
+                    "message": "Bad Request. Error: body contains incorrect "
+                               "JSON type for field \"cloudProvider\"."
+                }
             testcases.append(testcase)
 
         failures = list()

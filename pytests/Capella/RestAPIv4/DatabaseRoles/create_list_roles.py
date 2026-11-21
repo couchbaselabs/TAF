@@ -36,11 +36,12 @@ class CreateDatabaseRole(DatabaseRoleBase):
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
-                "description": "Add an invalo the URI",
+                "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}"
                        "/roles/role",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                # The extra segment matches the get-by-ID route, which doesn't allow POST (19750).
+                "expected_status_code": 405,
+                "expected_error": ""
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
@@ -255,12 +256,13 @@ class CreateDatabaseRole(DatabaseRoleBase):
             "description": self.expected_res["description"],
             "access": None,
             "desc": "Testing `access` with val: None of NoneType",
-            "expected_status_code": 400,
+            # No access given: 422 from the backend's validation (19750).
+            "expected_status_code": 422,
             "expected_error": {
-                "code": 1000,
-                "hint": "The request was malformed or invalid.",
-                "httpStatusCode": 400,
-                "message": "Bad Request. Error: access is required."
+                "code": 422,
+                "hint": "Please review your request and ensure that all required parameters are correctly provided.",
+                "httpStatusCode": 422,
+                "message": "Can not create new dataplane user role without at least (1) valid permission being provided. Please provide at least (1) valid permission for the new user role."
             }
         })
         testcases.append({
@@ -268,12 +270,13 @@ class CreateDatabaseRole(DatabaseRoleBase):
             "description": self.expected_res["description"],
             "access": [],
             "desc": "Testing `access` with empty list",
-            "expected_status_code": 400,
+            # No access given: 422 from the backend's validation (19750).
+            "expected_status_code": 422,
             "expected_error": {
-                "code": 1000,
-                "hint": "The request was malformed or invalid.",
-                "httpStatusCode": 400,
-                "message": "Bad Request. Error: access is required."
+                "code": 422,
+                "hint": "Please review your request and ensure that all required parameters are correctly provided.",
+                "httpStatusCode": 422,
+                "message": "Can not create new dataplane user role without at least (1) valid permission being provided. Please provide at least (1) valid permission for the new user role."
             }
         })
 
@@ -329,8 +332,14 @@ class ListDatabaseRoles(DatabaseRoleBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}"
                        "/roles/role",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                # The extra segment is taken as a resource ID, which isn't a UUID (19750).
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all the required params are present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the request due to something that is perceived to be a client error."
+                }
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(

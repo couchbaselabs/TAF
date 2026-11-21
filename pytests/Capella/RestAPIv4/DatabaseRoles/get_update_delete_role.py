@@ -491,12 +491,13 @@ class UpdateDatabaseRole(DatabaseRoleBase):
             "access": [],
             "description": self.update_description,
             "desc": "Testing `access` with empty list",
-            "expected_status_code": 400,
+            # No access given: 422 from the backend's validation (19750).
+            "expected_status_code": 422,
             "expected_error": {
-                "code": 1000,
-                "hint": "The request was malformed or invalid.",
-                "httpStatusCode": 400,
-                "message": "Bad Request. Error: access cannot be empty."
+                "code": 422,
+                "hint": "Please review your request and ensure that all required parameters are correctly provided.",
+                "httpStatusCode": 422,
+                "message": "Can not create new dataplane user role without at least (1) valid permission being provided. Please provide at least (1) valid permission for the new user role."
             }
         })
         testcases.append({

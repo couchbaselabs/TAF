@@ -38,8 +38,9 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}"
                        "/users/user",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                # The extra segment matches the get-by-ID route, which doesn't allow POST (19750).
+                "expected_status_code": 405,
+                "expected_error": ""
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
@@ -201,12 +202,18 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                 testcase[key] = value
                 if key == "name":
                     if value is None or value == "":
-                        testcase["expected_status_code"] = 400
+                        # Empty/missing name fails the length check: 422
+                        # (19750).
+                        testcase["expected_status_code"] = 422
                         testcase["expected_error"] = {
-                            "code": 1000,
-                            "hint": "The request was malformed or invalid.",
-                            "httpStatusCode": 400,
-                            "message": "Bad Request. Error: name is required."
+                            "code": 422,
+                            "hint": "Please review your request and ensure "
+                                    "that all required parameters are "
+                                    "correctly provided.",
+                            "httpStatusCode": 422,
+                            "message": "Can not create application user. The "
+                                       "name provided is too short. Can not "
+                                       "be less than 2 characters."
                         }
                     elif not isinstance(value, str):
                         testcase["expected_status_code"] = 400
@@ -272,11 +279,12 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
             "credentialType": "invalid",
             "userRoles": None,
             "desc": "Creating credential with invalid credentialType",
-            "expected_status_code": 400,
+            # Rejected as 422 by the backend's validation (19750).
+            "expected_status_code": 422,
             "expected_error": {
-                "code": 1000,
+                "code": 422,
                 "hint": "Please review your request and ensure that all required parameters are correctly provided.",
-                "httpStatusCode": 400,
+                "httpStatusCode": 422,
                 "message": "Can not create application user. The credential type provided invalid is invalid. Please check the request and try again."
             }
         })
@@ -472,8 +480,14 @@ class ListDatabaseCredentials(DatabaseCredentialBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}"
                        "/users/user",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                # The extra segment is taken as a resource ID, which isn't a UUID (19750).
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all the required params are present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the request due to something that is perceived to be a client error."
+                }
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(

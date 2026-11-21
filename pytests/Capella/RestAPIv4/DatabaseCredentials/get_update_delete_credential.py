@@ -447,11 +447,12 @@ class UpdateDatabaseCredential(DatabaseCredentialBase):
                 "desc": "Update with neither access nor userRoles",
                 "password": None,
                 "userRoles": None,
-                "expected_status_code": 400,
+                # Rejected as 422 by the backend's validation (19750).
+                "expected_status_code": 422,
                 "expected_error": {
-                    "code": 1000,
+                    "code": 422,
                     "hint": "Please review your request and ensure that all required parameters are correctly provided.",
-                    "httpStatusCode": 400,
+                    "httpStatusCode": 422,
                     "message": "Can not update existing dataplane user permissions unless at least (1) valid permission is supplied on the request."
                 }
             }, {

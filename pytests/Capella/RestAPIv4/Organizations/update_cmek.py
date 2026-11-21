@@ -39,8 +39,14 @@ class UpdateCMEK(GetCMEK):
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
+                # Non-UUID IDs are rejected with 400 before the route is looked up (19750).
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all the required params are present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the request due to something that is perceived to be a client error."
+                }
             }
         ]
 
@@ -141,6 +147,19 @@ class UpdateCMEK(GetCMEK):
         failures = list()
         for testcase in payloads:
             self.log.info("Executing test: {}".format(testcase["desc"]))
+            if not self.cmek_created:
+                # No CMEK to rotate: the key lookup fails before the payload
+                # is validated (19750).
+                testcase["expected_status_code"] = 404
+                testcase["expected_error"] = {
+                    "code": 404,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 404,
+                    "message": "Unable to process request for key. The key "
+                               "requested does not exist. Please ensure the "
+                               "ID of the CMEK is correct and try again."
+                }
             result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
                 self.organisation_id, self.cmek_id, testcase["config"])
             if result.status_code == 429:

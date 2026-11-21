@@ -39,14 +39,26 @@ class GetProjectCMEKAzureApplication(APIBase):
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
+                # Non-UUID IDs are rejected with 400 before the route is looked up (19750).
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all the required params are present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the request due to something that is perceived to be a client error."
+                }
             }, {
                 "description": "Call API with non-hex projectId",
                 "invalid_projectId": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
+                # Non-UUID IDs are rejected with 400 before the route is looked up (19750).
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all the required params are present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the request due to something that is perceived to be a client error."
+                }
             }
         ]
 

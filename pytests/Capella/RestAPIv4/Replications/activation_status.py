@@ -81,16 +81,13 @@ class ReplicationActivationStatus(ReplicationBase):
                 "description": "ActivationStatus with non-hex replicationID",
                 "invalid_replicationID": self.replace_last_character(
                     self.replication_id, non_hex=True),
-                "expected_status_code": 400,
+                # The replication ID is looked up, not validated (19750).
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 404,
+                    "hint": "Please review your request and ensure that all required parameters are correctly provided.",
+                    "httpStatusCode": 404,
+                    "message": "Can not retrieve replication information. The replication was not found."
                 }
             }
         ]
