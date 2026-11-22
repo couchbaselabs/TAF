@@ -70,6 +70,9 @@ class OPD:
     # no-op -- the sub-class' setUp never initialises these.
     plan_stability_thread = None
     stop_plan_stability = False
+    # Unchanged ~10s progress polls before a rebalance counts as hung (~8h).
+    # Hospital.Murphy sets it from the retry_get_process_num param.
+    retry_get_process_num = 3000
 
     # AUS (Automatic Update Statistics) runs on a fixed daily window rather
     # than a computed one, so a rerun schedules the same window every time.
@@ -543,7 +546,7 @@ class OPD:
             self.recover_indexer()
 
     def rebalance(self, nodes_in=0, nodes_out=0, services=[],
-                  retry_get_process_num=3000):
+                  retry_get_process_num=None):
         self.servs_in = list()
         self.nodes_cluster = self.cluster.nodes_in_cluster[:]
         self.nodes_cluster.remove(self.cluster.master)
@@ -634,7 +637,8 @@ class OPD:
             self.cluster, self.servs_in, self.servs_out,
             services=services,
             check_vbucket_shuffling=self.vbucket_check,
-            retry_get_process_num=retry_get_process_num,
+            retry_get_process_num=(retry_get_process_num
+                                   or self.retry_get_process_num),
             validate_bucket_ranking=False)
 
         return rebalance_task
@@ -914,7 +918,7 @@ class OPD:
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 rebalance_task = self.task.async_rebalance(self.cluster,[], [],
-                                                           retry_get_process_num=3000)
+                                                           retry_get_process_num=self.retry_get_process_num)
                 self.sleep(10, "Rebalance % ={}. Let the rebalance begin!".
                            format(expected_progress))
             i += 1
@@ -967,7 +971,7 @@ class OPD:
                                   format(expected_progress))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster, [], self.servs_out,
-                        retry_get_process_num=3000)
+                        retry_get_process_num=self.retry_get_process_num)
                     self.sleep(120, "Let the rebalance begin after abort")
                     self.log.info("Rebalance % = {}".
                                   format(rest._rebalance_progress()))

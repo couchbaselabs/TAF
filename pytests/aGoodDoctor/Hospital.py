@@ -471,6 +471,10 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
             num_reader_threads=self.reader_threads,
             num_storage_threads=self.storage_threads)
         self.stop_rebalance = self.input.param("pause_rebalance", False)
+        # Unchanged ~10s progress polls before a rebalance counts as hung
+        # (3000 ~ 8h, 8640 ~ 24h)
+        self.retry_get_process_num = self.input.param(
+            "retry_get_process_num", 3000)
         self.log_query_failures = True
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
 
@@ -849,7 +853,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
                                                 nodes_out=self.rebl_nodes,
                                                 services=[service]*self.rebl_nodes,
-                                                retry_get_process_num=3000)
+                                                retry_get_process_num=self.retry_get_process_num)
                 self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -861,7 +865,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
                                                 nodes_out=0,
                                                 services=[service]*self.rebl_nodes,
-                                                retry_get_process_num=3000)
+                                                retry_get_process_num=self.retry_get_process_num)
                 self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -873,7 +877,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 rebalance_task = self.rebalance(nodes_in=0,
                                                 nodes_out=self.rebl_nodes,
                                                 services=[service],
-                                                retry_get_process_num=3000)
+                                                retry_get_process_num=self.retry_get_process_num)
                 self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -885,7 +889,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1,
                                                 nodes_out=self.rebl_nodes,
                                                 services=[service]*(self.rebl_nodes+1),
-                                                retry_get_process_num=3000)
+                                                retry_get_process_num=self.retry_get_process_num)
                 self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -897,7 +901,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
                                                 nodes_out=self.rebl_nodes+1,
                                                 services=[service]*self.rebl_nodes,
-                                                retry_get_process_num=3000)
+                                                retry_get_process_num=self.retry_get_process_num)
                 self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1087,7 +1091,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster, [], [],
-                retry_get_process_num=3000,
+                retry_get_process_num=self.retry_get_process_num,
                 validate_bucket_ranking=False)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1131,7 +1135,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
                 self.cluster, [], [],
-                retry_get_process_num=3000,
+                retry_get_process_num=self.retry_get_process_num,
                 validate_bucket_ranking=False)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1180,7 +1184,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster, [], [],
-                retry_get_process_num=3000,
+                retry_get_process_num=self.retry_get_process_num,
                 validate_bucket_ranking=False)
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
@@ -1540,7 +1544,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
                 rebalance_task = self.task.async_rebalance(
                     self.cluster, [], [],
-                    retry_get_process_num=3000,
+                    retry_get_process_num=self.retry_get_process_num,
                     validate_bucket_ranking=False)
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1635,7 +1639,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
                 rebalance_task = self.task.async_rebalance(
                     self.cluster, [], [],
-                    retry_get_process_num=3000,
+                    retry_get_process_num=self.retry_get_process_num,
                     validate_bucket_ranking=False)
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -2029,7 +2033,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
                 rebalance_task = self.task.async_rebalance(
                     self.cluster, [], [],
-                    retry_get_process_num=3000,
+                    retry_get_process_num=self.retry_get_process_num,
                     validate_bucket_ranking=False)
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -2084,7 +2088,7 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
                 rebalance_task = self.task.async_rebalance(
                     self.cluster, [], [],
-                    retry_get_process_num=3000,
+                    retry_get_process_num=self.retry_get_process_num,
                     validate_bucket_ranking=False)
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
