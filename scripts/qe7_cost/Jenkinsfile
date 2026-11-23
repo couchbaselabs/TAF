@@ -1,0 +1,107 @@
+// Nightly qe-7 sandbox cost report.
+//
+// Job: qe7-cost/qe7_daily_cost_report on http://172.23.121.80
+// Two agents, because neither can do everything:
+//  * an on-prem agent ('dispatcher') can reach the Jenkins web API: it
+//    restores the state archived by the last successful build and maps qe-7
+//    clusters to the builds that created them;
+//  * the AWS agent ('aws_slave_us_east_1', python3 + boto3, same as the
+//    fusion cloud jobs) cannot reach Jenkins but does the AWS work.
+//    jenkins-cp-cli-keys (IAM user jenkins-cp-cli) assumes the read-only
+//    jenkins-cp-cli role in qe-7 (264138468394).
+// State (ledger, cluster->build map, price cache, daily history) moves
+// between the stages with stash/unstash and between runs as state.tgz.
+
+def TAF_URL = 'https://review.couchbase.org/TAF'
+def SLACK_CRED = 'slack-app-pipeline-notify-secret'
+
+def checkoutTaf(String url) {
+    // Parameters are empty on a job's very first build
+    sh """
+        rm -rf taf && git init -q taf && cd taf
+        git fetch -q --depth 1 ${url} "\${TAF_REF:-master}"
+        git checkout -q FETCH_HEAD
+        git log -1 --format='TAF %h %s'
+    """
+}
+
+def postSlack(String text, String color, String cred) {
+    def target = (params.SLACK_TARGET ?: '').trim()
+    if (!target) {
+        return
+    }
+    def channel = target.contains('@') ? slackUserIdFromEmail(email: target, tokenCredentialId: cred) : target
+    slackSend(channel: channel, message: text, color: color, botUser: true, tokenCredentialId: cred)
+}
+
+pipeline {
+    agent none
+    triggers { cron('TZ=Asia/Kolkata\n30 6 * * *') }   // after the UTC day ends (05:30 IST)
+    options {
+        disableConcurrentBuilds()
+        timeout(time: 4, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '120'))
+    }
+    parameters {
+        string(name: 'REPORT_DATE', defaultValue: '', description: 'UTC day (YYYY-MM-DD); empty = yesterday')
+        string(name: 'SPEND_LIMIT', defaultValue: '500', description: 'Alert when the day costs more than this (USD)')
+        string(name: 'IDLE_HOURS', defaultValue: '24', description: 'Alert on clusters up this long with no running build')
+        string(name: 'SLACK_TARGET', defaultValue: 'vibhav.sp@couchbase.com',
+               description: 'An email (DM that person) or a channel such as #fusion-dev-qe; empty = no Slack')
+        string(name: 'TAF_REF', defaultValue: 'master',
+               description: 'TAF branch, or a Gerrit ref such as refs/changes/NN/NNNNNN/P')
+    }
+    stages {
+        stage('Jenkins scan (on-prem)') {
+            agent { label 'dispatcher' }
+            steps {
+                checkoutTaf(TAF_URL)
+                sh '''
+                    rm -rf state state.tgz && mkdir -p state
+                    curl -sfL -o state.tgz "${JOB_URL}lastSuccessfulBuild/artifact/state.tgz" \
+                        && tar -xzf state.tgz && echo "Restored state from last successful build" \
+                        || echo "No previous state: starting fresh"
+                    cd taf && python3 -m scripts.qe7_cost.jenkins --state-dir ../state --since-days 3
+                '''
+                stash name: 'state', includes: 'state/**'
+            }
+        }
+        stage('Report (AWS)') {
+            agent { label 'aws_slave_us_east_1' }
+            // The AWS agents sometimes lose their connection to the
+            // controller (ping timeouts); try the stage once more on that
+            options { retry(2) }
+            steps {
+                checkoutTaf(TAF_URL)
+                sh 'rm -rf state out'
+                unstash 'state'
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+                                  credentialsId: 'jenkins-cp-cli-keys',
+                                  accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                                  secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+                    sh '''
+                        DATE_ARG=""
+                        [ -n "$REPORT_DATE" ] && DATE_ARG="--date $REPORT_DATE"
+                        cd taf && python3 -m scripts.qe7_cost.run_daily $DATE_ARG --skip-jenkins \
+                            --state-dir ../state --events-dir ../events --out-dir ../out \
+                            --spend-limit "${SPEND_LIMIT:-500}" --idle-hours "${IDLE_HOURS:-24}" \
+                            --report-url "${BUILD_URL}artifact/out/report.html"
+                    '''
+                }
+                sh 'tar -czf state.tgz state'
+                archiveArtifacts artifacts: 'state.tgz,out/**', fingerprint: false
+                script {
+                    def hasAlerts = readFile('out/alerts.json').trim() != '[]'
+                    postSlack(readFile('out/slack.txt'), hasAlerts ? 'danger' : 'good', SLACK_CRED)
+                }
+            }
+        }
+    }
+    post {
+        failure {
+            node('dispatcher') {
+                postSlack("qe-7 daily cost report failed: ${env.BUILD_URL}console", 'danger', SLACK_CRED)
+            }
+        }
+    }
+}

@@ -1734,5 +1734,177 @@ class TestMcBinClientFrameExtras(unittest.TestCase):
         self.assertEqual({"id": 5, "type": "JWT", "token": "tok"}, json.loads(sent[24:]))
 
 
+class TestQe7CostModel(unittest.TestCase):
+    """
+    scripts/qe7_cost: the daily qe-7 cost report rebuilds spend from
+    CloudTrail launch/terminate events. These cover the parts that decide the
+    numbers: event parsing (including fleet launches tagged through their
+    launch template), instance-hours inside a UTC day, gp3 pricing, the
+    end time inferred for accelerators that shut themselves down, and keeping
+    the sandbox's own control-plane nodes out of the per-run costs.
+    """
+
+    def setUp(self):
+        import datetime as dt
+        import shutil
+        import tempfile
+        from scripts.qe7_cost import cloudtrail, events, model, pricing
+        self.dt, self.ev, self.model, self.pricing = dt, events, model, pricing
+        self.cloudtrail = cloudtrail
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.utc = dt.timezone.utc
+
+    def _write(self, name, events_):
+        import json
+        with open(os.path.join(self.tmp, name), "w") as f:
+            for e in events_:
+                f.write(json.dumps(e) + "\n")
+
+    def _launch(self, iid, when, itype, tags):
+        return {"eventTime": when, "eventName": "RunInstances", "responseElements": {
+            "instancesSet": {"items": [{"instanceId": iid, "instanceType": itype,
+                "tagSet": {"items": [{"key": k, "value": v} for k, v in tags.items()]}}]}}}
+
+    def _terminate(self, iid, when):
+        return {"eventTime": when, "eventName": "TerminateInstances",
+                "responseElements": {"instancesSet": {"items": [{"instanceId": iid}]}}}
+
+    def test_load_run_fleet_and_terminate(self):
+        node_tags = {"stack-env": "qe-7", "user-createdby": "vibhav-sp",
+                     "couchbase-cloud-cluster-id": "c1"}
+        self._write("us-east-2_RunInstances_111700.jsonl",
+                    [self._launch("i-node", "2026-11-17T20:00:00Z", "c7g.2xlarge", node_tags),
+                     {"eventTime": "2026-11-17T20:00:00Z", "errorCode": "Boom"}])
+        self._write("us-east-2_CreateLaunchTemplate_111700.jsonl", [{
+            "eventTime": "2026-11-17T20:00:00Z", "eventName": "CreateLaunchTemplate",
+            "requestParameters": {"CreateLaunchTemplateRequest": {"LaunchTemplateData": {
+                "TagSpecification": [{"Tag": [
+                    {"Key": "stack-env", "Value": "qe-7"},
+                    {"Key": "couchbase-cloud-function", "Value": "fusion-accelerator"}]}]}}},
+            "responseElements": {"CreateLaunchTemplateResponse": {
+                "launchTemplate": {"launchTemplateId": "lt-1"}}}}])
+        self._write("us-east-2_CreateFleet_111700.jsonl", [{
+            "eventTime": "2026-11-17T20:05:00Z", "eventName": "CreateFleet",
+            "requestParameters": {"CreateFleetRequest": {"LaunchTemplateConfigs": [
+                {"LaunchTemplateSpecification": {"LaunchTemplateId": "lt-1"}}]}},
+            "responseElements": {"CreateFleetResponse": {"fleetInstanceSet": {"item": [
+                {"instanceType": "c8gb.4xlarge",
+                 "instanceIds": {"item": ["i-acc1", "i-acc2"]}}]}}}}])
+        self._write("us-east-2_TerminateInstances_111700.jsonl",
+                    [self._terminate("i-node", "2026-11-17T21:30:00Z")])
+        launches, terms, stats = self.ev.load(self.tmp, "us-east-2")
+        self.assertEqual(set(launches), {"i-node", "i-acc1", "i-acc2"})
+        self.assertEqual(launches["i-acc1"]["type"], "c8gb.4xlarge")
+        self.assertEqual(self.ev.role(launches["i-acc1"]["tags"]), "accel")
+        self.assertEqual(self.ev.role(launches["i-node"]["tags"]), "node")
+        self.assertEqual(terms["i-node"].hour, 21)
+        self.assertEqual(stats["fleet_instances_without_template"], 0)
+
+    def test_overlap_hours_clips_to_the_day(self):
+        day = self.dt.datetime(2026, 11, 17, tzinfo=self.utc)
+        t = lambda h: day + self.dt.timedelta(hours=h)
+        self.assertAlmostEqual(self.model.overlap_hours(t(-3), t(2), t(0), t(24)), 2.0)
+        self.assertAlmostEqual(self.model.overlap_hours(t(23), t(30), t(0), t(24)), 1.0)
+        self.assertEqual(self.model.overlap_hours(t(25), t(30), t(0), t(24)), 0.0)
+
+    def test_gp3_pricing(self):
+        # 1 TB at 16k IOPS / 1000 MB/s: storage 81.92 + IOPS 65 + throughput 35 per month
+        self.assertAlmostEqual(self.pricing.gp3_hourly(1024, 16000, 1000) * 730,
+                               181.92, places=2)
+        self.assertAlmostEqual(self.pricing.gp3_hourly(50) * 730, 4.0, places=4)
+
+    def test_controlplane_nodes_are_baseline_not_runs(self):
+        tags = {"stack-env": "qe-7", "user-createdby": "ritesh-agarwal",
+                "aws:autoscaling:groupName": "qe-7-cp-eks-smng-self-managed-node-group-app-v21"}
+        self.assertEqual(self.ev.role(tags), "controlplane")
+
+    def test_silent_accelerator_ends_with_its_rebalance(self):
+        ledger = self.model.Ledger()
+        base = self.dt.datetime(2026, 11, 17, 19, tzinfo=self.utc)
+        iso = lambda m: (base + self.dt.timedelta(minutes=m)).isoformat()
+        acc = {"stack-env": "qe-7", "couchbase-cloud-function": "fusion-accelerator",
+               "couchbase-cloud-fusion-rebalance": "r1"}
+        ledger.items = {
+            "i-a": dict(region="us-east-2", type="c8gb.4xlarge", start=iso(0), end=iso(30),
+                        end_source="terminate", tags=acc),
+            "i-b": dict(region="us-east-2", type="c8gb.4xlarge", start=iso(5), tags=acc),
+            "i-n": dict(region="us-east-2", type="c7g.2xlarge", start=iso(0),
+                        last_seen=iso(120), tags={"stack-env": "qe-7",
+                                                 "couchbase-cloud-cluster-id": "c1"}),
+        }
+        now = self.dt.datetime(2026, 11, 18, tzinfo=self.utc)
+        closed = ledger.close_missing(live={}, now=now)
+        self.assertEqual(ledger.items["i-b"]["end"], iso(30))     # with its rebalance
+        self.assertEqual(ledger.items["i-n"]["end"], iso(120))    # last seen running
+        self.assertEqual(dict(closed), {"rebalance-end": 1, "last-seen": 1})
+
+    def test_partial_cloudtrail_slice_is_fetched_again(self):
+        """The last slice stops at 'now'; it must not be cached as complete,
+        or the rest of its hours are never downloaded."""
+        import json
+        day = self.dt.datetime(2026, 11, 26, tzinfo=self.utc)
+        at = lambda h: day + self.dt.timedelta(hours=h)
+        events_ = [at(0.5), at(3), at(5.5)]      # terminations
+
+        class FakeCloudTrail(object):
+            def lookup_events(self, StartTime, EndTime, **_):
+                return {"Events": [{"CloudTrailEvent": json.dumps({"t": t.isoformat()})}
+                                   for t in events_ if StartTime <= t < EndTime]}
+
+        class FakeQe(object):
+            def client(self, *_):
+                return FakeCloudTrail()
+
+        quiet = lambda *_: None
+        # 01:00 run, then 07:00 run; both see the 00:00-06:00 slice
+        self.cloudtrail.download(FakeQe(), ["us-east-1"], at(0), at(1), self.tmp,
+                                 event_names=("TerminateInstances",), log=quiet)
+        self.cloudtrail.download(FakeQe(), ["us-east-1"], at(0), at(7), self.tmp,
+                                 event_names=("TerminateInstances",), log=quiet)
+        path = self.cloudtrail.slice_path(self.tmp, "us-east-1", "TerminateInstances", at(0))
+        with open(path) as f:
+            self.assertEqual(3, len(f.readlines()))
+
+    def _attribute(self, item):
+        tags = item["tags"]
+        return dict(role=self.ev.role(tags), group=self.ev.group_key(tags),
+                    run=self.ev.group_key(tags), owner="o", spec={})
+
+    def test_idle_cluster_not_hidden_by_its_accelerator(self):
+        """Accelerators carry the cluster id; a long-lived one must neither
+        hide the cluster nor count as recent activity."""
+        now = self.dt.datetime(2026, 11, 26, 12, tzinfo=self.utc)
+        ago = lambda h: (now - self.dt.timedelta(hours=h)).isoformat()
+        node = {"stack-env": "qe-7", "couchbase-cloud-cluster-id": "c1"}
+        acc = dict(node, **{"couchbase-cloud-function": "fusion-accelerator"})
+        ledger = self.model.Ledger()
+        ledger.items = {
+            "i-acc": dict(region="us-east-1", type="c8gb.4xlarge", start=ago(1), tags=acc),
+            "i-n1": dict(region="us-east-1", type="c7g.2xlarge", start=ago(48), tags=node),
+            "i-n2": dict(region="us-east-1", type="c7g.2xlarge", start=ago(48), tags=node),
+        }
+        prices = self.pricing.PriceBook()
+        found = self.model.alerts(dict(total=0), ledger, prices, self._attribute, [], now,
+                                  spend_limit=500, idle_hours=24, quiet_hours=12,
+                                  unattached=[])
+        self.assertEqual([(a["kind"], a["group"], a["instances"]) for a in found],
+                         [("idle_node", "c1", 2)])
+        # A node terminated an hour ago (scale-in) is recent activity
+        ledger.items["i-n3"] = dict(region="us-east-1", type="c7g.2xlarge", start=ago(48),
+                                    end=ago(1), tags=node)
+        found = self.model.alerts(dict(total=0), ledger, prices, self._attribute, [], now,
+                                  spend_limit=500, idle_hours=24, quiet_hours=12,
+                                  unattached=[])
+        self.assertEqual(found, [])
+
+    def test_fallback_prices_are_not_saved(self):
+        path = os.path.join(self.tmp, "prices.json")
+        book = self.pricing.PriceBook(None, path, log=lambda *_: None)
+        self.assertGreater(book.hourly("c7g.2xlarge"), 0)
+        book.save()
+        self.assertEqual({}, self.pricing.PriceBook(None, path).cache)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
