@@ -1139,6 +1139,30 @@ class CollectionBase(ClusterSetup, FusionBase):
         return cont_doc_load
 
     @staticmethod
+    def add_dedupe_load_to_skip_dict(load_task, skip_dict=None):
+        """
+        Returns skip_dict with the collections used by the dedupe load added,
+        so a parallel spec does not drop them or their scopes
+        """
+        merged = {}
+        if not isinstance(skip_dict, dict):
+            skip_dict = {}
+        collections = [(b_name, s_name, c_name)
+                       for b_name, b_dict in skip_dict.items()
+                       for s_name, s_dict in b_dict.get("scopes", {}).items()
+                       for c_name in s_dict.get("collections", {})]
+        if load_task is not None:
+            collections += [(bucket.name, s_name, c_name)
+                            for bucket, b_dict in load_task.loader_spec.items()
+                            for s_name, s_dict in b_dict["scopes"].items()
+                            for c_name in s_dict["collections"]]
+        for b_name, s_name, c_name in collections:
+            merged.setdefault(b_name, {"scopes": {}})["scopes"] \
+                .setdefault(s_name, {"collections": {}})["collections"][
+                c_name] = {}
+        return merged
+
+    @staticmethod
     def wait_for_cont_doc_load_to_complete(test_obj, load_task):
         if load_task is not None:
             load_task.stop_indefinite_doc_loading_tasks()
