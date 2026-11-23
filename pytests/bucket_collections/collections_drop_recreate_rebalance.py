@@ -40,6 +40,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_load_flag = False  # When to start/stop drop/recreate
         self.data_loading_thread = None
         self.data_load_exception = None # Object variable to assign data load thread's exception
+        self.dedupe_skip_dict = {}
         self.skip_validations = self.input.param("skip_validations", True)
         self.N1qltxn = self.input.param("N1ql_txn", False)
         if self.N1qltxn:
@@ -207,6 +208,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         start_time = time.time()
         while self.data_load_flag:
             doc_loading_spec = self.spec_for_drop_recreate()
+            if self.dedupe_skip_dict:
+                doc_loading_spec['skip_dict'] = self.dedupe_skip_dict
             try:
                 _ = BucketUtils.perform_tasks_from_spec(self.cluster,
                                                         self.cluster.buckets,
@@ -235,6 +238,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         else:
             cont_load_task = \
                 CollectionBase.start_history_retention_data_load(self)
+            self.dedupe_skip_dict = \
+                CollectionBase.add_dedupe_load_to_skip_dict(cont_load_task)
             self.data_load_flag = True
             self.data_loading_thread = threading.Thread(target=self.data_load)
             self.data_loading_thread.start()
@@ -322,6 +327,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         else:
             cont_load_task = \
                 CollectionBase.start_history_retention_data_load(self)
+            self.dedupe_skip_dict = \
+                CollectionBase.add_dedupe_load_to_skip_dict(cont_load_task)
             self.data_load_flag = True
             self.data_loading_thread = threading.Thread(target=self.data_load)
             self.data_loading_thread.start()

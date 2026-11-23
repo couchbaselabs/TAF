@@ -2394,12 +2394,10 @@ class BucketUtils(ScopeUtils):
                     continue
                 available_scopes.append("%s:%s" % (bucket_name, scope))
 
+        available_scopes = list(set(available_scopes) - set(exclude_scopes))
         if req_num == "all" or req_num >= len(available_scopes):
-            selected_scopes = list(set(available_scopes)
-                                   - set(exclude_scopes))
+            selected_scopes = available_scopes
         else:
-            available_scopes = list(set(available_scopes)
-                                    - set(exclude_scopes))
             selected_scopes = sample(available_scopes, req_num)
 
         for scope_name in selected_scopes:
@@ -2467,12 +2465,11 @@ class BucketUtils(ScopeUtils):
                                                     scope_name,
                                                     collection))
 
+        available_collections = list(set(available_collections)
+                                     - set(exclude_collections))
         if req_num == "all" or req_num >= len(available_collections):
-            selected_collections = list(set(available_collections)
-                                        - set(exclude_collections))
+            selected_collections = available_collections
         else:
-            available_collections = list(set(available_collections)
-                                         - set(exclude_collections))
             selected_collections = sample(available_collections, req_num)
 
         for collection in selected_collections:
@@ -7038,7 +7035,8 @@ class BucketUtils(ScopeUtils):
             buckets,
             input_spec.get(MetaCrudParams.SCOPES_TO_DROP, 0),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1),
-            avoid_default=True)
+            avoid_default=True,
+            exclude_from=exclude_from)
         perform_scope_operation("drop", scopes_to_drop)
 
         # Fetch buckets under which scopes will be created, and create them

@@ -106,6 +106,9 @@ class CollectionsQuorumLoss(CollectionBase):
             self, async_load=async_load)
         doc_loading_spec = self.get_common_spec()
         self.set_retry_exceptions(doc_loading_spec)
+        if cont_doc_load is not None:
+            doc_loading_spec['skip_dict'] = \
+                CollectionBase.add_dedupe_load_to_skip_dict(cont_doc_load)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
                                                         self.cluster.buckets,
