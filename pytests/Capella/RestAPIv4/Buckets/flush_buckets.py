@@ -121,10 +121,6 @@ class FlushBucket(GetBucket):
 
             result = self.capellaAPI.cluster_ops_apis.flush_bucket(
                 org, proj, clus, buck)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.flush_bucket(
-                    org, proj, clus, buck)
             if (result.status_code == 500 and
                     testcase["description"] == "Flush a valid bucket"):
                 # Known backend issue: on clusters with low, fixed-IOPS
@@ -163,11 +159,6 @@ class FlushBucket(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.flush_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.flush_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -282,11 +273,6 @@ class FlushBucket(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.flush_bucket(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.flush_bucket(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

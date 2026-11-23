@@ -21,14 +21,6 @@ class DeleteCloudSnapshotBackupSchedule(GetCloudSnapshotBackupSchedule):
                 self.schedule_payload["interval"],
                 self.schedule_payload["retention"],
                 self.schedule_payload["startTime"])
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis. \
-                upsert_cloud_snapshot_backup_schedule(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.schedule_payload["interval"],
-                    self.schedule_payload["retention"],
-                    self.schedule_payload["startTime"])
         if res.status_code != 204:
             self.log.error(res.content)
             self.fail("Cloud snapshot backup schedule recreation failed")
@@ -101,11 +93,6 @@ class DeleteCloudSnapshotBackupSchedule(GetCloudSnapshotBackupSchedule):
             result = self.capellaAPI.cluster_ops_apis. \
                 delete_cloud_snapshot_backup_schedule(
                     organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
-                    delete_cloud_snapshot_backup_schedule(
-                        organization, project, cluster)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.recreate_schedule()
 
@@ -128,12 +115,6 @@ class DeleteCloudSnapshotBackupSchedule(GetCloudSnapshotBackupSchedule):
                 delete_cloud_snapshot_backup_schedule(
                     self.organisation_id, self.project_id, self.cluster_id,
                     headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
-                    delete_cloud_snapshot_backup_schedule(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        headers=header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.recreate_schedule()
 

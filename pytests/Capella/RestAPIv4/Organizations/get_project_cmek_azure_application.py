@@ -78,10 +78,6 @@ class GetProjectCMEKAzureApplication(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_project_cmek_azure_application(
                 organization, project)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_project_cmek_azure_application(
-                    organization, project)
             self.capellaAPI.org_ops_apis.project_cmek_azure_application_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmekAzureApplication"
             # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
@@ -100,10 +96,6 @@ class GetProjectCMEKAzureApplication(APIBase):
         allowed_roles = ["organizationOwner", "projectOwner", "projectManager"]
         probe = self.capellaAPI.org_ops_apis.fetch_project_cmek_azure_application(
             self.organisation_id, self.project_id)
-        if probe.status_code == 429:
-            self.handle_rate_limit(int(probe.headers["Retry-After"]))
-            probe = self.capellaAPI.org_ops_apis.fetch_project_cmek_azure_application(
-                self.organisation_id, self.project_id)
         if probe.status_code == 404:
             # Azure CMEK app not provisioned: the backend checks project
             # membership, then returns this 404 before the role check, so
@@ -119,10 +111,6 @@ class GetProjectCMEKAzureApplication(APIBase):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.fetch_project_cmek_azure_application(
                 self.organisation_id, self.project_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_project_cmek_azure_application(
-                    self.organisation_id, self.project_id, headers=header)
             # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
             # provisioned (CMEK not enabled for this project). Both are valid
             # post-authorization responses; an unauthorized caller gets 403.

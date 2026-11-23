@@ -104,13 +104,6 @@ class PostFreeTier(GetFreeTierBucket):
             result = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(
                 organization, project, cluster, self.expected_res["name"],
                 self.expected_res["memoryAllocationInMb"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_bucket(
-                            organization, project, cluster,
-                            self.expected_res["name"],
-                            self.expected_res["memoryAllocationInMb"]))
             self.capellaAPI.cluster_ops_apis.free_tier_bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets/freeTier"
             if self.validate_testcase(result, [201], testcase, failures):
@@ -135,15 +128,6 @@ class PostFreeTier(GetFreeTierBucket):
                 self.organisation_id, self.project_id,
                 self.free_tier_cluster_id, self.expected_res["name"],
                 self.expected_res["memoryAllocationInMb"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_bucket(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id,
-                            self.expected_res["name"],
-                            self.expected_res["memoryAllocationInMb"],
-                            header))
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_freetier_buckets(self.free_tier_cluster_id)
@@ -237,11 +221,6 @@ class PostFreeTier(GetFreeTierBucket):
             result = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(self.organisation_id, self.project_id, self.free_tier_cluster_id,
                 self.expected_res["name"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(self.organisation_id, self.project_id, self.free_tier_cluster_id,
-                    self.expected_res["name"],
-                    **kwarg)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_freetier_buckets(self.free_tier_cluster_id)
@@ -361,14 +340,6 @@ class PostFreeTier(GetFreeTierBucket):
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id,
                         testcase["name"], testcase["memoryAllocationInMb"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_bucket(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id,
-                            testcase["name"],
-                            testcase["memoryAllocationInMb"]))
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_freetier_buckets(self.free_tier_cluster_id)

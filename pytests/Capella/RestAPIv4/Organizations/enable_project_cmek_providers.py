@@ -92,10 +92,6 @@ class EnableProjectCMEKProvider(APIBase):
 
             result = self.capellaAPI.org_ops_apis.enable_project_cmek_provider(
                 organization, project, testcase["cloudProvider"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.enable_project_cmek_provider(
-                    organization, project, testcase["cloudProvider"])
             self.capellaAPI.org_ops_apis.project_cmek_providers_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmek/providers"
             self.validate_testcase(result, [204], testcase, failures)
@@ -116,11 +112,6 @@ class EnableProjectCMEKProvider(APIBase):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.enable_project_cmek_provider(
                 self.organisation_id, self.project_id, "azure", headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.enable_project_cmek_provider(
-                    self.organisation_id, self.project_id, "azure",
-                    headers=header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -183,11 +174,6 @@ class EnableProjectCMEKProvider(APIBase):
             result = self.capellaAPI.org_ops_apis.enable_project_cmek_provider(
                 self.organisation_id, self.project_id,
                 testcase["cloudProvider"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.enable_project_cmek_provider(
-                    self.organisation_id, self.project_id,
-                    testcase["cloudProvider"])
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 

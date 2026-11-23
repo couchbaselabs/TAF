@@ -158,10 +158,6 @@ class PostAssociate(GetCluster):
                 organization, project, cluster)
             result = self.capellaAPI.cluster_ops_apis.accept_private_endpoint(
                 organization, project, cluster, endpoint)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.accept_private_endpoint(
-                    organization, project, cluster, endpoint)
             self.capellaAPI.cluster_ops_apis.associate_private_network_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpoints/{}/associate"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -187,12 +183,6 @@ class PostAssociate(GetCluster):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.endpoint_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.accept_private_endpoint(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.endpoint_id,
-                    header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Association Successful")
 
@@ -294,12 +284,6 @@ class PostAssociate(GetCluster):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["endpointID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.accept_private_endpoint(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["endpointID"],
-                    **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Mock Association Successful")
 

@@ -28,16 +28,6 @@ class ProjectCMEKById(APIBase):
                     "region": self.region
                 },
                 "Project CMEK metadata for by-id tests")
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_project_cmek_metadata(
-                    self.organisation_id, self.project_id,
-                    self.prefix + "project-cmek-by-id",
-                    {
-                        "keyLocation": self.key_location,
-                        "region": self.region
-                    },
-                    "Project CMEK metadata for by-id tests")
             if resp.status_code == 200:
                 self.cmek_id = resp.json()["id"]
                 self.cmek_created = True
@@ -50,10 +40,6 @@ class ProjectCMEKById(APIBase):
         if self.cmek_created:
             resp = self.capellaAPI.org_ops_apis.delete_project_cmek_metadata(
                 self.organisation_id, self.project_id, self.cmek_id)
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.delete_project_cmek_metadata(
-                    self.organisation_id, self.project_id, self.cmek_id)
             if resp.status_code not in [204, 404]:
                 self.log.error("Project CMEK cleanup failed: {}"
                                .format(resp.content))
@@ -122,10 +108,6 @@ class ProjectCMEKById(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_project_cmek_metadata(
                 organization, project, self.cmek_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_project_cmek_metadata(
-                    organization, project, self.cmek_id)
             self.capellaAPI.org_ops_apis.project_cmek_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmek"
             self.validate_testcase(result, [200], testcase, failures)
@@ -204,14 +186,6 @@ class ProjectCMEKById(APIBase):
                     "keyLocation": self.rotate_key_location,
                     "region": self.rotate_region
                 })
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.update_project_cmek_metadata(
-                    organization, project, self.cmek_id,
-                    {
-                        "keyLocation": self.rotate_key_location,
-                        "region": self.rotate_region
-                    })
             self.capellaAPI.org_ops_apis.project_cmek_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmek"
             self.validate_testcase(result, [204], testcase, failures)
@@ -285,10 +259,6 @@ class ProjectCMEKById(APIBase):
 
             result = self.capellaAPI.org_ops_apis.delete_project_cmek_metadata(
                 organization, project, self.cmek_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_project_cmek_metadata(
-                    organization, project, self.cmek_id)
             self.capellaAPI.org_ops_apis.project_cmek_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmek"
             self.validate_testcase(result, [204], testcase, failures)

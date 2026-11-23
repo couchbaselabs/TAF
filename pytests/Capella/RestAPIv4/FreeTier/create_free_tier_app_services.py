@@ -105,13 +105,6 @@ class PostFreeTier(GetFreeTierApp):
                         organization, project, cluster,
                         self.expected_res["name"],
                         self.expected_res["description"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_app_service(
-                            organization, project, cluster,
-                            self.expected_res["name"],
-                            self.expected_res["description"]))
             self.capellaAPI.cluster_ops_apis.free_tier_app_svc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/"\
                 "freeTier"
@@ -137,14 +130,6 @@ class PostFreeTier(GetFreeTierApp):
                         self.free_tier_cluster_id,
                         self.expected_res["name"],
                         self.expected_res["description"], header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_app_service(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id,
-                            self.expected_res["name"],
-                            self.expected_res["description"], header))
             self.validate_testcase(result, [202, 409, 422], testcase, failures)
         if failures:
             for fail in failures:
@@ -236,11 +221,6 @@ class PostFreeTier(GetFreeTierApp):
             result = self.capellaAPI.cluster_ops_apis.create_free_tier_app_service(self.organisation_id, self.project_id, self.free_tier_cluster_id,
                 self.expected_res["name"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_free_tier_app_service(self.organisation_id, self.project_id, self.free_tier_cluster_id,
-                    self.expected_res["name"],
-                    **kwarg)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_freetiers(self.project_id, self.free_tier_cluster_id, 
@@ -287,13 +267,6 @@ class PostFreeTier(GetFreeTierApp):
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id, testcase["name"],
                         testcase["description"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_app_service(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, testcase["name"],
-                            testcase["description"]))
             self.validate_testcase(result, [202, 409, 422], testcase, failures,
                                    payloadTest=True)
         if failures:

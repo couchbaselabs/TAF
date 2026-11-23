@@ -25,12 +25,6 @@ class GetLogStreaming(GetAppService):
         result = self.capellaAPI.cluster_ops_apis.create_app_service_log_streaming(
             self.organisation_id, self.project_id, self.cluster_id, self.app_service_id,
             self.expected_res["outputType"], self.expected_res["credentials"])
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = self.capellaAPI.cluster_ops_apis.create_app_service_log_streaming(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id, self.expected_res["outputType"],
-                self.expected_res["credentials"])
         if result.status_code != 202:
             self.log.error("Result: {}".format(result.content))
             self.tearDown()
@@ -146,10 +140,6 @@ class GetLogStreaming(GetAppService):
 
             result = self.capellaAPI.cluster_ops_apis.get_app_service_log_streaming(
                 organization, project, cluster, appService)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_app_service_log_streaming(
-                    organization, project, cluster, appService)
 
             self.capellaAPI.cluster_ops_apis.app_svc_log_streaming_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}" \
@@ -177,13 +167,6 @@ class GetLogStreaming(GetAppService):
             result = self.capellaAPI.cluster_ops_apis.get_app_service_log_streaming(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          get_app_service_log_streaming(
-                              self.organisation_id, self.project_id,
-                              self.cluster_id, self.app_service_id,
-                              header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -286,11 +269,6 @@ class GetLogStreaming(GetAppService):
             result = self.capellaAPI.cluster_ops_apis.get_app_service_log_streaming(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase['appServiceID'], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_app_service_log_streaming(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase['appServiceID'], **kwarg)
 
             if self.validate_testcase(result, [200], testcase, failures):
                 res, _ = self.validate_onoff_state(["turningOn", "healthy"],app=self.app_service_id)

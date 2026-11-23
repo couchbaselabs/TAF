@@ -125,13 +125,6 @@ class PostAuditLogExports(GetAuditLogExports):
                         organization, project, cluster, appService,
                         self.expected_res["start"],
                         self.expected_res["end"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .create_app_svc_audit_log_export(
-                            organization, project, cluster, appService,
-                            self.expected_res["start"],
-                            self.expected_res["end"]))
             self.capellaAPI.cluster_ops_apis\
                 .app_svc_audit_log_exports_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
@@ -159,14 +152,6 @@ class PostAuditLogExports(GetAuditLogExports):
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, self.expected_res["start"],
                         self.expected_res["end"], header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .create_app_svc_audit_log_export(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.expected_res["start"],
-                            self.expected_res["end"], header))
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
 
@@ -276,14 +261,6 @@ class PostAuditLogExports(GetAuditLogExports):
                         testcase["clusterID"], testcase["appServiceID"],
                         self.expected_res["start"], self.expected_res["end"],
                         **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .create_app_svc_audit_log_export(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            self.expected_res["start"],
-                            self.expected_res["end"], **kwarg))
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
 
@@ -342,13 +319,6 @@ class PostAuditLogExports(GetAuditLogExports):
                    create_app_svc_audit_log_export(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, testcase["start"], testcase["end"]))
-            if res.status_code == 429:
-                self.handle_rate_limit(res.headers["Retry-After"])
-                res = (self.capellaAPI.cluster_ops_apis.
-                       create_app_svc_audit_log_export(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.app_service_id, testcase["start"], testcase["end"]
-                       ))
             self.validate_testcase(res, [202], testcase, failures,
                                    payloadTest=True)
 

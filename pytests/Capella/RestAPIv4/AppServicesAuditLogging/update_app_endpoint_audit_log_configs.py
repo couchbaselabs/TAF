@@ -141,15 +141,6 @@ class PutAuditLogConfig(GetAuditLogConfig):
                         self.expected_res["enabledEventIds"],
                         self.expected_res["disabledUsers"],
                         self.expected_res["disabledRoles"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_app_svc_audit_log_config(
-                            organization, project, cluster, appService,
-                            appEndpointName, self.expected_res["auditEnabled"],
-                            self.expected_res["enabledEventIds"],
-                            self.expected_res["disabledUsers"],
-                            self.expected_res["disabledRoles"]))
             self.capellaAPI.cluster_ops_apis.audit_log_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
                  "appEndpoints/{}/auditLog")
@@ -179,18 +170,6 @@ class PutAuditLogConfig(GetAuditLogConfig):
                         self.expected_res["disabledUsers"],
                         self.expected_res["disabledRoles"],
                         header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_app_svc_audit_log_config(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.appEndpointName,
-                            self.expected_res["auditEnabled"],
-                            self.expected_res["enabledEventIds"],
-                            self.expected_res["disabledUsers"],
-                            self.expected_res["disabledRoles"],
-                            header))
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -330,18 +309,6 @@ class PutAuditLogConfig(GetAuditLogConfig):
                         self.expected_res["disabledUsers"],
                         self.expected_res["disabledRoles"],
                         **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_app_svc_audit_log_config(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            testcase["appEndpointName"],
-                            self.expected_res["auditEnabled"],
-                            self.expected_res["enabledEventIds"],
-                            self.expected_res["disabledUsers"],
-                            self.expected_res["disabledRoles"],
-                            **kwarg))
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:

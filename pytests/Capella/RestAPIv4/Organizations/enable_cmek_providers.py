@@ -75,10 +75,6 @@ class EnableCMEKProvider(APIBase):
 
             result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
                 organization, testcase["cloudProvider"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
-                    organization, testcase["cloudProvider"])
             self.capellaAPI.org_ops_apis.cmek_providers_endpoint = \
                 "/v4/organizations/{}/cmek/providers"
             self.validate_testcase(result, [204], testcase, failures)
@@ -97,10 +93,6 @@ class EnableCMEKProvider(APIBase):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
                 self.organisation_id, "aws", headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
-                    self.organisation_id, "aws", headers=header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -142,10 +134,6 @@ class EnableCMEKProvider(APIBase):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
                 testcase["organizationID"], testcase["cloudProvider"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
-                    testcase["organizationID"], testcase["cloudProvider"])
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -208,10 +196,6 @@ class EnableCMEKProvider(APIBase):
             self.log.info("Executing test: {}".format(testcase["desc"]))
             result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
                 self.organisation_id, testcase["cloudProvider"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.enable_cmek_provider(
-                    self.organisation_id, testcase["cloudProvider"])
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 

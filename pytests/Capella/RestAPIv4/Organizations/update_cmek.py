@@ -62,10 +62,6 @@ class UpdateCMEK(GetCMEK):
 
             result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
                 organization, self.cmek_id, {"arn": self.rotate_arn})
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
-                    organization, self.cmek_id, {"arn": self.rotate_arn})
             self.capellaAPI.org_ops_apis.cmek_endpoint = \
                 "/v4/organizations/{}/cmek"
             self.validate_testcase(result, [204], testcase, failures)
@@ -95,11 +91,6 @@ class UpdateCMEK(GetCMEK):
             result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
                 self.organisation_id, self.cmek_id, {"arn": self.rotate_arn},
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
-                    self.organisation_id, self.cmek_id, {"arn": self.rotate_arn},
-                    headers=header)
             # When a real cmek_arn is supplied the CMEK exists and rotate
             # returns 204/412/422; otherwise there is no key to rotate and the
             # authorized roles get 404 (mirrors GetCMEK.test_authorization and
@@ -134,15 +125,20 @@ class UpdateCMEK(GetCMEK):
                         "message": "Unable to process request for key. The configuration for the key must provide the metadata for the AWS, GCP, or Azure key. None was provided."
                     }
             }, {
+                # A config that is not an object cannot be decoded into any
+                # provider config (ErrParsingCMEKConfig in
+                # cp-open-api/server/v4/cmek.go).
                 "desc": "Invalid config type",
                 "config": "invalid",
-                "expected_status_code": 422,
-                "expected_error":{
-                        "code": 12003,
-                        "hint": "Please ensure that the configuration for the key includes metadata for either the AWS, GCP, or Azure key, and then try again.",
-                        "httpStatusCode": 422,
-                        "message": "Unable to process request for key. The configuration for the key must provide the metadata for the AWS, GCP, or Azure key. None was provided."
-                    }
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 400,
+                    "message": "Unable to process request for key. The "
+                               "config provided is invalid"
+                }
             }
         ]
 
@@ -164,10 +160,6 @@ class UpdateCMEK(GetCMEK):
                 }
             result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
                 self.organisation_id, self.cmek_id, testcase["config"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
-                    self.organisation_id, self.cmek_id, testcase["config"])
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 

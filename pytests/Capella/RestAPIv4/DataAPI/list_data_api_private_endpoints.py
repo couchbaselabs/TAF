@@ -115,11 +115,6 @@ class ListDataAPIEndpoints(GetCluster):
             result = self.capellaAPI.cluster_ops_apis\
                 .list_data_api_private_endpoints(
                     organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis\
-                    .list_data_api_private_endpoints(
-                        organization, project, cluster)
             self.capellaAPI.cluster_ops_apis\
                 .list_data_api_private_endpoints_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/"\
@@ -146,12 +141,6 @@ class ListDataAPIEndpoints(GetCluster):
                 .list_data_api_private_endpoints(
                     self.organisation_id, self.project_id, self.cluster_id,
                     headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis\
-                    .list_data_api_private_endpoints(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        headers=header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -244,13 +233,6 @@ class ListDataAPIEndpoints(GetCluster):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"],
                     **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis\
-                    .list_data_api_private_endpoints(
-                        testcase["organizationID"], testcase["projectID"],
-                        testcase["clusterID"],
-                        **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

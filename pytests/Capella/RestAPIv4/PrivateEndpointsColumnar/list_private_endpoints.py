@@ -64,10 +64,6 @@ class ListEndpoints(GetAnalyticsClusters):
 
             result = self.columnarAPI.list_private_endpoint(
                 organization, project, analytics_cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.list_private_endpoint(
-                    organization, project, analytics_cluster)
 
             self.columnarAPI.list_private_networks_endpoint = (
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpoints")

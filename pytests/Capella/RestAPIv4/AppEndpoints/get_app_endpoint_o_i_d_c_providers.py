@@ -45,13 +45,6 @@ class GetOidcProviders(GetAppEndpoints):
             self.app_service_id, self.appEndpointName,
             **self.expected_res["data"][0]
         )
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id, self.appEndpointName,
-                **self.expected_res["data"][0]
-            )
         if res.status_code != 201:
             self.log.error("Result: {}".format(res.content))
             self.tearDown()
@@ -222,10 +215,6 @@ class GetOidcProviders(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_oidc_provider_info(
                 organization, project, cluster, appService, appEndpointName, OIDCProvider)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_oidc_provider_info(
-                    organization, project, cluster, appService, appEndpointName, OIDCProvider)
             self.capellaAPI.cluster_ops_apis.app_endpoint_OIDC_provider = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/oidcProviders"
             self.validate_testcase(result, [200], testcase, failures)
@@ -251,13 +240,6 @@ class GetOidcProviders(GetAppEndpoints):
                 self.app_service_id, self.appEndpointName,
                 self.OIDCProvider_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_oidc_provider_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    self.OIDCProvider_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -404,13 +386,6 @@ class GetOidcProviders(GetAppEndpoints):
                 self.app_service_id, self.appEndpointName,
                 self.OIDCProvider_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_oidc_provider_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    self.OIDCProvider_id,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

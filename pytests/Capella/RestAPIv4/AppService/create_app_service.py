@@ -45,11 +45,6 @@ class CreateAppService(GetProject):
             res = self.capellaAPI.cluster_ops_apis.delete_appservice(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.created_app_service_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_appservice(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.created_app_service_id)
             if res.status_code not in [202, 404]:
                 self.log.error("Error while deleting App Service created "
                                "for the test: {}".format(res.content))
@@ -151,14 +146,6 @@ class CreateAppService(GetProject):
                     org, proj, clus, self.expected_result["name"],
                     self.expected_result["compute"],
                     self.expected_result["nodes"])
-                if result.status_code == 429:
-                    self.handle_rate_limit(
-                        int(result.headers["Retry-After"]))
-                    result = self.capellaAPI.cluster_ops_apis.\
-                        create_appservice(
-                            org, proj, clus, self.expected_result["name"],
-                            self.expected_result["compute"],
-                            self.expected_result["nodes"])
 
                 if result.status_code == 409:
                     # The cluster already has an App Service (e.g. reused
@@ -255,13 +242,6 @@ class CreateAppService(GetProject):
                 self.organisation_id, self.project_id, self.cluster_id,
                 app_name, self.expected_result["compute"],
                 self.expected_result["nodes"], version=testcase["version"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_appservice(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    app_name, self.expected_result["compute"],
-                    self.expected_result["nodes"],
-                    version=testcase["version"])
 
             if testcase.get("invalid"):
                 if result.status_code < 400 or result.status_code >= 500:
@@ -311,11 +291,6 @@ class CreateAppService(GetProject):
             del_res = self.capellaAPI.cluster_ops_apis.delete_appservice(
                 self.organisation_id, self.project_id, self.cluster_id,
                 app_id)
-            if del_res.status_code == 429:
-                self.handle_rate_limit(int(del_res.headers["Retry-After"]))
-                del_res = self.capellaAPI.cluster_ops_apis.delete_appservice(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    app_id)
             if del_res.status_code != 202:
                 self.log.error("Error while deleting App Service {} "
                                "created for version {}: {}".format(
@@ -353,13 +328,6 @@ class CreateAppService(GetProject):
                 self.organisation_id, self.project_id, self.dummy_cluster_id,
                 self.expected_result["name"], self.expected_result["compute"],
                 self.expected_result["nodes"], headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_appservice(
-                    self.organisation_id, self.project_id,
-                    self.dummy_cluster_id, self.expected_result["name"],
-                    self.expected_result["compute"],
-                    self.expected_result["nodes"], headers=header)
             self.validate_testcase(result, [404], testcase, failures)
 
         if failures:
@@ -460,13 +428,6 @@ class CreateAppService(GetProject):
                 testcase["clusterID"], self.expected_result["name"],
                 self.expected_result["compute"],
                 self.expected_result["nodes"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_appservice(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_result["name"],
-                    self.expected_result["compute"],
-                    self.expected_result["nodes"], **kwarg)
 
             self.validate_testcase(result, [404], testcase, failures)
 

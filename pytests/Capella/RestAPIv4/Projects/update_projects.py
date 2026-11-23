@@ -25,11 +25,6 @@ class UpdateProject(GetProject):
         result = self.capellaAPI.org_ops_apis.update_project(
             self.organisation_id, self.project_id,
             self.original_project_name, "", False)
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = self.capellaAPI.org_ops_apis.update_project(
-                self.organisation_id, self.project_id,
-                self.original_project_name, "", False)
         if result.status_code != 204:
             self.log.error(
                 "Error while restoring the shared project's original "
@@ -105,11 +100,6 @@ class UpdateProject(GetProject):
             result = self.capellaAPI.org_ops_apis.update_project(
                 org, proj, self.project_name + str(self.name_iteration), "",
                 False)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.update_project(
-                    org, proj, self.project_name + str(self.name_iteration),
-                    "", False)
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
             self.validate_testcase(result, [204], testcase, failures)
@@ -132,12 +122,6 @@ class UpdateProject(GetProject):
             result = self.capellaAPI.org_ops_apis.update_project(
                 self.organisation_id, self.project_id, self.project_name + str(
                     self.name_iteration), "", False, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.update_project(
-                    self.organisation_id, self.project_id,
-                    self.project_name + str(self.name_iteration), "", False,
-                    header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -209,12 +193,6 @@ class UpdateProject(GetProject):
                 testcase["organizationID"], testcase["projectID"],
                 self.project_name + str(self.name_iteration), "", False,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.update_project(
-                    testcase["organizationID"], testcase["projectID"],
-                    self.project_name + str(self.name_iteration), "", False,
-                    **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -290,11 +268,6 @@ class UpdateProject(GetProject):
             result = self.capellaAPI.org_ops_apis.update_project(
                 self.organisation_id, self.project_id, testcase["name"],
                 testcase["description"], False)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.update_project(
-                    self.organisation_id, self.project_id, testcase["name"],
-                    testcase["description"], False)
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 

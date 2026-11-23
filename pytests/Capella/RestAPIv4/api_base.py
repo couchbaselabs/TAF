@@ -23,6 +23,7 @@ from pytests.cb_basetest import CouchbaseBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from couchbase_utils.capella_utils import capella_http
 from TestInput import TestInputSingleton
 
 # Serialises writes to the collected-logs list from the parallel dp-agent and server log collectors.
@@ -70,8 +71,46 @@ class APIBase(CouchbaseBaseTest):
         return self.input.param(
             "cmek_arn", self.input.capella.get("cmek_arn", default))
 
+    def create_cmek_metadata(self, org_id, name, config, description="",
+                             attempts=3, wait=20):
+        """org_ops_apis.create_cmek_metadata, retried while Capella's own
+        kms:DescribeKey check of a valid key fails transiently. The same
+        ARN passes on the runs before and after (19875), so a 422 naming
+        kms:DescribeKey is retried; any other response is returned as is."""
+        for attempt in range(1, attempts + 1):
+            result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
+                org_id, name, config, description)
+            if result.status_code != 422 or attempt == attempts or \
+                    "kms:DescribeKey" not in str(result.content):
+                return result
+            self.log.warning(
+                "CMEK create got 422 from kms:DescribeKey (attempt {}/{}, "
+                "request_id={}), retrying in {}s".format(
+                    attempt, attempts,
+                    result.headers.get("Vnd-Cloud-Couchbase-Com-Request-Id"),
+                    wait))
+            time.sleep(wait)
+
     def setUp(self, nomenclature="WRAPPER", services=[]):
         CouchbaseBaseTest.setUp(self)
+
+        # Timeouts, retries and a single 429 policy for every Capella client
+        # this test creates (couchbase_utils/capella_utils/capella_http.py).
+        # Tune with capella_http_<option>=<value> test params.
+        capella_http.install(capella_http.Config.from_params(self.input),
+                             logger=self.log)
+        capella_http.set_rate_limit_handler(
+            self._owner_key_rate_limit_handler)
+
+        # An earlier test of this run lost the shared setup (API keys,
+        # WRAPPER project or the shared cluster) and already cleaned up.
+        # Every later test would only fail slowly against resources that
+        # don't exist, so fail now, in seconds, with the original reason.
+        broken = self.input.capella.get("shared_setup_broken")
+        if broken:
+            capella_http.set_rate_limit_handler(None)
+            self.fail("NOT RUN - shared setup failed earlier in this run: {}"
+                      .format(broken))
 
         self.capella = self.input.capella
         self.url = self.input.capella.get("pod")
@@ -134,9 +173,11 @@ class APIBase(CouchbaseBaseTest):
                 self.org_owner_key1["retryAfter"] = 0
                 self.capella["tenant_id"]["key1"] = self.org_owner_key1
             else:
-                self.fail("!!!...Error while creating first OrgOwner v4 "
-                          "API key: status={} body={}...!!!".format(
-                              resp.status_code, resp.content))
+                reason = ("Error while creating first OrgOwner v4 API key: "
+                          "status={} body={}".format(resp.status_code,
+                                                     resp.content))
+                self._abort_shared_setup(reason)
+                self.fail("!!!...{}...!!!".format(reason))
 
             # Create another API key with Org Owner Privileges to tap out for
             # one another at time of Rate Limiting.
@@ -149,9 +190,11 @@ class APIBase(CouchbaseBaseTest):
                 self.org_owner_key2["retryAfter"] = 0
                 self.capella["tenant_id"]["key2"] = self.org_owner_key2
             else:
-                self.fail("!!!...Error while creating second OrgOwner v4 "
-                          "API key: status={} body={}...!!!".format(
-                              resp.status_code, resp.content))
+                reason = ("Error while creating second OrgOwner v4 API key: "
+                          "status={} body={}".format(resp.status_code,
+                                                     resp.content))
+                self._abort_shared_setup(reason)
+                self.fail("!!!...{}...!!!".format(reason))
 
             # update the token for capellaAPI object, so that is it being used
             # for api auth.
@@ -175,9 +218,10 @@ class APIBase(CouchbaseBaseTest):
                     res = self.capellaAPI.org_ops_apis.create_project(
                         self.organisation_id, self.prefix + "WRAPPER")
                     if res.status_code != 201:
-                        self.log.error(res.content)
-                        self.tearDown()
-                        self.fail("!!!..Project creation failed...!!!")
+                        reason = "Project creation failed: HTTP {} {}".format(
+                            res.status_code, res.content)
+                        self._abort_shared_setup(reason)
+                        self.fail("!!!..{}...!!!".format(reason))
                     else:
                         self.log.info("Project Creation Successful")
                         self.project_id = res.json()["id"]
@@ -504,18 +548,20 @@ class APIBase(CouchbaseBaseTest):
                 self.cluster_templates[cluster_template]['availability'],
                 self.cluster_templates[cluster_template]['support'],
                 self.cluster_templates[cluster_template]['couchbaseServer'])
+            # select_CIDR returns None when no free CIDR was found in 30 min.
+            if res is None or res.status_code != 202:
+                reason = "Cluster creation Failed: {}".format(
+                    "no free CIDR within 30 min" if res is None else
+                    "HTTP {} {}".format(res.status_code, res.content))
+                self._abort_shared_setup(reason)
+                self.fail("!!!...{}...!!!".format(reason))
             try:
-                if res.status_code != 202:
-                    self.log.error("Failed while creating cluster")
-                    self.tearDown()
-                    self.fail("!!!...Cluster creation Failed...!!!")
-                else:
-                    self.cluster_id = res.json()["id"]
+                self.cluster_id = res.json()["id"]
             except (Exception,):
-                self.log.error(res.status_code)
-                self.log.error(res.content)
-                self.tearDown()
-                self.fail("!!!...Couldn't decipher result...!!!")
+                reason = "Couldn't decipher cluster creation result: " \
+                         "{}".format(res.content)
+                self._abort_shared_setup(reason)
+                self.fail("!!!...{}...!!!".format(reason))
             self.capella["clusters"]["cluster_id"] = self.cluster_id
         self.cluster_templates[cluster_template]["cloudProvider"][
             "cidr"] = self.capella["clusters"]["cidr"]
@@ -561,6 +607,11 @@ class APIBase(CouchbaseBaseTest):
         if TestInputSingleton.input.capella.get("instance_id", None):
             self.analyticsCluster_id = TestInputSingleton.input.capella.get(
                 "instance_id")
+        elif not self.needs_columnar_instance():
+            # Most suites never touch it; creating one for every run cost
+            # an instance per shard and failed whole suites when columnar
+            # capacity was short.
+            self.analyticsCluster_id = None
         else:
             instance_template = self.input.param("instance_template",
                                                  "AWS_singleNode")
@@ -576,10 +627,23 @@ class APIBase(CouchbaseBaseTest):
             if res.status_code != 202:
                 self.log.error(res.content)
                 self.tearDown()
-                self.fail("!!!...Instance creation Failed...!!!")
+                self.fail("!!!...Instance creation Failed: HTTP {} {}...!!!"
+                          .format(res.status_code, res.content))
             self.analyticsCluster_id = res.json()["id"]
             self.capella["instance_id"] = self.analyticsCluster_id
-        self.instances = {self.analyticsCluster_id}
+            # It is now created by the first suite that needs it rather
+            # than at the start of the run, and not every columnar suite
+            # waits for it, so wait here once.
+            self.log.info("Waiting for columnar instance {} to deploy"
+                          .format(self.analyticsCluster_id))
+            if not self.wait_for_deployment(
+                    inst_id=self.analyticsCluster_id):
+                self.tearDown()
+                self.fail("!!!...Columnar instance {} did not deploy (see "
+                          "states above)...!!!".format(
+                              self.analyticsCluster_id))
+        self.instances = {self.analyticsCluster_id} \
+            if self.analyticsCluster_id else set()
 
         # Holder for buckets which would be created in the future.
         self.buckets = list()
@@ -595,6 +659,130 @@ class APIBase(CouchbaseBaseTest):
                 },
             }
         }
+
+    # Suites that use self.analyticsCluster_id / self.instances.
+    COLUMNAR_SUITES = ("ClustersColumnar", "ColumnarOnOffSchedule",
+                       "PrivateEndpointsColumnar",
+                       "AnalyticsCloudSnapshotBackups")
+
+    def needs_columnar_instance(self):
+        """
+        columnar_instance=auto (default): only for the COLUMNAR_SUITES
+        modules; always / never force it.
+        """
+        mode = str(self.input.param("columnar_instance", "auto")).lower()
+        if mode in ("always", "true"):
+            return True
+        if mode in ("never", "false"):
+            return False
+        module = type(self).__module__ or ""
+        return any(name in module for name in self.COLUMNAR_SUITES)
+
+    ROUTING_REJECTION_CODES = (400, 404, 405)
+    MALFORMED_PATH_CASES = ("add an invalid segment to the uri",
+                            "add invalid segment to uri",
+                            "add invalid segment to activationstate path",
+                            "replace the last path param name in uri")
+
+    def _is_malformed_path_case(self, description, testcase):
+        """
+        True for cases that only check a malformed URL is rejected: a bad
+        route segment, or a non-hex ID in the path (400 from validation or
+        404 from the router are both correct rejections).
+        """
+        if self.input.param("strict_routing_codes", False):
+            return False
+        expected = testcase.get("expected_status_code")
+        if expected not in self.ROUTING_REJECTION_CODES:
+            return False
+        desc = str(description).strip().lower()
+        if "url" in testcase and desc in self.MALFORMED_PATH_CASES:
+            return True
+        return "non-hex" in desc and expected in (400, 404) and any(
+            k.startswith("invalid_") for k in testcase)
+
+    def _targets_shared_cluster(self, result):
+        """True if the request behind `result` was for this run's shared
+        cluster (capella["clusters"]["cluster_id"])."""
+        clusters = self.capella.get("clusters")
+        shared_id = clusters.get("cluster_id") \
+            if isinstance(clusters, dict) else None
+        request = getattr(result, "request", None)
+        url = str(getattr(request, "url", "") or "")
+        return bool(shared_id) and "/clusters/{}".format(shared_id) in url
+
+    def _abort_shared_setup(self, reason, collect_logs=True):
+        """
+        The run-wide setup (OrgOwner keys, WRAPPER project, shared cluster)
+        failed. Release what this run created now - the shared cluster is
+        the expensive part - and flag the run so every later test fails in
+        seconds (see the top of setUp) instead of running for hours against
+        resources that don't exist. The last-TC tearDown can't be relied on
+        for this: unittest never calls tearDown when setUp fails.
+        """
+        capella = self.input.capella
+        if capella.get("shared_setup_broken"):
+            return
+        capella["shared_setup_broken"] = reason
+        self.log.critical("SHARED SETUP FAILED: {}. Cleaning up now; every "
+                          "remaining test in this run will be reported as "
+                          "NOT RUN.".format(reason))
+
+        def best_effort(what, fn, *args):
+            try:
+                resp = fn(*args)
+                self.log.info("cleanup: {} -> HTTP {}".format(
+                    what, getattr(resp, "status_code", None)))
+            except Exception as e:
+                self.log.error("cleanup: {} failed: {}".format(what, e))
+
+        tenant = capella.get("tenant_id")
+        tenant = tenant if isinstance(tenant, dict) else {}
+        owner_keys = [k for k in (tenant.get("key1"), tenant.get("key2"))
+                      if isinstance(k, dict) and k.get("token")]
+        org = self.organisation_id
+        proj = getattr(self, "project_id", None)
+        clusters = capella.get("clusters")
+        clusters = clusters if isinstance(clusters, dict) else {}
+        cluster_id = clusters.get("cluster_id")
+        app_id = clusters.get("app_id")
+
+        if owner_keys:
+            self.update_auth_with_api_token(owner_keys[0])
+            if proj and cluster_id:
+                if app_id and not isinstance(app_id, bool):
+                    best_effort("delete app service {}".format(app_id),
+                                self.capellaAPI.cluster_ops_apis
+                                .delete_appservice, org, proj, cluster_id,
+                                app_id)
+                if collect_logs:
+                    self.collect_cluster_logs(cluster_id)
+                best_effort("delete cluster {}".format(cluster_id),
+                            self.capellaAPI.cluster_ops_apis.delete_cluster,
+                            org, proj, cluster_id)
+            if proj and capella.get("instance_id"):
+                best_effort("delete columnar instance {}".format(
+                    capella["instance_id"]),
+                    self.columnarAPI.delete_analytics_cluster, org, proj,
+                    capella["instance_id"])
+            if getattr(self, "api_keys", None):
+                try:
+                    self.delete_api_keys(self.api_keys)
+                except Exception as e:
+                    self.log.error("cleanup: security keys failed: {}"
+                                   .format(e))
+                tenant["apiKeys"] = {}
+            for key in owner_keys:
+                self.update_auth_with_api_token(key)
+                best_effort("delete OrgOwner key {}".format(key.get("id")),
+                            self.capellaAPI.org_ops_apis.delete_api_key,
+                            org, key.get("id"))
+        v2key = tenant.get("v2key") or getattr(
+            self, "v2_control_plane_api_access_key", None)
+        if v2key:
+            best_effort("delete v2 control plane key",
+                        self.capellaAPI.delete_control_plane_api_key,
+                        org, v2key)
 
     def is_security_test(self):
         """
@@ -710,12 +898,13 @@ class APIBase(CouchbaseBaseTest):
                 self.log.error("Error while deleting cluster: {}."
                                .format(res.content))
 
-            # Delete the created instances.
-            self.log.info("Deleting INSTANCES: {}".format(
-                self.instances))
-            if self.flush_columnar_instances(self.instances):
-                self.log.error("!!!...Instance(s) deletion failed...!!!")
-            self.wait_for_deletion(instances=self.instances)
+            # Delete the created instances (none unless a columnar suite ran).
+            if self.instances:
+                self.log.info("Deleting INSTANCES: {}".format(
+                    self.instances))
+                if self.flush_columnar_instances(self.instances):
+                    self.log.error("!!!...Instance(s) deletion failed...!!!")
+                self.wait_for_deletion(instances=self.instances)
 
             # Wait for the cluster to be destroyed.
             self.log.info("Waiting for cluster to be destroyed.")
@@ -724,16 +913,28 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("Cluster destroyed successfully.")
             self.cluster_id = None
 
-            # Delete the projects that were created.
-            projects = [self.project_id]
-            if self.capella["tenant_id"]["otherProj"]:
-                projects.append(self.other_project_id)
-            if self.delete_projects(self.organisation_id, projects,
-                                    self.curr_owner_key):
-                self.log.error("Error while deleting projects.")
+            # The WRAPPER project and Auth_Project are found by name and
+            # shared by every suite running in parallel on this org, so
+            # the first suite to finish used to delete them from under the
+            # others (stale Auth_Project / "project not found" failures).
+            # Keep them as long-lived fixtures; delete_shared_projects=True
+            # restores the old clean-up for a one-off run on its own org.
+            if self.input.param("delete_shared_projects", False):
+                projects = [self.project_id]
+                if self.capella["tenant_id"]["otherProj"]:
+                    projects.append(self.other_project_id)
+                if self.delete_projects(self.organisation_id, projects,
+                                        self.curr_owner_key):
+                    self.log.error("Error while deleting projects.")
+                else:
+                    self.log.info("Projects deleted successfully")
+                    self.project_id = None
             else:
-                self.log.info("Projects deleted successfully")
-                self.project_id = None
+                self.log.info("Keeping shared projects {} for other suites "
+                              "on this org (delete_shared_projects=False)"
+                              .format([p for p in [self.project_id,
+                                                   self.other_project_id]
+                                       if p]))
 
             # Delete organizationOwner API keys
             self.log.info("Deleting the first OrgOwner API key")
@@ -761,22 +962,36 @@ class APIBase(CouchbaseBaseTest):
             del self.api_keys["multi_project_1"]
         if "multi_project_2" in self.api_keys:
             del self.api_keys["multi_project_2"]
+        capella_http.set_rate_limit_handler(None)
         super(APIBase, self).tearDown()
 
     def create_v2_control_plane_api_key(self):
         # Generate the first set of API access and secret access keys
         # Currently v2 API is being used for this.
-        response = self.capellaAPI.create_control_plane_api_key(
-            self.organisation_id, "initial_api")
-        if response.status_code == 201:
-            response = response.json()
-            self.v2_control_plane_api_access_key = response["id"]
-            self.capella["tenant_id"]["v2key"] = \
-                self.v2_control_plane_api_access_key
-            self.update_auth_with_api_token(response)
+        # lib/capellaAPI logs in through _urllib_request, which returns None
+        # (and then raises AttributeError inside the lib) when the pod
+        # can't be reached. Either way the run has no credentials, so stop
+        # it here instead of letting every test trip over the half-built
+        # tenant record.
+        try:
+            response = self.capellaAPI.create_control_plane_api_key(
+                self.organisation_id, "initial_api")
+        except Exception as e:
+            response = None
+            error = "{}: {}".format(type(e).__name__, e)
         else:
-            self.log.error("Error while creating V2 control plane API key")
-            self.fail("{}".format(response.content))
+            error = "no response" if response is None else \
+                "HTTP {} {}".format(response.status_code, response.content)
+        if response is None or response.status_code != 201:
+            reason = "could not log in / create the V2 control plane API " \
+                     "key on {} as {}: {}".format(self.url, self.user, error)
+            self._abort_shared_setup(reason)
+            self.fail(reason)
+        response = response.json()
+        self.v2_control_plane_api_access_key = response["id"]
+        self.capella["tenant_id"]["v2key"] = \
+            self.v2_control_plane_api_access_key
+        self.update_auth_with_api_token(response)
 
     @staticmethod
     def generate_random_string(length=10, special_characters=True,
@@ -824,9 +1039,35 @@ class APIBase(CouchbaseBaseTest):
 
         return name
 
+    def _owner_key_rate_limit_handler(self, api_obj, wait):
+        """
+        capella_http calls this on a 429. When the throttled call was made
+        with the current org-owner key through one of this test's own
+        clients, switch to the other owner key (handle_rate_limit) so the
+        retry doesn't have to sleep. Anything else (role keys, inline
+        clients) returns False and capella_http waits Retry-After.
+        """
+        owner = getattr(self, "curr_owner_key", None)
+        if not isinstance(owner, dict) or \
+                not getattr(self, "org_owner_key2", None):
+            return False
+        own_clients = [getattr(self, "capellaAPI", None),
+                       getattr(self, "columnarAPI", None)]
+        capella_api = own_clients[0]
+        if capella_api is not None:
+            own_clients.extend([getattr(capella_api, "org_ops_apis", None),
+                                getattr(capella_api, "cluster_ops_apis",
+                                        None)])
+        if not any(api_obj is c for c in own_clients if c is not None):
+            return False
+        if getattr(api_obj, "bearer_token", None) != owner.get("token"):
+            return False
+        self.handle_rate_limit(wait)
+        return True
+
     def handle_rate_limit(self, retry_after):
-        self.log.warning("Rate Limit hit by the key: {}."
-                         .format(self.curr_owner_key))
+        self.log.warning("Rate Limit hit by the key: {} (retry after {}s)."
+                         .format(self.curr_owner_key.get("id"), retry_after))
         if self.curr_owner_key == self.org_owner_key1:
             self.org_owner_key1["blockTime"] = time.time()
             self.org_owner_key1["retryAfter"] = retry_after
@@ -853,7 +1094,7 @@ class APIBase(CouchbaseBaseTest):
             self.curr_owner_key = self.org_owner_key1
 
         self.log.debug("Tapping out, switching to the key: {}"
-                       .format(self.curr_owner_key))
+                       .format(self.curr_owner_key.get("id")))
         self.update_auth_with_api_token(self.curr_owner_key)
 
     @staticmethod
@@ -1120,29 +1361,23 @@ class APIBase(CouchbaseBaseTest):
                     organizationId=self.organisation_id,
                     accessKey=api_key_dict[role]["id"]
                 )
-                if resp.status_code == 429:
-                    self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                    resp = self.capellaAPI.org_ops_apis.delete_api_key(
-                        organizationId=self.organisation_id,
-                        accessKey=api_key_dict[role]["id"]
-                    )
 
+                if resp.status_code == 404:
+                    # Already gone (e.g. removed by the stale-key sweep).
+                    break
                 if resp.status_code != 204:
                     try:
-                        resp = resp.json()
-                        if 'errorType' in resp.json():
-                            self.log.error(
-                                "Error received - \n Message - {} \n "
-                                "Error Type - {}".format(
-                                    resp.json()["message"],
-                                    resp.json()["errorType"]))
-                        else:
-                            self.log.error(
-                                "Error received - \n Message - {}".format(
-                                    resp.json()["message"]))
+                        body = resp.json()
+                        self.log.error(
+                            "Error deleting key {}: HTTP {} {} {}".format(
+                                api_key_dict[role]["id"], resp.status_code,
+                                body.get("errorType", ""),
+                                body.get("message", "")))
                     except (Exception,):
                         self.log.error(
-                            "Error received - {}".format(resp))
+                            "Error deleting key {}: HTTP {} {}".format(
+                                api_key_dict[role]["id"], resp.status_code,
+                                resp.content))
                     api_key_dict[role]["retry"] += 1
                     if api_key_dict[role]["retry"] == 5:
                         failed_deletion.append(role)
@@ -1162,6 +1397,16 @@ class APIBase(CouchbaseBaseTest):
     def v4_RBAC_injection_init(self, allowed_roles, other_proj=True,
                                expected_failure_code=None,
                                expected_failure_error=None):
+        # Passing the code/error positionally used to land them in
+        # other_proj/expected_failure_code, turning every role case into a
+        # mismatch; catch that mistake here, once, with a clear message.
+        if (other_proj is not None and not isinstance(other_proj, bool)) \
+                or isinstance(expected_failure_code, dict):
+            self.fail("v4_RBAC_injection_init: other_proj must be True/False/"
+                      "None and expected_failure_code a status code (got "
+                      "{!r}, {!r}); pass expected_failure_code=/"
+                      "expected_failure_error= as keywords".format(
+                          other_proj, expected_failure_code))
         testcases = []
         for role in self.api_keys:
             if "roles" not in self.api_keys[role]:
@@ -1299,12 +1544,15 @@ class APIBase(CouchbaseBaseTest):
                           apis_to_call[i % len(apis_to_call)][0],
                           apis_to_call[i % len(apis_to_call)][1],)))
 
-        for thread in threads:
-            thread.start()
-            if wait_time:
-                time.sleep(wait_time)
-        for thread in threads:
-            thread.join()
+        # These calls count 429s, so they must see them instead of having
+        # capella_http wait them out and retry.
+        with capella_http.suspend_429_retries():
+            for thread in threads:
+                thread.start()
+                if wait_time:
+                    time.sleep(wait_time)
+            for thread in threads:
+                thread.join()
 
         for result in results:
             self.log.info("API call result for API ID {0} with role {1}"
@@ -1373,12 +1621,6 @@ class APIBase(CouchbaseBaseTest):
                     self.organisation_id,
                     self.generate_random_string(prefix=self.prefix),
                     ["organizationOwner"], self.generate_random_string(50))
-                if resp.status_code == 429:
-                    self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                    resp = self.capellaAPI.org_ops_apis.create_api_key(
-                        self.organisation_id,
-                        self.generate_random_string(prefix=self.prefix),
-                        ["organizationOwner"], self.generate_random_string(50))
                 if resp.status_code == 201:
                     self.api_keys[
                         "organizationOwner_{}".format(i)] = resp.json()
@@ -1582,10 +1824,6 @@ class APIBase(CouchbaseBaseTest):
             # create a new API key with expiry of approx 2 mins
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 self.organisation_id, "Expiry_Key", ["organizationOwner"])
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id, "Expiry_Key", ["organizationOwner"])
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_new"] = resp.json()
             else:
@@ -1599,10 +1837,6 @@ class APIBase(CouchbaseBaseTest):
             self.update_auth_with_api_token(self.curr_owner_key)
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 self.organisation_id, "Revoked_Key", ["organizationOwner"])
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id, "Revoked_Key", ["organizationOwner"])
             if resp.status_code == 201:
                 self.api_keys["revoked_key"] = resp.json()
             else:
@@ -1614,6 +1848,7 @@ class APIBase(CouchbaseBaseTest):
                 failures.append(testcase["description"])
             self.update_auth_with_api_token(self.api_keys["revoked_key"])
             del self.api_keys["revoked_key"]
+            self.wait_for_key_revocation(project_id)
         elif "userpwd" in testcase:
             basic = base64.b64encode("{}:{}".format(
                 self.user, self.passwd).encode()).decode()
@@ -1709,6 +1944,27 @@ class APIBase(CouchbaseBaseTest):
         else:
             self.update_auth_with_api_token(testcase)
 
+    def wait_for_key_revocation(self, project_id, timeout=60,
+                                poll_interval=3):
+        """Poll a read-only call with the currently active (just deleted)
+        API key until the API rejects it. The control plane keeps
+        accepting a deleted key for a few seconds (200 right after the 204
+        delete, 19870), so without this the revoked-key case is a race.
+        Returns after `timeout` regardless, so a key that is never revoked
+        still fails the test."""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            resp = self.capellaAPI.org_ops_apis.fetch_project_info(
+                self.organisation_id, project_id)
+            if resp.status_code == 401:
+                self.log.debug("Revoked API key rejected after {:.1f}s"
+                               .format(time.time() - start_time))
+                return True
+            time.sleep(poll_interval)
+        self.log.warning("Revoked API key still accepted after {}s"
+                         .format(timeout))
+        return False
+
     def wait_for_new_key_authorization(self, project_id, extra_check=None,
                                        timeout=90, poll_interval=3):
         """
@@ -1769,6 +2025,37 @@ class APIBase(CouchbaseBaseTest):
                           testcase.get("expected_status_code", success_codes),
                           result.headers.get(
                               "Vnd-Cloud-Couchbase-Com-Request-Id")))
+
+        # The shared cluster died under the run: every later call would get
+        # this same 422, so release it and stop the run (NOT RUN) now. Only
+        # for the shared cluster - a test's own cluster (FreeTier, security)
+        # failing to deploy must not end the run.
+        if result.status_code == 422 and "Deployment Failed state" in str(
+                getattr(result, "content", "")) and \
+                self._targets_shared_cluster(result):
+            self._abort_shared_setup(
+                "shared cluster is in the Deployment Failed state ('{}')"
+                .format(description), collect_logs=False)
+
+        # Malformed-path cases (a bad URL segment, or a non-hex ID in the
+        # path) check that the API rejects the URL. Which rejection code the
+        # router picks (400 bad id / 404 no route / 405) moves when routes
+        # are added - the same GET got 404 and 400 minutes apart in one run.
+        # When the code differs from the test's but is another rejection
+        # code, accept it with a warning (the error body can't match a
+        # different code). When it matches, the normal checks below run,
+        # error body included. A 2xx/5xx always fails.
+        # strict_routing_codes=True turns this off.
+        if self._is_malformed_path_case(description, testcase) and \
+                result.status_code != testcase["expected_status_code"] and \
+                result.status_code in (
+                    (400, 404) if "non-hex" in str(description).lower()
+                    else self.ROUTING_REJECTION_CODES):
+            self.log.warning("[validate] '{}': HTTP {} accepted as a "
+                             "rejection of the malformed path (test lists "
+                             "{})".format(description, result.status_code,
+                                          testcase["expected_status_code"]))
+            return False
 
         try:
             # Condition for Sample Buckets delete testcases.
@@ -1950,40 +2237,22 @@ class APIBase(CouchbaseBaseTest):
         if not free_tier and app:
             res = self.capellaAPI.cluster_ops_apis.get_appservice(
                 self.organisation_id, self.project_id, self.cluster_id, app)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = self.capellaAPI.cluster_ops_apis.get_appservice(
-                    self.organisation_id, self.project_id, self.cluster_id, app)
         elif inst:
             res = self.columnarAPI.fetch_analytics_cluster_info(
                 self.organisation_id, self.project_id, inst)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = self.columnarAPI.fetch_analytics_cluster_info(
-                    self.organisation_id, self.project_id, inst)
         elif free_tier and not app:
             res = (self.capellaAPI.cluster_ops_apis.
                    fetch_free_tier_cluster_info(
                     self.organisation_id, self.project_id, free_tier))
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = (self.capellaAPI.cluster_ops_apis.
-                       fetch_free_tier_cluster_info(
-                        self.organisation_id, self.project_id, free_tier))
         elif free_tier and app:
             res = (self.capellaAPI.cluster_ops_apis.
                    fetch_free_tier_app_service_info(
                     self.organisation_id, self.project_id, free_tier, app))
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = (self.capellaAPI.cluster_ops_apis.
-                       fetch_free_tier_app_service_info(
-                        self.organisation_id, self.project_id, free_tier, app))
         else:
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
+                self.handle_rate_limit(int(res.headers.get("Retry-After", 60)))
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
             elif res.status_code == 404:
@@ -1992,8 +2261,12 @@ class APIBase(CouchbaseBaseTest):
                 return True, None
 
         if res.status_code != 200:
-            self.log.error("Could not fetch on/off state info : {}"
-                           .format(res.content))
+            # Every caller polls in a time-bounded loop, so report "not yet"
+            # instead of crashing on res.json()['currentState'] below.
+            self.log.warning("Could not fetch on/off state (HTTP {}), will "
+                             "poll again: {}".format(res.status_code,
+                                                     res.content))
+            return False, None
 
         if res.json()['currentState'] in states:
             self.log.info("Resource state: {}, Expected States: {}"
@@ -2072,20 +2345,10 @@ class APIBase(CouchbaseBaseTest):
                 result = (self.capellaAPI.cluster_ops_apis.
                           create_free_tier_cluster(
                             org, proj, name, cloudProvider))
-                if result.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    result = (self.capellaAPI.cluster_ops_apis.
-                              create_free_tier_cluster(
-                                org, proj, name, cloudProvider))
             else:
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
                     org, proj, name, cloudProvider, couchbaseServer,
                     serviceGroups, availability, support, header, **kwargs)
-                if result.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                        org, proj, name, cloudProvider, couchbaseServer,
-                        serviceGroups, availability, support, header, **kwargs)
             if result.status_code == 202:
                 return result
             try:
@@ -2112,54 +2375,32 @@ class APIBase(CouchbaseBaseTest):
                 state = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, self.project_id, clus_id,
                     app_svc_id)
-                if state.status_code == 429:
-                    self.handle_rate_limit(int(state.headers['Retry-After']))
-                    state = self.capellaAPI.cluster_ops_apis.get_appservice(
-                        self.organisation_id, self.project_id, clus_id,
-                        app_svc_id)
             elif app_svc_id:
                 state = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, self.project_id, self.cluster_id,
                     app_svc_id)
-                if state.status_code == 429:
-                    self.handle_rate_limit(int(state.headers['Retry-After']))
-                    state = self.capellaAPI.cluster_ops_apis.get_appservice(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        app_svc_id)
             elif inst_id:
                 state = self.columnarAPI.fetch_analytics_cluster_info(
                     self.organisation_id, self.project_id, inst_id)
-                if state.status_code == 429:
-                    self.handle_rate_limit(int(state.headers["Retry-After"]))
-                    state = self.columnarAPI.fetch_analytics_cluster_info(
-                        self.organisation_id, self.project_id, inst_id)
             elif pes:
                 state = self.capellaAPI.cluster_ops_apis \
                     .fetch_private_endpoint_service_status_info(
                         self.organisation_id, self.project_id, self.cluster_id)
-                if state.status_code == 429:
-                    self.handle_rate_limit(int(state.headers["Retry-After"]))
-                    state = self.capellaAPI.cluster_ops_apis \
-                        .fetch_private_endpoint_service_status_info(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id)
             elif clus_id:
                 state = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, clus_id)
-                if state.status_code == 429:
-                    self.handle_rate_limit(int(state.headers['Retry-After']))
-                    state = self.capellaAPI.cluster_ops_apis.\
-                        fetch_cluster_info(
-                            self.organisation_id, self.project_id, clus_id)
             else:
                 state = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
-                if state.status_code == 429:
-                    self.handle_rate_limit(int(state.headers['Retry-After']))
-                    state = self.capellaAPI.cluster_ops_apis.\
-                        fetch_cluster_info(self.organisation_id,
-                                           self.project_id, self.cluster_id)
 
+            if self.is_transient_status(state.status_code):
+                # 429 left over after capella_http's retries, or a 5xx:
+                # keep polling inside the 30 min budget instead of
+                # declaring the deployment failed on one bad poll.
+                self.log.warning("Transient HTTP {} while polling, will retry."
+                                 " Result: {}".format(state.status_code,
+                                                      state.content))
+                continue
             if state.status_code >= 400:
                 self.log.error("Something went wrong while fetching details."
                                "\nResult: {}".format(state.content))
@@ -2175,6 +2416,16 @@ class APIBase(CouchbaseBaseTest):
             if state.json()["currentState"] == "deploymentFailed":
                 self.log.error("!!!Deployment Failed!!!")
                 self.log.error(state.content)
+                # The run's shared cluster can't recover from this: release
+                # it and stop the rest of the run from using it.
+                shared = (self.capella.get("clusters") or {}) \
+                    if isinstance(self.capella.get("clusters"), dict) else {}
+                polled = clus_id or self.cluster_id
+                if not (app_svc_id or inst_id or pes) and polled and \
+                        polled == shared.get("cluster_id"):
+                    self._abort_shared_setup(
+                        "shared cluster {} is deploymentFailed".format(
+                            polled), collect_logs=False)
                 return False
             if app_svc_id and state.json()["currentState"] == "turnedOff":
                 self.log.warning("App Service is turned off")
@@ -2354,50 +2605,64 @@ class APIBase(CouchbaseBaseTest):
         except Exception as e:
             self.log.warning("Could not write {}: {}".format(path, e))
 
+    @staticmethod
+    def is_transient_status(status_code):
+        """429 or 5xx: worth polling/retrying again rather than failing."""
+        return status_code == 429 or status_code >= 500
+
+    def _wait_for_instances_deletion(self, instances, timeout=1800):
+        """
+        Poll until every columnar instance in `instances` returns 404,
+        removing each from the collection as it goes. Bounded by `timeout`
+        (the old loop could spin forever on one instance).
+        """
+        end_time = time.time() + timeout
+        while instances and time.time() < end_time:
+            for instance in list(instances):
+                res = self.columnarAPI.fetch_analytics_cluster_info(
+                    self.organisation_id, self.project_id, instance)
+                if res.status_code == 404:
+                    self.log.info("Instance {} deleted".format(instance))
+                    instances.remove(instance)
+                elif self.is_transient_status(res.status_code) or \
+                        res.status_code == 200:
+                    self.log.debug("Instance {} still present (HTTP {})"
+                                   .format(instance, res.status_code))
+                else:
+                    self.log.warning("Unexpected HTTP {} while waiting for "
+                                     "instance {} deletion: {}".format(
+                                         res.status_code, instance,
+                                         res.content))
+            if instances:
+                time.sleep(15)
+        if instances:
+            self.log.error("!!!...Instances not deleted within {}s: {}...!!!"
+                           .format(timeout, list(instances)))
+            return False
+        self.log.info("All instances deleted successfully.")
+        return True
+
     def wait_for_deletion(self, clus_id=None, app_svc_id=None, instances=None):
+        if instances:
+            return self._wait_for_instances_deletion(instances)
         start_time = time.time()
         while start_time + 1800 > time.time():
             time.sleep(15)
 
-            if instances:
-                temp_instances = copy.deepcopy(instances)
-                for instance in instances:
-                    while self.columnarAPI.fetch_analytics_cluster_info(
-                            self.organisation_id, self.project_id,
-                            instance).status_code != 404:
-                        self.log.debug("...Waiting further...")
-                        time.sleep(2)
-                    self.log.info("Instance {} deleted".format(instance))
-                    instances.remove(instance)
-                    temp_instances.remove(instance)
-                if len(temp_instances) == 0:
-                    self.log.info("All instances deleted successfully.")
-                    return
-                self.log.error("!!!...All instances did not delete...!!!")
-                return
             if app_svc_id:
                 res = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, self.project_id, clus_id, app_svc_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.get_appservice(
-                        self.organisation_id, self.project_id, clus_id,
-                        app_svc_id)
             else:
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, clus_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, self.project_id, clus_id)
 
             if res.status_code == 404:
                 try:
-                    res = res.json()
-                    if "code" in res:
-                        if app_svc_id and res["code"] == 404:
+                    body = res.json()
+                    if "code" in body:
+                        if app_svc_id and body["code"] == 404:
                             return True
-                        elif not app_svc_id and res["code"] == 4025:
+                        elif not app_svc_id and body["code"] == 4025:
                             return True
                         else:
                             self.log.error("Error while retrieving resource "
@@ -2410,6 +2675,10 @@ class APIBase(CouchbaseBaseTest):
                     return False
             elif res.status_code == 200:
                 self.log.info("...Waiting further...")
+            elif self.is_transient_status(res.status_code):
+                self.log.warning("Transient HTTP {} while waiting for "
+                                 "deletion, will retry: {}".format(
+                                     res.status_code, res.content))
             else:
                 self.log.error("Error while retrieving resource "
                                "information: {}".format(res.content))
@@ -2441,11 +2710,6 @@ class APIBase(CouchbaseBaseTest):
             resp = self.capellaAPI.org_ops_apis.create_project(
                 organizationId=org_id, name=project_name,
                 description=projects[project_name]["description"])
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_project(
-                    organizationId=org_id, name=project_name,
-                    description=projects[project_name]["description"])
             if resp.status_code == 201:
                 projects[project_name]["id"] = resp.json()["id"]
             else:
@@ -2468,18 +2732,16 @@ class APIBase(CouchbaseBaseTest):
 
     def find_project_by_name(self, org_id, name):
         """
-        Returns the ID of the first project matching `name` in the given
-        organization, or None if no such project exists. Paginates
-        through list_projects since a match could be on any page.
+        Returns the ID of the oldest project named `name` in the given
+        organization, or None if there is none. Suites running in parallel
+        can each create one before seeing the other's, so always picking
+        the oldest makes them all converge on the same project.
         """
         page = 1
+        matches = []
         while True:
             resp = self.capellaAPI.org_ops_apis.list_projects(
                 org_id, page=page, perPage=100)
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.list_projects(
-                    org_id, page=page, perPage=100)
             if resp.status_code != 200:
                 self.log.error("Error while listing projects: {}"
                               .format(resp.content))
@@ -2487,10 +2749,18 @@ class APIBase(CouchbaseBaseTest):
             body = resp.json()
             for project in body.get("data", []):
                 if project.get("name") == name:
-                    return project.get("id")
+                    matches.append(project)
             if not body.get("cursor", {}).get("pages", {}).get("next"):
-                return None
+                break
             page += 1
+        if not matches:
+            return None
+        if len(matches) > 1:
+            self.log.warning("{} projects named {}; using the oldest".format(
+                len(matches), name))
+        matches.sort(key=lambda p: (p.get("audit") or {}).get(
+            "createdAt") or "")
+        return matches[0].get("id")
 
     def delete_projects(self, org_id, project_ids, token):
         project_deletion_failed = False
@@ -2498,15 +2768,25 @@ class APIBase(CouchbaseBaseTest):
         self.update_auth_with_api_token(token)
         for project_id in project_ids:
             self.log.debug("Deleting Project: {}".format(project_id))
-            resp = self.capellaAPI.org_ops_apis.delete_project(
-                org_id, project_id)
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+            # Right after a cluster is destroyed the control plane still
+            # counts it for a few minutes and answers 400 "Unable to delete
+            # a Project with Cluster resources ... retry in a few minutes".
+            for attempt in range(1, 11):
                 resp = self.capellaAPI.org_ops_apis.delete_project(
                     org_id, project_id)
-            if resp.status_code != 204:
+                if resp.status_code in (204, 404):
+                    break
+                if resp.status_code == 400 and \
+                        "retry in a few minutes" in str(resp.content) and \
+                        attempt < 10:
+                    self.log.info("Project {} still has cluster resources, "
+                                  "retrying delete in 30s (attempt {}/10)"
+                                  .format(project_id, attempt))
+                    time.sleep(30)
+                    continue
                 self.log.error("Error: {}".format(resp.content))
-                project_deletion_failed = project_deletion_failed or True
+                project_deletion_failed = True
+                break
         return project_deletion_failed
 
     def create_alert_to_be_tested(self, proj_id, kind, name, config):
@@ -2518,7 +2798,7 @@ class APIBase(CouchbaseBaseTest):
             res = self.capellaAPI.cluster_ops_apis.create_alert(
                 self.organisation_id, proj_id, kind, name, config)
             if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                self.handle_rate_limit(int(res.headers.get("Retry-After", 60)))
                 continue
             if res.status_code == 201:
                 alert_id = res.json()['id']
@@ -2551,29 +2831,16 @@ class APIBase(CouchbaseBaseTest):
         self.update_auth_with_api_token(self.curr_owner_key)
         res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
             self.organisation_id, proj_id, clus_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, proj_id, clus_id)
         while res.json()["currentState"] != "healthy":
             self.log.warning("Waiting for cluster to rebalance.")
             time.sleep(10)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, proj_id, clus_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, proj_id, clus_id)
         self.log.debug("Cluster state healthy.")
 
         resp = self.capellaAPI.cluster_ops_apis.create_bucket(
             org_id, proj_id, clus_id, buck_name, "couchbase", "couchstore",
             100, "seqno", "none", 1, False, 0)
-        if resp.status_code == 429:
-            self.handle_rate_limit(int(resp.headers["Retry-After"]))
-            resp = self.capellaAPI.cluster_ops_apis.create_bucket(
-                org_id, proj_id, clus_id, buck_name, "couchbase", "couchstore",
-                100, "seqno", "none", 1, False, 0)
         if resp.status_code == 201:
             buck_id = resp.json()['id']
             self.log.debug("New bucket ID: {}".format(buck_id))
@@ -2588,11 +2855,6 @@ class APIBase(CouchbaseBaseTest):
             self.log.debug("Deleting the bucket: {}".format(bucket))
             resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
                 self.organisation_id, self.project_id, self.cluster_id, bucket)
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    bucket)
             if resp.status_code != 204:
                 self.log.error("Error: {}".format(resp.content))
 
@@ -2611,10 +2873,6 @@ class APIBase(CouchbaseBaseTest):
             length=6, special_characters=False)
         res = self.capellaAPI.cluster_ops_apis.create_scope(
             org_id, proj_id, clus_id, buck_id, name)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_scope(
-                org_id, proj_id, clus_id, buck_id, name)
         if res.status_code == 201:
             self.log.debug("New scope Name: {}".format(name))
             return name
@@ -2628,10 +2886,6 @@ class APIBase(CouchbaseBaseTest):
         name = self.prefix + "Collections_Delete"
         res = self.capellaAPI.cluster_ops_apis.create_collection(
             org_id, proj_id, clus_id, buck_id, scope_name, name)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_collection(
-                org_id, proj_id, clus_id, buck_id, scope_name, name)
         if res.status_code == 201:
             self.log.debug("New collection Name: {}".format(name))
             return name
@@ -2645,10 +2899,6 @@ class APIBase(CouchbaseBaseTest):
         for alert in list(alerts):
             res = self.capellaAPI.cluster_ops_apis.delete_alert(
                 self.organisation_id, project_id, alert)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_alert(
-                    self.organisation_id, project_id, alert)
             if res.status_code != 204:
                 self.log.warning("Error while deleting alert {}".format(alert))
                 self.log.error("Response: {}".format(res.content))
@@ -2662,13 +2912,11 @@ class APIBase(CouchbaseBaseTest):
         self.update_auth_with_api_token(self.curr_owner_key)
 
         scopes_deletion_failed = False
-        for scope in scopes:
+        # Iterate over a copy: removing from the list being iterated
+        # skipped every other scope, leaking them into later tests.
+        for scope in list(scopes):
             res = self.capellaAPI.cluster_ops_apis.delete_scope(
                 org_id, proj_id, clus_id, buck_id, scope)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_scope(
-                    org_id, proj_id, clus_id, buck_id, scope)
             if res.status_code != 204:
                 self.log.warning("Error while deleting scope {}".format(scope))
                 self.log.error("Response: {}".format(res.content))
@@ -2683,13 +2931,10 @@ class APIBase(CouchbaseBaseTest):
         self.update_auth_with_api_token(self.curr_owner_key)
 
         collections_deletion_failed = False
-        for collection in collections:
+        # Iterate over a copy (see flush_scopes).
+        for collection in list(collections):
             res = self.capellaAPI.cluster_ops_apis.delete_collection(
                 org_id, proj_id, clus_id, buck_id, scope, collection)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = self.capellaAPI.cluster_ops_apis.delete_collection(
-                    org_id, proj_id, clus_id, buck_id, scope, collection)
             if res.status_code != 204:
                 self.log.warning("Error while deleting collection {}"
                                  .format(collection))
@@ -2707,11 +2952,6 @@ class APIBase(CouchbaseBaseTest):
 
         res = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
             self.organisation_id, project_id, cluster_id, app_service_id, admin_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers['Retry-After']))
-            res = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
-                self.organisation_id, project_id, cluster_id, app_service_id,
-                admin_id)
         if res.status_code != 202 :
             self.log.warning("Failure to delete Admin user: {}".format(admin_id))
             self.log.error("Response: {}".format(res.content))
@@ -2724,12 +2964,6 @@ class APIBase(CouchbaseBaseTest):
             self.organisation_id, self.project_id, name, "aws",
             {"cpu": 4, "ram": 16}, "us-east-1", 1,
             {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers['Retry-After']))
-            res = self.columnarAPI.create_analytics_cluster(
-                self.organisation_id, self.project_id, name, "aws",
-                {"cpu": 4, "ram": 16}, "us-east-1", 1,
-                {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
         if res.status_code == 202:
             self.log.debug("New Instance ID: {}".format(res.json()["id"]))
             self.capella["instance_id"] = res.json()["id"]
@@ -2746,10 +2980,6 @@ class APIBase(CouchbaseBaseTest):
             self.log.debug("Deleting instance {}".format(instance))
             res = self.columnarAPI.delete_analytics_cluster(
                 self.organisation_id, self.project_id, instance)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = self.columnarAPI.delete_analytics_cluster(
-                    self.organisation_id, self.project_id, instance)
             if res.status_code != 202:
                 self.log.error("Error while deleting instance: {}\nError: {}"
                                .format(instance, res.content))
@@ -2769,11 +2999,6 @@ class APIBase(CouchbaseBaseTest):
         res = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
             self.organisation_id, self.project_id, self.cluster_id,
             app_svc_id, app_endpoint_name, **oidc_overrides)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
-                self.organisation_id, self.project_id, self.cluster_id,
-                app_svc_id, app_endpoint_name, **oidc_overrides)
         if res.status_code != 201:
             self.log.error(res.content)
             self.tearDown()
@@ -2801,14 +3026,6 @@ class APIBase(CouchbaseBaseTest):
             app_endpoint_name, delta_sync,
             bucket, scopes,
             userXattrKey, cors)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
-                self.organisation_id, self.project_id, self.cluster_id,
-                app_svc_id,
-                app_endpoint_name, delta_sync,
-                bucket, scopes,
-                userXattrKey, cors)
         if res.status_code == 412:
             self.log.debug("App endpoint {} already exists".format(
                 app_endpoint_name))
@@ -2828,15 +3045,6 @@ class APIBase(CouchbaseBaseTest):
             **kwargs
         )
 
-        if res.status_code == 429:
-            self.handle_rate_limit(res.headers.get("Retry-After"))
-            res = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
-                self.organisation_id,
-                project_id,
-                cluster_id,
-                app_svc_id,
-                **kwargs
-            )
         if res.status_code != 201:
             self.log.error("App Service admin user creation failed: {}".format(res.content))
             self.tearDown()
@@ -2859,10 +3067,6 @@ class APIBase(CouchbaseBaseTest):
 
         res = self.capellaAPI.cluster_ops_apis.list_clusters(
             self.organisation_id, self.project_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.list_clusters(
-                self.organisation_id, self.project_id)
         if res.status_code != 200:
             self.log.error(res.content)
             self.tearDown()
@@ -2890,10 +3094,6 @@ class APIBase(CouchbaseBaseTest):
         self.log.debug("Fetching the id for the PFT App...")
         res = self.capellaAPI.cluster_ops_apis.list_appservices(
             self.organisation_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.list_appservices(
-                self.organisation_id)
         if res.status_code != 200:
             self.log.error(res.content)
             self.tearDown()
@@ -2919,10 +3119,6 @@ class APIBase(CouchbaseBaseTest):
     def flush_freetier_buckets(self, clus):
         res = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
             self.organisation_id, self.project_id, clus)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
-                self.organisation_id, self.project_id, clus)
         if res.status_code != 200:
             self.log.error("Err: {}".format(res.content))
             self.tearDown()
@@ -2931,10 +3127,6 @@ class APIBase(CouchbaseBaseTest):
             bkt = buck["id"]
             res = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(
                 self.organisation_id, self.project_id, clus, bkt)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(
-                    self.organisation_id, self.project_id, clus, buck)
             if res.status_code != 204:
                 self.log.error(res.content)
                 self.log.error("Failed while deleting bucket: {}".format(bkt))
@@ -2943,10 +3135,6 @@ class APIBase(CouchbaseBaseTest):
     def create_freetier_bucket_to_be_tested(self, clus, name, mem):
         res = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(
             self.organisation_id, self.project_id, clus, name, mem)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.header["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(
-                self.organisation_id, self.project_id, clus, name, mem)
         if res.status_code != 201:
             self.log.error("Err: {}".format(res.content))
             self.tearDown()
@@ -2960,11 +3148,6 @@ class APIBase(CouchbaseBaseTest):
         res = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
             self.organisation_id, project_id, cluster_id, app_service_id,
             appEndpointName, oidcProviderId)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
-                self.organisation_id, project_id, cluster_id, app_service_id,
-                appEndpointName, oidcProviderId)
         if res.status_code != 202:
             self.log.warning("Error while deleting OidcProvider {}".format(
                 oidcProviderId))
@@ -2978,10 +3161,6 @@ class APIBase(CouchbaseBaseTest):
 
         res = self.capellaAPI.cluster_ops_apis.create_user(
             self.organisation_id, resources, email, name, organizationRoles)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_user(
-                self.organisation_id, resources, email, name, organizationRoles)
         if res.status_code != 201:
             self.log.error("Result: {}".format(res.content))
             self.tearDown()
@@ -2992,10 +3171,6 @@ class APIBase(CouchbaseBaseTest):
         self.log.info("Deleting a User for next test in the queue.")
         res = self.capellaAPI.cluster_ops_apis.delete_user(
             self.organisation_id, user_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.delete_user(
-                self.organisation_id, user_id)
         if res.status_code != 204:
             self.log.error("Result: {}".format(res.content))
             self.tearDown()

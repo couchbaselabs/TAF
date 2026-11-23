@@ -119,11 +119,6 @@ class DeleteFreeTier(GetFreeTierBucket):
 
             result = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(
                 organization, project, cluster, bucket)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          delete_free_tier_bucket(
-                            organization, project, cluster, bucket))
             self.capellaAPI.cluster_ops_apis.free_tier_bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets/freeTier"
             self.validate_testcase(result, [204], testcase, failures)
@@ -155,13 +150,6 @@ class DeleteFreeTier(GetFreeTierBucket):
             result = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(
                 self.organisation_id, self.project_id,
                 self.free_tier_cluster_id, self.bucket_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          delete_free_tier_bucket(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, self.bucket_id,
-                            header))
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.bucket_id = self.create_freetier_bucket_to_be_tested(
@@ -290,11 +278,6 @@ class DeleteFreeTier(GetFreeTierBucket):
             result = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
                 self.bucket_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
-                    self.bucket_id,
-                    **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.freetier_id = self.create_freetier_bucket_to_be_tested(

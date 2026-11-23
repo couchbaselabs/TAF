@@ -223,13 +223,6 @@ class UpdateCluster(GetProject):
                 result = self.capellaAPI.cluster_ops_apis.update_cluster(
                     org, proj, clus, cluster_info["name"], new_description,
                     cluster_info["support"], service_groups, False)
-                if result.status_code == 429:
-                    self.handle_rate_limit(
-                        int(result.headers["Retry-After"]))
-                    result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                        org, proj, clus, cluster_info["name"],
-                        new_description, cluster_info["support"],
-                        service_groups, False)
                 if self.validate_testcase(result, [204], testcase, failures):
                     updated_info = self.capellaAPI.cluster_ops_apis.\
                         fetch_cluster_info(org, proj, clus).json()
@@ -284,14 +277,6 @@ class UpdateCluster(GetProject):
                 self.expected_result['description'],
                 self.expected_result['support'],
                 self.expected_result['serviceGroups'], False, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                    self.organisation_id, self.project_id,
-                    self.dummy_cluster_id, self.expected_result["name"],
-                    self.expected_result['description'],
-                    self.expected_result['support'],
-                    self.expected_result['serviceGroups'], False, header)
             self.validate_testcase(result, [404], testcase, failures)
 
         if failures:
@@ -393,14 +378,6 @@ class UpdateCluster(GetProject):
                 self.expected_result['description'],
                 self.expected_result['support'],
                 self.expected_result['serviceGroups'], False, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_result["name"],
-                    self.expected_result['description'],
-                    self.expected_result['support'],
-                    self.expected_result['serviceGroups'], False, **kwarg)
 
             self.validate_testcase(result, [404], testcase, failures)
 

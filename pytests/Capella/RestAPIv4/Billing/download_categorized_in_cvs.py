@@ -72,10 +72,6 @@ class DownloadCategories(CategorizedBilling):
 
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 organization, json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    organization, json_body)
             self.capellaAPI.cluster_ops_apis.billing_download_categorized_csv_endpoint = \
                 "/v4/organizations/{}/billing/download"
             self.validate_testcase(result, [200], testcase, failures)
@@ -109,10 +105,6 @@ class DownloadCategories(CategorizedBilling):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 self.organisation_id, json_body, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, json_body, headers=header)
             self.validate_testcase(result, [200], testcase, failures)
             count += 1
 
@@ -184,10 +176,6 @@ class DownloadCategories(CategorizedBilling):
 
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 testcase["organizationID"], **json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    testcase["organizationID"], **json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
         print("*" * 80)
@@ -284,10 +272,6 @@ class DownloadCategories(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
@@ -363,10 +347,6 @@ class DownloadCategories(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, testcase["json"])
             print("Result status code: {}, Response: {}".format(result.status_code, result.text))
             self.validate_testcase(result, [200], testcase, failures)
 
@@ -417,10 +397,6 @@ class DownloadCategories(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
@@ -555,10 +531,6 @@ class DownloadCategories(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
@@ -610,10 +582,6 @@ class DownloadCategories(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):

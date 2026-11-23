@@ -154,10 +154,6 @@ class DeleteOidcProviders(GetOidcProviders):
 
             result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
                 organization, project, cluster, appService, appEndpointName, OIDCProvider)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
-                    organization, project, cluster, appService, appEndpointName, OIDCProvider)
             self.capellaAPI.cluster_ops_apis.app_endpoint_OIDC_provider = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/oidcProviders"
             if self.validate_testcase(result, [202], testcase, failures):
@@ -188,13 +184,6 @@ class DeleteOidcProviders(GetOidcProviders):
                 self.app_service_id, self.appEndpointName,
                 self.OIDCProvider_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    self.OIDCProvider_id,
-                    header)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.OIDCProvider_id = self.create_app_endpoint_oidc_Provider_to_be_tested(
@@ -347,13 +336,6 @@ class DeleteOidcProviders(GetOidcProviders):
                 self.app_service_id, self.appEndpointName,
                 self.OIDCProvider_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    self.OIDCProvider_id,
-                    **kwarg)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.OIDCProvider_id = self.create_app_endpoint_oidc_Provider_to_be_tested(

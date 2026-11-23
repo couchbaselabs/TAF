@@ -108,12 +108,6 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
                 organization, project, analyticsCluster,
                 self.expected_res["name"], self.expected_res["nodes"],
                 self.expected_res["support"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.update_analytics_cluster(
-                    organization, project, analyticsCluster,
-                    self.expected_res["name"], self.expected_res["nodes"],
-                    self.expected_res["support"])
             self.columnarAPI.analytics_clusters_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters"
             self.validate_testcase(result, [204], testcase, failures)
@@ -138,13 +132,6 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
                 self.analyticsCluster_id, self.expected_res["name"],
                 self.expected_res["nodes"], self.expected_res["support"],
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.update_analytics_cluster(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, self.expected_res["name"],
-                    self.expected_res["nodes"], self.expected_res["support"],
-                    headers=header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -241,13 +228,6 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
                 testcase["analyticsClusterID"], self.expected_res["name"],
                 self.expected_res["nodes"], self.expected_res["support"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.update_analytics_cluster(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"], self.expected_res["name"],
-                    self.expected_res["nodes"], self.expected_res["support"],
-                    **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -400,13 +380,6 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
                 self.analyticsCluster_id, testcase["name"],
                 testcase["nodes"], testcase["support"],
                 testcase["description"])
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.header['Retry-After']))
-                res = self.columnarAPI.update_analytics_cluster(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, testcase["name"],
-                    testcase["nodes"], testcase["support"],
-                    testcase["description"])
             self.validate_testcase(res, [204], testcase, failures,
                                    payloadTest=True)
             # Instance might be scaling, so check status = healthy

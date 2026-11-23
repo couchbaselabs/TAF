@@ -26,7 +26,7 @@ class AnalyticsCloudSnapshotBackupBase(GetAnalyticsClusters):
         for attempt in range(max_retries):
             result = method(*args, **kwargs)
             if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                self.handle_rate_limit(int(result.headers.get("Retry-After", 60)))
                 continue
             if result.status_code >= 500 and attempt < max_retries - 1:
                 self.log.warning(

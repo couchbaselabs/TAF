@@ -126,10 +126,6 @@ class AppServiceOn(GetAppService):
 
             result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
                 org, proj, clus, app)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
-                    org, proj, clus, app)
             self.capellaAPI.cluster_ops_apis.appservice_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}" \
                 "/activationState"
@@ -156,11 +152,6 @@ class AppServiceOn(GetAppService):
             result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, headers=header)
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 res, _ = self.validate_onoff_state(["turningOn", "healthy"],app=self.app_service_id)
                 if not res:
@@ -266,11 +257,6 @@ class AppServiceOn(GetAppService):
             result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase['appServiceID'], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase['appServiceID'], **kwarg)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 res, _ = self.validate_onoff_state(["turningOn", "healthy"],app=self.app_service_id)

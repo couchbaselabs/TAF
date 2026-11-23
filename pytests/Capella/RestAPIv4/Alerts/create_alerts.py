@@ -105,11 +105,6 @@ class CreateAlert(GetAlert):
             result = self.capellaAPI.cluster_ops_apis.create_alert(
                 org, proj, self.expected_res["kind"],
                 self.expected_res["config"], self.expected_res["name"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_alert(
-                    org, proj, self.expected_res["kind"],
-                    self.expected_res["config"], self.expected_res["name"])
 
             self.capellaAPI.cluster_ops_apis.alerts_endpoint = \
                 "/v4/organizations/{}/projects/{}/alertIntegrations"
@@ -131,7 +126,10 @@ class CreateAlert(GetAlert):
                 [self.project_id]))
 
         resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
+            # Not the shared name: this copy is deleted at the end, and a
+            # suite running in parallel must never pick it up by name.
+            self.organisation_id, "Auth_Project_tmp_" +
+            self.generate_random_string(6, special_characters=False))
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
@@ -170,12 +168,6 @@ class CreateAlert(GetAlert):
                 self.organisation_id, self.project_id,
                 self.expected_res["kind"], self.expected_res["config"],
                 unique_name, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_alert(
-                    self.organisation_id, self.project_id,
-                    self.expected_res["kind"], self.expected_res["config"],
-                    unique_name, header)
 
             if result.status_code == 201:
                 self.update_auth_with_api_token(self.curr_owner_key)
@@ -272,12 +264,6 @@ class CreateAlert(GetAlert):
                 testcase["organizationID"], testcase["projectID"],
                 self.expected_res["kind"], self.expected_res["config"],
                 self.expected_res["name"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_alert(
-                    testcase["organizationID"], testcase["projectID"],
-                    self.expected_res["kind"], self.expected_res["config"],
-                    self.expected_res["name"], **kwarg)
 
             self.validate_testcase(result, [201, 422], testcase, failures)
 

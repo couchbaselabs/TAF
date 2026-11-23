@@ -4,6 +4,8 @@ Created on September 1, 2023
 @author: Vipul Bhardwaj
 """
 
+import time
+
 from pytests.Capella.RestAPIv4.api_base import APIBase
 
 
@@ -12,15 +14,28 @@ class DeleteProject(APIBase):
     def setUp(self):
         APIBase.setUp(self)
 
-        # Create a test subject resource.
-        res = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.prefix + "WRAPPER")
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-        while res.status_code != 201:
+        self.test_subject_id = self._create_test_subject()
+
+    def _create_test_subject(self):
+        """
+        Creates the project the test deletes. Its name must differ from the
+        shared WRAPPER project: suites running in parallel look WRAPPER up
+        by name, and one that found this short-lived copy built its cluster
+        in a project deleted seconds later.
+        """
+        name = self.prefix + "DeleteProject_subject_" + \
+            self.generate_random_string(6, special_characters=False)
+        res = None
+        for _ in range(5):
             res = self.capellaAPI.org_ops_apis.create_project(
-                self.organisation_id, self.prefix + "WRAPPER")
-        self.test_subject_id = res.json()['id']
+                self.organisation_id, name)
+            if res.status_code == 201:
+                return res.json()['id']
+            self.log.warning("Test subject project not created yet: HTTP {} "
+                             "{}".format(res.status_code, res.content))
+            time.sleep(10)
+        self.fail("Could not create the test subject project: {}".format(
+            res.content if res is not None else "no response"))
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -30,10 +45,6 @@ class DeleteProject(APIBase):
                        .format(self.project_id))
         res = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, self.test_subject_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.org_ops_apis.delete_project(
-                self.organisation_id, self.test_subject_id)
         if res.status_code != 204:
             self.fail("Error: {}".format(res.content))
         self.log.info("Test Subject deleted successfully.")
@@ -105,24 +116,12 @@ class DeleteProject(APIBase):
                 proj = testcase["invalid_projectID"]
 
             result = self.capellaAPI.org_ops_apis.delete_project(org, proj)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_project(org, proj)
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
             self.validate_testcase(result, [204], testcase, failures)
             if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
-                # Create a test subject resource.
-                res = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.prefix + "WRAPPER")
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.org_ops_apis.create_project(
-                        self.organisation_id, self.prefix + "WRAPPER")
-                if res.status_code != 201:
-                    self.fail("Error while creating TEST PROJECT.")
-                self.test_subject_id = res.json()['id']
+                self.test_subject_id = self._create_test_subject()
 
         if failures:
             for fail in failures:
@@ -145,23 +144,10 @@ class DeleteProject(APIBase):
                                  self.test_subject_id, self.other_project_id)
             result = self.capellaAPI.org_ops_apis.delete_project(
                 self.organisation_id, self.test_subject_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_project(
-                    self.organisation_id, self.project_id, header)
             self.validate_testcase(result, [204, 404], testcase, failures)
             if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
-                # Create a test subject resource.
-                res = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.prefix + "WRAPPER")
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.org_ops_apis.create_project(
-                        self.organisation_id, self.prefix + "WRAPPER")
-                if res.status_code != 201:
-                    self.fail("Error while creating TEST PROJECT.")
-                self.test_subject_id = res.json()['id']
+                self.test_subject_id = self._create_test_subject()
 
         if failures:
             for fail in failures:
@@ -236,22 +222,9 @@ class DeleteProject(APIBase):
 
             result = self.capellaAPI.org_ops_apis.delete_project(
                 testcase["organizationID"], testcase["projectID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_project(
-                    testcase["organizationID"], testcase["projectID"], **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
-                # Create a test subject resource.
-                res = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.prefix + "WRAPPER")
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.org_ops_apis.create_project(
-                        self.organisation_id, self.prefix + "WRAPPER")
-                if res.status_code != 201:
-                    self.fail("Error while creating TEST PROJECT.")
-                self.test_subject_id = res.json()['id']
+                self.test_subject_id = self._create_test_subject()
 
         if failures:
             for fail in failures:

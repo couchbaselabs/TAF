@@ -65,10 +65,6 @@ class PayAsYouGo(CategorizedBilling):
 
             result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
                 organization, json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                    organization, json_body)
             self.capellaAPI.cluster_ops_apis.billing_pay_as_you_go_endpoint = \
                 "/v4/organizations/{}/billing"
             self.validate_testcase(result, [200], testcase, failures)
@@ -99,10 +95,6 @@ class PayAsYouGo(CategorizedBilling):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
                 self.organisation_id, json_body, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                    self.organisation_id, json_body, header)
             self.validate_testcase(result, [200, 403], testcase, failures)
 
         if failures:
@@ -171,10 +163,6 @@ class PayAsYouGo(CategorizedBilling):
 
             result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
                 testcase["organizationID"], json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                    testcase["organizationID"], json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
         self.log.info("*" * 80)
@@ -334,10 +322,6 @@ class PayAsYouGo(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
         self.log.info("*" * 80)

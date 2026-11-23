@@ -73,10 +73,6 @@ class ListTenantEvents(GetProject):
 
             result = self.capellaAPI.cluster_ops_apis.list_tenant_events(
                 organization)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_tenant_events(
-                    organization)
             self.capellaAPI.cluster_ops_apis.tenant_events_endpoint = \
                 "/v4/organizations/{}/events"
             self.validate_testcase(result, [200], testcase, failures)
@@ -99,10 +95,6 @@ class ListTenantEvents(GetProject):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.list_tenant_events(
                 self.organisation_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_tenant_events(
-                    self.organisation_id, header)
             self.validate_testcase(result, [200, 403], testcase, failures)
 
         if failures:
@@ -159,10 +151,6 @@ class ListTenantEvents(GetProject):
 
             result = self.capellaAPI.cluster_ops_apis.list_tenant_events(
                 testcase["organizationID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_tenant_events(
-                    testcase["organizationID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

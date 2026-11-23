@@ -29,14 +29,6 @@ class GetCloudSnapshotBackupSchedule(GetCluster):
                 self.schedule_payload["interval"],
                 self.schedule_payload["retention"],
                 self.schedule_payload["startTime"])
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis. \
-                upsert_cloud_snapshot_backup_schedule(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.schedule_payload["interval"],
-                    self.schedule_payload["retention"],
-                    self.schedule_payload["startTime"])
         if res.status_code != 204:
             self.log.error(res.content)
             self.tearDown()
@@ -47,11 +39,6 @@ class GetCloudSnapshotBackupSchedule(GetCluster):
         res = self.capellaAPI.cluster_ops_apis. \
             delete_cloud_snapshot_backup_schedule(
                 self.organisation_id, self.project_id, self.cluster_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis. \
-                delete_cloud_snapshot_backup_schedule(
-                    self.organisation_id, self.project_id, self.cluster_id)
         if res.status_code not in [204, 404]:
             self.log.warning("Cloud snapshot backup schedule cleanup "
                              "failed: {}".format(res.content))
@@ -125,11 +112,6 @@ class GetCloudSnapshotBackupSchedule(GetCluster):
             result = self.capellaAPI.cluster_ops_apis. \
                 get_cloud_snapshot_backup_schedule(
                     organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
-                    get_cloud_snapshot_backup_schedule(
-                        organization, project, cluster)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -150,12 +132,6 @@ class GetCloudSnapshotBackupSchedule(GetCluster):
                 get_cloud_snapshot_backup_schedule(
                     self.organisation_id, self.project_id, self.cluster_id,
                     headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
-                    get_cloud_snapshot_backup_schedule(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        headers=header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

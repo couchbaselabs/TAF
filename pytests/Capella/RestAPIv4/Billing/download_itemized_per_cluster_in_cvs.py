@@ -63,10 +63,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
 
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                 organization, self.project_id, self.cluster_id, json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                    organization, self.project_id, self.cluster_id, json_body)
             self.capellaAPI.cluster_ops_apis.billing_get_prepaid_credit_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/billing/download"
             self.validate_testcase(result, [200], testcase, failures)
@@ -98,10 +94,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                      self.organisation_id, self.project_id, self.cluster_id, json_body, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                         self.organisation_id, self.project_id, self.cluster_id, json_body, header)
             self.validate_testcase(result, [200, 403], testcase, failures)
             count += 1
 
@@ -173,10 +165,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
 
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                 testcase["organizationID"], self.project_id, self.cluster_id, **json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                    testcase["organizationID"], self.project_id, self.cluster_id, **json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
         print("*" * 80)
@@ -269,10 +257,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                 self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                    self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
@@ -339,10 +323,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                 self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                    self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
         print("*" * 80)
@@ -391,10 +371,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                 self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                    self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
@@ -519,10 +495,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                 self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                    self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
@@ -573,10 +545,6 @@ class DownloadItemizedPerCluster(CategorizedBilling):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
                 self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_download_itemized_per_cluster_csv_billing(
-                    self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):

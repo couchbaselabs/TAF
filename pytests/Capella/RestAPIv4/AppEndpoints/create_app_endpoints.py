@@ -123,13 +123,6 @@ class PostAppEndpoints(GetAppEndpoints):
                 self.expected_res["name"], self.expected_res["deltaSync"],
                 self.expected_res["bucket"], self.expected_res["scopes"],
                 self.expected_res["userXattrKey"], self.expected_res["cors"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
-                    organization, project, cluster, appService,
-                    self.expected_res["name"], self.expected_res["deltaSync"],
-                    self.expected_res["bucket"], self.expected_res["scopes"],
-                    self.expected_res["userXattrKey"], self.expected_res["cors"])
             self.capellaAPI.cluster_ops_apis.app_endpoints_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints"
@@ -159,16 +152,6 @@ class PostAppEndpoints(GetAppEndpoints):
                 self.expected_res["bucket"], self.expected_res["scopes"],
                 self.expected_res["userXattrKey"],
                 self.expected_res["cors"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id,
-                    self.expected_res["name"], self.expected_res["deltaSync"],
-                    self.expected_res["bucket"], self.expected_res["scopes"],
-                    self.expected_res["userXattrKey"],
-                    self.expected_res["cors"],
-                    header)
             self.validate_testcase(result, [201, 412], testcase, failures)
             if result.status_code == 201:
                 self.log.debug("Creation Successful")
@@ -303,16 +286,6 @@ class PostAppEndpoints(GetAppEndpoints):
                 self.expected_res["bucket"], self.expected_res["scopes"],
                 self.expected_res["userXattrKey"], self.expected_res["cors"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["appServiceID"],
-                    self.expected_res["name"], self.expected_res["deltaSync"],
-                    self.expected_res["bucket"], self.expected_res["scopes"],
-                    self.expected_res["userXattrKey"],
-                    self.expected_res["cors"],
-                    **kwarg)
             self.validate_testcase(result, [201, 412], testcase, failures)
             if result.status_code == 201:
                 self.log.debug("Creation Successful")
@@ -434,14 +407,6 @@ class PostAppEndpoints(GetAppEndpoints):
                 self.app_service_id, testcase["name"], testcase["deltaSync"],
                 testcase["bucket"], testcase["scopes"],
                 testcase["userXattrKey"], self.expected_res["cors"])
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id, self.app_service_id,
-                    testcase["name"], testcase["deltaSync"],
-                    testcase["bucket"], testcase["scopes"],
-                    testcase["userXattrKey"], self.expected_res["cors"])
             self.validate_testcase(res, [201, 412], testcase, failures,
                                    payloadTest=True)
             if res.status_code == 201:

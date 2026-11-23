@@ -167,10 +167,6 @@ class ListScope(GetBucket):
 
             result = self.capellaAPI.cluster_ops_apis.list_scopes(
                 org, proj, clus, buck)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_scopes(
-                    org, proj, clus, buck)
             self.capellaAPI.cluster_ops_apis.scope_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -195,11 +191,6 @@ class ListScope(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.list_scopes(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_scopes(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.scope_name)
 
@@ -323,11 +314,6 @@ class ListScope(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.list_scopes(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_scopes(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.scope_name)
 

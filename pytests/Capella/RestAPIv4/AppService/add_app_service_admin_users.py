@@ -144,11 +144,6 @@ class PostAdminUsers(GetAdminUsers):
             result = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
                 organization, project, cluster, appService,
                 **test_params)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
-                    organization, project, cluster, appService,
-                    **test_params)
             self.capellaAPI.cluster_ops_apis.app_service_admin_users = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/adminUsers"
             if self.validate_testcase(result, [201], testcase, failures):
@@ -187,14 +182,6 @@ class PostAdminUsers(GetAdminUsers):
                 header,
                 **self.expected_res
             )
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id,
-                    header,
-                    **self.expected_res
-                )
             if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_appservices_admin_user(
@@ -328,12 +315,6 @@ class PostAdminUsers(GetAdminUsers):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id,
-                    **kwarg)
             if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_appservices_admin_user(
@@ -455,12 +436,6 @@ class PostAdminUsers(GetAdminUsers):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id,
                 **api_params)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id,
-                    **api_params)
             expected_codes = [201]
             if "expected_status_code" in testcase:
                 expected_codes = [testcase["expected_status_code"]]

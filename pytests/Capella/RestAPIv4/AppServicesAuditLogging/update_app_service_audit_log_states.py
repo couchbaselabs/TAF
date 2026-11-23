@@ -122,11 +122,6 @@ class PutAuditLog(GetAuditLog):
             result = (self.capellaAPI.cluster_ops_apis.
                       update_app_svc_audit_log_state(
                         organization, project, cluster, appService, True))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_app_svc_audit_log_state(
-                            organization, project, cluster, appService, True))
             self.capellaAPI.cluster_ops_apis.app_svc_audit_log_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
                  "auditLog")
@@ -152,13 +147,6 @@ class PutAuditLog(GetAuditLog):
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, True,
                         header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_app_svc_audit_log_state(
-                            self.organisation_id, self.project_id, self.cluster_id,
-                            self.app_service_id, True,
-                            header))
             self.validate_testcase(result, [204, 422], testcase, failures)
 
         if failures:
@@ -278,13 +266,6 @@ class PutAuditLog(GetAuditLog):
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], testcase["appServiceID"], True,
                         **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_app_svc_audit_log_state(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            True, **kwarg))
             self.validate_testcase(result, [204, 422], testcase, failures)
 
         if failures:
@@ -325,12 +306,6 @@ class PutAuditLog(GetAuditLog):
                    update_app_svc_audit_log_state(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, testcase["auditEnabled"]))
-            if res.status_code == 429:
-                self.handle_rate_limit(res.headers["Retry-After"])
-                res = (self.capellaAPI.cluster_ops_apis.
-                       update_app_svc_audit_log_state(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.app_service_id, testcase["auditEnabled"]))
             self.validate_testcase(res, [204], testcase, failures,
                                    payloadTest=True)
 

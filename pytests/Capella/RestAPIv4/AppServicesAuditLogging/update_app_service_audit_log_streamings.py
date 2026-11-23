@@ -143,15 +143,6 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                         self.expected_res["disabledAppEndpoints"],
                         self.expected_res["outputType"],
                         self.expected_res["credentials"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_app_service_audit_log_streaming(
-                            organization, project, cluster, appService,
-                            self.expected_res["streamingEnabled"],
-                            self.expected_res["disabledAppEndpoints"],
-                            self.expected_res["outputType"],
-                            self.expected_res["credentials"]))
             self.capellaAPI.cluster_ops_apis\
                 .app_svc_audit_log_streaming_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
@@ -181,16 +172,6 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                         self.expected_res["disabledAppEndpoints"],
                         self.expected_res["outputType"],
                         self.expected_res["credentials"], header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_app_service_audit_log_streaming(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id,  self.app_service_id, header,
-                            self.expected_res["streamingEnabled"],
-                            self.expected_res["disabledAppEndpoints"],
-                            self.expected_res["outputType"],
-                            self.expected_res["credentials"], header))
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:
@@ -298,15 +279,6 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                         self.expected_res["disabledAppEndpoints"],
                         self.expected_res["outputType"],
                         self.expected_res["credentials"], **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_app_service_audit_log_streaming(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            self.expected_res["streamingEnabled"],
-                            self.expected_res["disabledAppEndpoints"],
-                            self.expected_res["credentials"], **kwarg))
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:

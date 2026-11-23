@@ -105,10 +105,6 @@ class DeleteActivationState(GetAnalyticsClusters):
 
             result = self.columnarAPI.turn_analytics_cluster_off(
                 organization, project, analyticsCluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.turn_analytics_cluster_off(
-                    organization, project, analyticsCluster)
             self.columnarAPI.on_off_endpoint = \
                 ("/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/"
                  "activationState")
@@ -140,11 +136,6 @@ class DeleteActivationState(GetAnalyticsClusters):
             result = self.columnarAPI.turn_analytics_cluster_off(
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.turn_analytics_cluster_off(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, header)
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
@@ -250,12 +241,6 @@ class DeleteActivationState(GetAnalyticsClusters):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["analyticsClusterID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.turn_analytics_cluster_off(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"],
-                    **kwarg)
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):

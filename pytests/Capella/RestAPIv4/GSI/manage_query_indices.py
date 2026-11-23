@@ -30,11 +30,6 @@ class PostIndex(GetCluster):
         res = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
             "travel-sample")
-        if res.status_code == 429:
-            self.handle_rate_limit(self.curr_owner_key)
-            res = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                "travel-sample")
         if res.status_code != 201:
             self.log.error(res.content)
             self.tearDown()
@@ -46,6 +41,27 @@ class PostIndex(GetCluster):
 
     def tearDown(self):
         super(PostIndex, self).tearDown()
+
+    # GSI runs one index DDL at a time per keyspace and rejects the next one
+    # with a 500 while the previous create/build/alter is still running.
+    # That is the test racing its own previous statement, not a product
+    # failure, so wait for it; any other response goes to the test as is.
+    BUSY_INDEX_ERRORS = ("another concurrent create index request",
+                         "Build Already In Progress",
+                         "concurrent")
+
+    def _index_ddl(self, *args, **kwargs):
+        for attempt in range(1, 9):
+            result = self.capellaAPI.cluster_ops_apis.manage_query_indices(
+                *args, **kwargs)
+            body = result.content if result is not None else ""
+            if result is None or result.status_code != 500 or not any(
+                    e in str(body) for e in self.BUSY_INDEX_ERRORS):
+                return result
+            self.log.info("Index DDL busy (attempt {}), retrying in 15s: {}"
+                          .format(attempt, body))
+            time.sleep(15)
+        return result
 
     def test_api_path(self):
         testcases = list()
@@ -158,12 +174,8 @@ class PostIndex(GetCluster):
             elif "invalid_clusterId" in testcase:
                 cluster = testcase["invalid_clusterId"]
 
-            result = self.capellaAPI.cluster_ops_apis.manage_query_indices(
+            result = self._index_ddl(
                 organization, project, cluster, testcase["definition"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.manage_query_indices(
-                    organization, project, cluster, testcase["definition"])
             self.capellaAPI.cluster_ops_apis.index_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/queryService/"
                  "indexes")
@@ -186,14 +198,9 @@ class PostIndex(GetCluster):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.manage_query_indices(
+            result = self._index_ddl(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["defs"][1]["definition"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.manage_query_indices(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["defs"][1]["definition"], header)
             if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Index Creation Successful")
                 self.i += 1
@@ -285,18 +292,11 @@ class PostIndex(GetCluster):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.manage_query_indices(
+            result = self._index_ddl(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"],
                 self.expected_res["defs"][1]["definition"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.manage_query_indices(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    self.expected_res["defs"][1]["definition"],
-                    **kwarg)
             if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Index Creation Successful")
                 self.i += 1
@@ -331,11 +331,6 @@ class PostIndex(GetCluster):
             res = self.capellaAPI.cluster_ops_apis.manage_query_indices(
                 self.organisation_id, self.project_id, self.cluster_id,
                 testcase["payload"])
-            if res.status_code == 429:
-                self.handle_rate_limit(self.curr_owner_key)
-                res = self.capellaAPI.cluster_ops_apis.manage_query_indices(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    testcase["payload"])
             self.validate_testcase(res, [200], testcase, failures,
                                    payloadTest=True)
 

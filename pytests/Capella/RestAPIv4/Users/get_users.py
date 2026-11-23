@@ -85,10 +85,6 @@ class GetUsers(PostUser):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_user_info(
                 organization, user)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_user_info(
-                    organization, user)
             self.capellaAPI.cluster_ops_apis.user_endpoint = \
                 "/v4/organizations/{}/users"
             self.validate_testcase(result, [200], testcase, failures)
@@ -110,10 +106,6 @@ class GetUsers(PostUser):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.fetch_user_info(
                 self.organisation_id, self.user_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_user_info(
-                    self.organisation_id, self.user_id, header)
             self.validate_testcase(result, [200], testcase, failures)
         if failures:
             for fail in failures:

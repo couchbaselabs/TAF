@@ -21,7 +21,7 @@ class GetFreeTierBucket(GetFreeTier):
         #     self.expected_res["name"],
         #     self.expected_res["memoryAllocationInMb"])
         # if res.status_code == 429:
-        #     self.handle_rate_limit(res.headers["Retry-After"])
+        #     self.handle_rate_limit(res.headers.get("Retry-After", 60))
         #     res = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(
         #         self.organisation_id, self.project_id,
         #         self.free_tier_cluster_id,
@@ -32,12 +32,6 @@ class GetFreeTierBucket(GetFreeTier):
         list_res = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
             self.organisation_id, self.project_id,
             self.free_tier_cluster_id)
-        if list_res.status_code == 429:
-            self.handle_rate_limit(int(list_res.headers["Retry-After"]))
-            list_res = (self.capellaAPI.cluster_ops_apis.
-                        list_free_tier_bucket(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id))
         if list_res.status_code != 200:
             self.log.error(list_res.content)
             self.tearDown()
@@ -172,11 +166,6 @@ class GetFreeTierBucket(GetFreeTier):
             result = (self.capellaAPI.cluster_ops_apis.
                       fetch_free_tier_bucket_info(
                         organization, project, cluster, bucket))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_free_tier_bucket_info(
-                            organization, project, cluster, bucket))
             self.capellaAPI.cluster_ops_apis.free_tier_bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets/freeTier"
             self.validate_testcase(result, [200], testcase, failures)
@@ -200,12 +189,6 @@ class GetFreeTierBucket(GetFreeTier):
                       fetch_free_tier_bucket_info(
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id, self.bucket_id, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_free_tier_bucket_info(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, self.bucket_id, header))
             self.validate_testcase(result, [200], testcase, failures)
         if failures:
             for fail in failures:
@@ -330,11 +313,6 @@ class GetFreeTierBucket(GetFreeTier):
             result = self.capellaAPI.cluster_ops_apis.fetch_free_tier_bucket_info(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
                 self.bucket_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_free_tier_bucket_info(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
-                    self.bucket_id,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

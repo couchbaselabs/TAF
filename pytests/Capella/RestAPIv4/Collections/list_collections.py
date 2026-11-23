@@ -134,10 +134,6 @@ class ListCollection(GetCollection):
 
             result = self.capellaAPI.cluster_ops_apis.list_collections(
                 org, proj, clus, buck, scope)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_collections(
-                    org, proj, clus, buck, scope)
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
                 "/{}/collections"
@@ -163,11 +159,6 @@ class ListCollection(GetCollection):
             result = self.capellaAPI.cluster_ops_apis.list_collections(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_collections(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.collection_name)
 
@@ -295,12 +286,6 @@ class ListCollection(GetCollection):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 testcase["scopeName"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_collections(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    testcase["scopeName"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.collection_name)
 

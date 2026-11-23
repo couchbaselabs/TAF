@@ -15,16 +15,10 @@ class GetCMEK(APIBase):
         self.cmek_created = False
         self.cmek_arn = self._get_cmek_arn()
         if self.cmek_arn:
-            resp = self.capellaAPI.org_ops_apis.create_cmek_metadata(
+            resp = self.create_cmek_metadata(
                 self.organisation_id, self.prefix + "cmek-get",
                 {"arn": self.cmek_arn},
                 "CMEK metadata for get tests")
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_cmek_metadata(
-                    self.organisation_id, self.prefix + "cmek-get",
-                    {"arn": self.cmek_arn},
-                    "CMEK metadata for get tests")
             if resp.status_code == 200:
                 self.cmek_id = resp.json()["id"]
                 self.cmek_created = True
@@ -37,10 +31,6 @@ class GetCMEK(APIBase):
         if self.cmek_created:
             resp = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                 self.organisation_id, self.cmek_id)
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                    self.organisation_id, self.cmek_id)
             if resp.status_code not in [204, 404]:
                 self.log.error("CMEK cleanup failed: {}".format(resp.content))
         super(GetCMEK, self).tearDown()
@@ -93,10 +83,6 @@ class GetCMEK(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_cmek_metadata(
                 organization, cmek_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_cmek_metadata(
-                    organization, cmek_id)
             self.capellaAPI.org_ops_apis.cmek_endpoint = \
                 "/v4/organizations/{}/cmek"
             self.validate_testcase(result, [200], testcase, failures)
@@ -124,10 +110,6 @@ class GetCMEK(APIBase):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.fetch_cmek_metadata(
                 self.organisation_id, self.cmek_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_cmek_metadata(
-                    self.organisation_id, self.cmek_id, headers=header)
             self.validate_testcase(result, [200 if self.cmek_created else 404],
                                    testcase, failures)
 
@@ -171,10 +153,6 @@ class GetCMEK(APIBase):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.org_ops_apis.fetch_cmek_metadata(
                 self.organisation_id, testcase["cmekID"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_cmek_metadata(
-                    self.organisation_id, testcase["cmekID"])
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

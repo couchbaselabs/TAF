@@ -137,11 +137,6 @@ class DeleteAppEndpoints(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint(
                 organization, project, cluster, appService, AppEndpointName)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint(
-                    organization, project, cluster, appService,
-                    AppEndpointName)
             self.capellaAPI.cluster_ops_apis.app_endpoints_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints"
@@ -175,12 +170,6 @@ class DeleteAppEndpoints(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    header)
             self.validate_testcase(result, [202], testcase, failures)
             if result.status_code == 202:
                 self.log.debug("Deletion Successful")
@@ -323,13 +312,6 @@ class DeleteAppEndpoints(GetAppEndpoints):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["AppEndpointName"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_endpoint(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["appServiceID"],
-                    testcase["AppEndpointName"],
-                    **kwarg)
             self.validate_testcase(result, [202], testcase, failures)
             if result.status_code == 202:
                 self.log.debug("Deletion Successful")

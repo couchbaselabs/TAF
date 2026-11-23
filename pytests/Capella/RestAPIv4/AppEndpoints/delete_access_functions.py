@@ -137,12 +137,6 @@ class DeleteAccessControlFunction(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.delete_access_function(
                 organization, project, cluster, appService, appEndpointName)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .delete_access_function(
-                            organization, project, cluster, appService,
-                            appEndpointName))
             self.capellaAPI.cluster_ops_apis\
                 .access_control_function_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
@@ -172,13 +166,6 @@ class DeleteAccessControlFunction(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .delete_access_function(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.appEndpointName, header))
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
 
@@ -313,13 +300,6 @@ class DeleteAccessControlFunction(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .delete_access_function(
-                            self.organisation_id, self.project_id, self.cluster_id,
-                            self.app_service_id, self.appEndpointName,
-                            **kwarg))
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
 

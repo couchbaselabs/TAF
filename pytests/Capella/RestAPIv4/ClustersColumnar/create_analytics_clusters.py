@@ -91,14 +91,6 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
                 self.expected_res["compute"], self.expected_res["region"],
                 self.expected_res["nodes"], self.expected_res["support"],
                 self.expected_res["availability"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.create_analytics_cluster(
-                    organization, project, self.expected_res["name"],
-                    self.expected_res["cloudProvider"],
-                    self.expected_res["compute"], self.expected_res["region"],
-                    self.expected_res["nodes"], self.expected_res["support"],
-                    self.expected_res["availability"])
             self.columnarAPI.analytics_clusters_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters"
             if self.validate_testcase(result, [202], testcase, failures):
@@ -128,16 +120,6 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
                 self.expected_res["nodes"], self.expected_res["support"],
                 self.expected_res["availability"],
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.create_analytics_cluster(
-                    self.organisation_id, self.project_id,
-                    self.expected_res["name"],
-                    self.expected_res["cloudProvider"],
-                    self.expected_res["compute"], self.expected_res["region"],
-                    self.expected_res["nodes"], self.expected_res["support"],
-                    self.expected_res["availability"],
-                    headers=header)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
             if result.status_code == 202:
@@ -219,16 +201,6 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
                 self.expected_res["nodes"], self.expected_res["support"],
                 self.expected_res["availability"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.create_analytics_cluster(
-                    testcase["organizationID"], testcase["projectID"],
-                    self.expected_res["name"],
-                    self.expected_res["cloudProvider"],
-                    self.expected_res["compute"], self.expected_res["region"],
-                    self.expected_res["nodes"], self.expected_res["support"],
-                    self.expected_res["availability"],
-                    **kwarg)
 
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")

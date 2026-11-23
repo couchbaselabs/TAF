@@ -180,11 +180,6 @@ class GetFreeTier(GetProject):
             result = (self.capellaAPI.cluster_ops_apis.
                       fetch_free_tier_cluster_info(
                         organization, project, cluster))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_free_tier_cluster_info(
-                            organization, project, cluster))
             self.capellaAPI.cluster_ops_apis.free_tier_cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/freeTier"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -209,12 +204,6 @@ class GetFreeTier(GetProject):
                       fetch_free_tier_cluster_info(
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_free_tier_cluster_info(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, header))
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res,
                                    self.free_tier_cluster_id)
@@ -305,10 +294,6 @@ class GetFreeTier(GetProject):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_free_tier_cluster_info(self.organisation_id, self.project_id, self.free_tier_cluster_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_free_tier_cluster_info(self.organisation_id, self.project_id, self.free_tier_cluster_id,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.free_tier_cluster_id)
 

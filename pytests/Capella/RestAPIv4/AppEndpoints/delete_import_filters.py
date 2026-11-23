@@ -137,10 +137,6 @@ class DeleteImportFilter(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.delete_import_filter(
                 organization, project, cluster, appService, appEndpointKeyspace)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_import_filter(
-                    organization, project, cluster, appService, appEndpointKeyspace)
             self.capellaAPI.cluster_ops_apis.import_filter_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints/{}/importFilter"
@@ -168,12 +164,6 @@ class DeleteImportFilter(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_import_filter(
-                    self.organisation_id, self.project_id, self.cluster_id, 
-                    self.app_service_id, self.appEndpointName,
-                    header)
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:
@@ -308,13 +298,6 @@ class DeleteImportFilter(GetAppEndpoints):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["appEndpointKeyspace"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_import_filter(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["appServiceID"],
-                    testcase["appEndpointKeyspace"],
-                    **kwarg)
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:

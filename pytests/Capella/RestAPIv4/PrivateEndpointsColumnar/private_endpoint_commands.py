@@ -78,10 +78,6 @@ class PostEndpointCommand(GetAnalyticsClusters):
 
             result = self.columnarAPI.post_private_endpoint_command(
                 organization, project, analytics_cluster, self.expected_res)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.post_private_endpoint_command(
-                    organization, project, analytics_cluster, self.expected_res)
 
             self.columnarAPI.private_network_command_endpoint = (
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpointCommand")
@@ -106,11 +102,6 @@ class PostEndpointCommand(GetAnalyticsClusters):
             result = self.columnarAPI.post_private_endpoint_command(
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, payload)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.post_private_endpoint_command(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, payload)
             self.validate_testcase(result, [200], testcase, failures,
                                    payloadTest=True)
 

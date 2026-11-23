@@ -87,13 +87,6 @@ class PostFreeTier(GetFreeTier):
             result = self.capellaAPI.cluster_ops_apis.create_free_tier_cluster(
                 organization, project, self.expected_res["name"],
                 self.dummy_cloud_provider)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_cluster(
-                            organization, project,
-                            self.expected_res["name"],
-                            self.dummy_cloud_provider))
             self.capellaAPI.cluster_ops_apis.free_tier_cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/freeTier"
             if self.validate_testcase(result, [400], testcase, failures):
@@ -117,13 +110,6 @@ class PostFreeTier(GetFreeTier):
                 self.organisation_id, self.project_id,
                 self.expected_res["name"], self.dummy_cloud_provider,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_free_tier_cluster(
-                    self.organisation_id, self.project_id,
-                    self.expected_res["name"],
-                    self.dummy_cloud_provider,
-                    header)
             if self.validate_testcase(result, [400], testcase, failures):
                 self.log.debug("Dummy based error Successful")
         if failures:
@@ -199,13 +185,6 @@ class PostFreeTier(GetFreeTier):
                 self.expected_res["name"],
                 self.dummy_cloud_provider,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_cluster(
-                            self.organisation_id, self.project_id,
-                            self.expected_res["name"],
-                            self.dummy_cloud_provider, **kwarg))
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
         if failures:
@@ -327,13 +306,6 @@ class PostFreeTier(GetFreeTier):
                 self.organisation_id, self.project_id,
                 testcase["name"], testcase["cloudProvider"],
                 testcase["description"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          create_free_tier_cluster(
-                            self.organisation_id, self.project_id,
-                            testcase["name"], testcase["cloudProvider"],
-                            testcase["description"]))
             if self.validate_testcase(result, [202], testcase, failures,
                                       payloadTest=True):
                 self.log.debug("Dummy based error Successful")

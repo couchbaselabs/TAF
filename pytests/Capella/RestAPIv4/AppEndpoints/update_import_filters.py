@@ -36,7 +36,7 @@ class PutImportFilter(GetAppEndpoints):
         #     self.organisation_id, self.project_id, self.cluster_id,
         #     self.app_service_id, self.appEndpointName)
         # if res.status_code == 429:
-        #     self.handle_rate_limit(int(res.headers["Retry-After"]))
+        #     self.handle_rate_limit(int(res.headers.get("Retry-After", 60)))
         #     res = self.capellaAPI.cluster_ops_apis.delete_import_filter(
         #         self.organisation_id, self.project_id, self.cluster_id,
         #         self.app_service_id, self.appEndpointName)
@@ -170,11 +170,6 @@ class PutImportFilter(GetAppEndpoints):
             result = self.capellaAPI.cluster_ops_apis.update_import_filter(
                 organization, project, cluster, appService,
                 appEndpointKeyspace, self.expected_res)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_import_filter(
-                    organization, project, cluster, appService,
-                    appEndpointKeyspace, self.expected_res)
             self.capellaAPI.cluster_ops_apis.import_filter_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints/{}/importFilter"
@@ -202,13 +197,6 @@ class PutImportFilter(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.app_service_id, self.appEndpointName, self.expected_res,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_import_filter(
-                    self.organisation_id, self.project_id, self.cluster_id, 
-                    self.app_service_id, self.appEndpointName,
-                    self.expected_res,
-                    header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -343,13 +331,6 @@ class PutImportFilter(GetAppEndpoints):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["appEndpointKeyspace"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_import_filter(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["appServiceID"],
-                    testcase["appEndpointKeyspace"],
-                    **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -399,12 +380,6 @@ class PutImportFilter(GetAppEndpoints):
             result = self.capellaAPI.cluster_ops_apis.update_import_filter(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName, testcase["payload"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_import_filter(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    testcase["payload"])
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 

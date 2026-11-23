@@ -17,11 +17,6 @@ class AIWorkflowRunBase(AIWorkflowBase):
         res = self.capellaAPI.cluster_ops_apis.create_ai_workflow_run(
             self.organisation_id, self.project_id, self.cluster_id,
             self.workflow_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_ai_workflow_run(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.workflow_id)
         if res.status_code != 201:
             self.log.error("Result: {}".format(res.content))
             self.tearDown()
@@ -37,11 +32,6 @@ class AIWorkflowRunBase(AIWorkflowBase):
             res = self.capellaAPI.cluster_ops_apis.delete_ai_workflow_runs(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.workflow_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_ai_workflow_runs(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.workflow_id)
             if res.status_code not in [200, 202, 204, 404]:
                 self.log.error("Failed to delete runs for workflow {}: {}"
                                .format(self.workflow_id, res.content))
@@ -165,11 +155,6 @@ class CreateAIWorkflowRun(AIWorkflowBase):
 
             result = self.capellaAPI.cluster_ops_apis.create_ai_workflow_run(
                 organization, project, cluster, workflow)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .create_ai_workflow_run(
-                              organization, project, cluster, workflow))
             self.capellaAPI.cluster_ops_apis.ai_workflow_runs_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}" \
                 "/aiServices/workflows/{}/runs"
@@ -193,13 +178,6 @@ class CreateAIWorkflowRun(AIWorkflowBase):
             result = self.capellaAPI.cluster_ops_apis.create_ai_workflow_run(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.workflow_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .create_ai_workflow_run(
-                              self.organisation_id, self.project_id,
-                              self.cluster_id, self.workflow_id,
-                              headers=header))
             self.validate_testcase(result, [201], testcase, failures)
 
         if failures:
@@ -363,11 +341,6 @@ class ListAIWorkflowRuns(AIWorkflowBase):
 
             result = self.capellaAPI.cluster_ops_apis.list_ai_workflow_runs(
                 organization, project, cluster, workflow)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .list_ai_workflow_runs(
-                              organization, project, cluster, workflow))
             self.capellaAPI.cluster_ops_apis.ai_workflow_runs_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}" \
                 "/aiServices/workflows/{}/runs"
@@ -392,13 +365,6 @@ class ListAIWorkflowRuns(AIWorkflowBase):
             result = self.capellaAPI.cluster_ops_apis.list_ai_workflow_runs(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.workflow_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .list_ai_workflow_runs(
-                              self.organisation_id, self.project_id,
-                              self.cluster_id, self.workflow_id,
-                              headers=header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -544,11 +510,6 @@ class DeleteAIWorkflowRuns(AIWorkflowBase):
             result = (self.capellaAPI.cluster_ops_apis
                       .delete_ai_workflow_runs(
                           organization, project, cluster, workflow))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .delete_ai_workflow_runs(
-                              organization, project, cluster, workflow))
             self.capellaAPI.cluster_ops_apis.ai_workflow_runs_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}" \
                 "/aiServices/workflows/{}/runs"
@@ -573,12 +534,6 @@ class DeleteAIWorkflowRuns(AIWorkflowBase):
                       .delete_ai_workflow_runs(
                           self.organisation_id, self.project_id,
                           self.cluster_id, self.workflow_id, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .delete_ai_workflow_runs(
-                              self.organisation_id, self.project_id,
-                              self.cluster_id, self.workflow_id, header))
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -741,10 +696,6 @@ class GetAIWorkflowRun(AIWorkflowRunBase):
 
             result = self.capellaAPI.cluster_ops_apis.get_ai_workflow_run(
                 organization, project, cluster, workflow, run)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_ai_workflow_run(
-                    organization, project, cluster, workflow, run)
             self.capellaAPI.cluster_ops_apis.ai_workflow_run_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}" \
                 "/aiServices/workflows/{}/runs/{}"
@@ -769,11 +720,6 @@ class GetAIWorkflowRun(AIWorkflowRunBase):
             result = self.capellaAPI.cluster_ops_apis.get_ai_workflow_run(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.workflow_id, self.run_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_ai_workflow_run(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.workflow_id, self.run_id, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -956,11 +902,6 @@ class ListProcessedFiles(AIWorkflowRunBase):
             result = (self.capellaAPI.cluster_ops_apis
                       .list_ai_workflow_processed_files(
                           organization, project, cluster, workflow, run))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .list_ai_workflow_processed_files(
-                              organization, project, cluster, workflow, run))
             self.capellaAPI.cluster_ops_apis\
                 .ai_workflow_processed_files_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}" \
@@ -988,13 +929,6 @@ class ListProcessedFiles(AIWorkflowRunBase):
                           self.organisation_id, self.project_id,
                           self.cluster_id, self.workflow_id, self.run_id,
                           headers=header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .list_ai_workflow_processed_files(
-                              self.organisation_id, self.project_id,
-                              self.cluster_id, self.workflow_id, self.run_id,
-                              headers=header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

@@ -148,12 +148,6 @@ class GetAuditLogConfig(PostActivationStatus):
                       fetch_app_endpoint_audit_log_config_info(
                         organization, project, cluster, appService,
                         appEndpointName))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_app_endpoint_audit_log_config_info(
-                            organization, project, cluster, appService,
-                            appEndpointName))
             self.capellaAPI.cluster_ops_apis.\
                 app_svc_audit_log_config_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
@@ -180,13 +174,6 @@ class GetAuditLogConfig(PostActivationStatus):
                       fetch_app_endpoint_audit_log_config_info(
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, self.appEndpointName, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_app_endpoint_audit_log_config_info(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.appEndpointName, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -322,14 +309,6 @@ class GetAuditLogConfig(PostActivationStatus):
                         testcase["clusterID"], testcase["appServiceID"],
                         testcase["appEndpointName"],
                         **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_app_endpoint_audit_log_config_info(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            testcase["appEndpointName"],
-                            **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

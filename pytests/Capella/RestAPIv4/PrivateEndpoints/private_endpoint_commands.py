@@ -113,11 +113,6 @@ class PostEndpointCommand(GetCluster):
             result = (self.capellaAPI.cluster_ops_apis
                       .post_private_endpoint_command(
                         organization, project, cluster, self.expected_res))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .post_private_endpoint_command(
-                            organization, project, cluster, self.expected_res))
             self.capellaAPI.cluster_ops_apis\
                 .private_network_command_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/"\
@@ -144,12 +139,6 @@ class PostEndpointCommand(GetCluster):
                       .post_private_endpoint_command(
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.expected_res, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .post_private_endpoint_command(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.expected_res, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -241,12 +230,6 @@ class PostEndpointCommand(GetCluster):
                       .post_private_endpoint_command(
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], self.expected_res, **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .post_private_endpoint_command(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], self.expected_res, **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -369,12 +352,6 @@ class PostEndpointCommand(GetCluster):
                       .post_private_endpoint_command(
                         self.organisation_id, self.project_id, self.cluster_id,
                         payload))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .post_private_endpoint_command(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, payload))
             self.validate_testcase(result, [200], testcase, failures,
                                    payloadTest=True)
 

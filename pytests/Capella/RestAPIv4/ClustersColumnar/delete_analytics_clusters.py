@@ -105,10 +105,6 @@ class DeleteAnalyticsClusters(GetAnalyticsClusters):
 
             result = self.columnarAPI.delete_analytics_cluster(
                 organization, project, analyticsCluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.delete_analytics_cluster(
-                    organization, project, analyticsCluster)
             self.columnarAPI.analytics_clusters_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters"
             if self.validate_testcase(result, [202], testcase, failures):
@@ -135,11 +131,6 @@ class DeleteAnalyticsClusters(GetAnalyticsClusters):
             result = self.columnarAPI.delete_analytics_cluster(
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.delete_analytics_cluster(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, header)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
             if result.status_code == 202:
@@ -239,12 +230,6 @@ class DeleteAnalyticsClusters(GetAnalyticsClusters):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["analyticsClusterID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.delete_analytics_cluster(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"],
-                    **kwarg)
 
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")

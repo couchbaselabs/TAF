@@ -4,6 +4,8 @@ Created on July 17, 2023
 @author: Vipul Bhardwaj
 """
 
+import time
+
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
@@ -60,7 +62,16 @@ class GetBucket(GetCluster):
         else:
             self.expected_res["memoryAllocationInMb"] = 1024
 
-        res = self.capellaAPI.cluster_ops_apis.create_bucket(
+        self.bucket_id = self._create_setup_bucket()
+        self.expected_res['id'] = self.bucket_id
+        self.buckets.append(self.bucket_id)
+
+        # Wait for App Service to be Healthy before deleting the bucket.
+        self.log.info("Polling the APP SVC: {}".format(self.app_service_id))
+        self.wait_for_deployment(app_svc_id=self.app_service_id)
+
+    def _post_setup_bucket(self):
+        return self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_res['name'], self.expected_res['type'],
             self.expected_res['storageBackend'],
@@ -69,63 +80,65 @@ class GetBucket(GetCluster):
             self.expected_res['durabilityLevel'],
             self.expected_res['replicas'], self.expected_res['flush'],
             self.expected_res['timeToLiveInSeconds'])
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_res['name'], self.expected_res['type'],
-                self.expected_res['storageBackend'],
-                self.expected_res['memoryAllocationInMb'],
-                self.expected_res['bucketConflictResolution'],
-                self.expected_res['durabilityLevel'],
-                self.expected_res['replicas'], self.expected_res['flush'],
-                self.expected_res['timeToLiveInSeconds'])
-        if (res.status_code == 422 and
-                res.json().get("code") == 6001):
-            # This bucket name is deterministic (not randomised), so if
-            # a previous run (e.g. crashed mid-test, or an earlier run
-            # sharing this reused cluster) left it behind without
-            # cleaning up, every subsequent run collides with it forever.
-            # Treat it as a stale leftover: find and delete it, then
-            # retry the create once.
-            self.log.warning(
-                "Bucket '{}' already exists - treating it as a stale "
-                "leftover from a previous run, deleting it and retrying "
-                "the create.".format(self.expected_res['name']))
-            list_res = self.capellaAPI.cluster_ops_apis.list_buckets(
-                self.organisation_id, self.project_id, self.cluster_id)
-            stale_bucket_id = None
-            if list_res.status_code == 200:
-                for bucket in list_res.json().get("data", []):
-                    if bucket.get("name") == self.expected_res['name']:
-                        stale_bucket_id = bucket.get("id")
-                        break
-            if stale_bucket_id:
-                self.delete_buckets([stale_bucket_id])
-                res = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res['name'], self.expected_res['type'],
-                    self.expected_res['storageBackend'],
-                    self.expected_res['memoryAllocationInMb'],
-                    self.expected_res['bucketConflictResolution'],
-                    self.expected_res['durabilityLevel'],
-                    self.expected_res['replicas'], self.expected_res['flush'],
-                    self.expected_res['timeToLiveInSeconds'])
-            else:
-                self.log.error("Could not find the colliding bucket '{}' "
-                               "via list_buckets to delete it: {}".format(
-                                self.expected_res['name'], list_res.content))
+
+    def _find_bucket_id(self, name):
+        res = self.capellaAPI.cluster_ops_apis.list_buckets(
+            self.organisation_id, self.project_id, self.cluster_id)
+        if res.status_code != 200:
+            self.log.warning("list_buckets -> {}: {}".format(
+                res.status_code, res.content))
+            return None
+        for bucket in res.json().get("data", []):
+            if bucket.get("name") == name:
+                return bucket.get("id")
+        return None
+
+    def _create_setup_bucket(self, appear_timeout=60, gone_timeout=600,
+                             poll_interval=10):
+        """Create this test's bucket and return its ID.
+
+        The bucket name is fixed, so two cases need handling:
+        - The create returns 500 but the bucket gets created anyway (seen in
+          run 19889: the next test got 422 "already exists"). Use the bucket
+          if it shows up; otherwise create it again.
+        - The create returns 422 "already exists" because an earlier test or
+          run left the bucket behind. Delete it and wait until it is gone
+          from the list before creating it again; bucket deletion is async,
+          so creating straight away gets the same 422.
+        """
+        name = self.expected_res['name']
+        res = self._post_setup_bucket()
+        if res.status_code == 500:
+            self.log.warning("Create bucket '{}' returned 500 (request_id={}); "
+                             "checking whether it was created anyway".format(
+                                 name, res.headers.get(
+                                     "Vnd-Cloud-Couchbase-Com-Request-Id")))
+            end_time = time.time() + appear_timeout
+            while True:
+                bucket_id = self._find_bucket_id(name)
+                if bucket_id:
+                    self.log.info("Bucket '{}' exists ({}), using it"
+                                  .format(name, bucket_id))
+                    return bucket_id
+                if time.time() >= end_time:
+                    break
+                time.sleep(poll_interval)
+            res = self._post_setup_bucket()
+        elif res.status_code == 422 and res.json().get("code") == 6001:
+            self.log.warning("Bucket '{}' already exists, left over from an "
+                             "earlier test; deleting it".format(name))
+            stale_id = self._find_bucket_id(name)
+            if stale_id:
+                self.delete_buckets([stale_id])
+            end_time = time.time() + gone_timeout
+            while self._find_bucket_id(name) and time.time() < end_time:
+                time.sleep(poll_interval)
+            res = self._post_setup_bucket()
         if res.status_code != 201:
             self.log.error("Error : {}".format(res.content))
             self.tearDown()
             self.fail("!!!..Bucket creation failed...!!!")
-        self.bucket_id = res.json()['id']
-        self.expected_res['id'] = self.bucket_id
-        self.buckets.append(self.bucket_id)
-
-        # Wait for App Service to be Healthy before deleting the bucket.
-        self.log.info("Polling the APP SVC: {}".format(self.app_service_id))
-        self.wait_for_deployment(app_svc_id=self.app_service_id)
+        return res.json()['id']
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -231,10 +244,6 @@ class GetBucket(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
                 org, proj, clus, buck)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
-                    org, proj, clus, buck)
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -259,11 +268,6 @@ class GetBucket(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, headers=header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.bucket_id)
 
@@ -387,11 +391,6 @@ class GetBucket(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.bucket_id)
 

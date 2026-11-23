@@ -131,11 +131,6 @@ class ListNetworkPeers(GetNetworkPeers):
             result = (self.capellaAPI.cluster_ops_apis.
                       list_network_peer_records(
                         organization, project, cluster))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          list_network_peer_records(
-                            organization, project, cluster))
             self.capellaAPI.cluster_ops_apis.vpc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers"
             self.validate_testcase(result, [200], testcase, failures)
@@ -159,12 +154,6 @@ class ListNetworkPeers(GetNetworkPeers):
                       list_network_peer_records(
                         self.organisation_id, self.project_id, self.cluster_id,
                         header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          list_network_peer_records(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -255,12 +244,6 @@ class ListNetworkPeers(GetNetworkPeers):
                       list_network_peer_records(
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          list_network_peer_records(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

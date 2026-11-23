@@ -141,11 +141,6 @@ class PostOidcProviders(GetOidcProviders):
             result = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
                 organization, project, cluster, appServiceId, appEndpointName,
                 **self.expected_res["data"][0])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
-                    organization, project, cluster, appServiceId, appEndpointName,
-                    **self.expected_res["data"][0])
             self.capellaAPI.cluster_ops_apis.app_endpoint_OIDC_provider = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/oidcProviders"
             if self.validate_testcase(result, [201], testcase, failures):
@@ -175,14 +170,6 @@ class PostOidcProviders(GetOidcProviders):
                 header,
                 ** self.expected_res["data"][1]
             )
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    header,
-                    **self.expected_res["data"][1]
-                )
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_oidcProviders(self.project_id, self.cluster_id,
@@ -322,12 +309,6 @@ class PostOidcProviders(GetOidcProviders):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    **kwarg)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_oidcProviders(self.project_id, self.cluster_id,
@@ -372,13 +353,6 @@ class PostOidcProviders(GetOidcProviders):
                 self.app_service_id, self.appEndpointName,
                 **testcase
             )
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    **testcase
-                )
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_oidcProviders(self.project_id, self.cluster_id,

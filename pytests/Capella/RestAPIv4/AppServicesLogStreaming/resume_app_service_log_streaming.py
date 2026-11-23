@@ -119,12 +119,6 @@ class ResumeAppServiceLogStreaming(PauseAppServiceLogStreaming):
 
             result = self.capellaAPI.cluster_ops_apis.resume_app_service_log_streaming(
                 organization, project, cluster, appService)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          resume_app_service_log_streaming(
-                              organization, project, cluster, appService,
-                            ))
             self.capellaAPI.cluster_ops_apis.resume_app_service_log_streaming_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "logStreaming/activationState"
@@ -150,12 +144,6 @@ class ResumeAppServiceLogStreaming(PauseAppServiceLogStreaming):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          resume_app_service_log_streaming(
-                              self.organisation_id, self.project_id,
-                              self.cluster_id, self.app_service_id, header))
             self.validate_testcase(result, [204], testcase, failures)
             count += 1
         if failures:
@@ -190,7 +178,7 @@ class ResumeAppServiceLogStreaming(PauseAppServiceLogStreaming):
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
-                    combination[3] == self.app_service_id and
+                    combination[3] == self.app_service_id):
                 if (combination[0] == "" or combination[1] == "" or
                         combination[2] == "" or combination[3] == ""):
                     testcase["expected_status_code"] = 404
@@ -199,8 +187,7 @@ class ResumeAppServiceLogStreaming(PauseAppServiceLogStreaming):
                         int, bool, float, list, tuple, set, type(None)] for
                         variable in [
                         type(combination[0]), type(combination[1]),
-                        type(combination[2]), type(combination[3]),
-                        type(combination[4])]):
+                        type(combination[2]), type(combination[3])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -264,13 +251,6 @@ class ResumeAppServiceLogStreaming(PauseAppServiceLogStreaming):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["appServiceID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          resume_app_service_log_streaming(
-                              testcase["organizationID"], testcase["projectID"],
-                              testcase["clusterID"], testcase["appServiceID"],
-                              **kwarg))
             self.validate_testcase(result, [204], testcase, failures)
             count += 1
         if failures:

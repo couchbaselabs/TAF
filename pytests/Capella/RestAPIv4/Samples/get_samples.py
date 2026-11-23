@@ -165,10 +165,6 @@ class GetSample(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                 org, proj, clus, samp)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
-                    org, proj, clus, samp)
             self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -193,11 +189,6 @@ class GetSample(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.sample_bucket_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.sample_bucket_id, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
 
@@ -320,11 +311,6 @@ class GetSample(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["sampleID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["sampleID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
 

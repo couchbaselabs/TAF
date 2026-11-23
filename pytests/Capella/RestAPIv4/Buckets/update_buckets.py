@@ -118,14 +118,6 @@ class UpdateBucket(GetBucket):
                 self.expected_res['durabilityLevel'],
                 self.expected_res['replicas'], True, 10,
                 False, self.priority % 1001)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
-                    org, proj, clus, buck,
-                    self.expected_res['memoryAllocationInMb'],
-                    self.expected_res['durabilityLevel'],
-                    self.expected_res['replicas'], True, 10,
-                    False, self.priority % 1001)
             self.priority += 1
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
@@ -148,19 +140,11 @@ class UpdateBucket(GetBucket):
             self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id, self.cluster_id)
             while res.json()["currentState"] != "healthy":
                 self.log.warning("Waiting for cluster to rebalance.")
                 time.sleep(10)
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, self.project_id, self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
             header = dict()
@@ -172,15 +156,6 @@ class UpdateBucket(GetBucket):
                 self.expected_res['durabilityLevel'],
                 self.expected_res['replicas'], True, 10,
                 False, self.priority % 1001, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id,
-                    self.expected_res['memoryAllocationInMb'],
-                    self.expected_res['durabilityLevel'],
-                    self.expected_res['replicas'], True, 10,
-                    False, self.priority % 1001, header)
             self.priority += 1
             self.validate_testcase(result, [204], testcase, failures)
 
@@ -305,20 +280,11 @@ class UpdateBucket(GetBucket):
             self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id, self.cluster_id)
             while res.json()["currentState"] != "healthy":
                 self.log.warning("Waiting for cluster to rebalance.")
                 time.sleep(10)
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
             result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
@@ -328,15 +294,6 @@ class UpdateBucket(GetBucket):
                 self.expected_res['durabilityLevel'],
                 self.expected_res['replicas'], True, 10,
                 False, self.priority % 1001, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase['bucketID'],
-                    self.expected_res['memoryAllocationInMb'],
-                    self.expected_res['durabilityLevel'],
-                    self.expected_res['replicas'], True, 10,
-                    False, self.priority % 1001, **kwarg)
 
             self.priority += 1
             self.validate_testcase(result, [204], testcase, failures)
@@ -500,22 +457,12 @@ class UpdateBucket(GetBucket):
             self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id)
             while res.json()["currentState"] != "healthy":
                 self.log.warning("Waiting for cluster to rebalance.")
                 time.sleep(10)
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id,
                     self.cluster_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
             result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
@@ -524,14 +471,6 @@ class UpdateBucket(GetBucket):
                 testcase["durabilityLevel"], testcase['replicas'],
                 testcase['flush'], testcase['timeToLiveInSeconds'],
                 False, testcase["priority"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, testcase["memoryAllocationInMb"],
-                    testcase["durabilityLevel"], testcase['replicas'],
-                    testcase['flush'], testcase['timeToLiveInSeconds'],
-                    False, testcase["priority"])
 
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)

@@ -127,10 +127,6 @@ class CreateScope(GetScope):
             scope_name = self.generate_random_string(5, False, self.prefix)
             result = self.capellaAPI.cluster_ops_apis.create_scope(
                 org, proj, clus, buck, scope_name)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_scope(
-                    org, proj, clus, buck, scope_name)
             self.capellaAPI.cluster_ops_apis.scope_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes"
             if self.validate_testcase(result, [201], testcase, failures):
@@ -155,11 +151,6 @@ class CreateScope(GetScope):
             result = self.capellaAPI.cluster_ops_apis.create_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, scope_name, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_scope(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, scope_name, header)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.scopes.append(scope_name)
             if len(self.scopes) == 1000:
@@ -283,12 +274,6 @@ class CreateScope(GetScope):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 scope_name, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_scope(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    testcase["scopeName"], **kwarg)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.scopes.append(scope_name)
             if len(self.scopes) == 1000:

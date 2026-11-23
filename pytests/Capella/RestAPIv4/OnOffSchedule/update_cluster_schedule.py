@@ -106,12 +106,6 @@ class UpdateClusterSchedule(GetClusterSchedule):
                 update_cluster_on_off_schedule(
                     org, proj, clus, self.expected_result["timezone"],
                     self.expected_result["days"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.\
-                    update_cluster_on_off_schedule(
-                        org, proj, clus, self.expected_result["timezone"],
-                        self.expected_result["days"])
             self.capellaAPI.cluster_ops_apis.cluster_on_off_schedule_endpoint \
                 = "/v4/organizations/{}/projects/{}/clusters/{}/onOffSchedule"
             self.validate_testcase(result, [204], testcase, failures)
@@ -137,13 +131,6 @@ class UpdateClusterSchedule(GetClusterSchedule):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_result["timezone"],
                     self.expected_result["days"], headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.\
-                    update_cluster_on_off_schedule(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_result["timezone"],
-                        self.expected_result["days"], headers=header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -237,14 +224,6 @@ class UpdateClusterSchedule(GetClusterSchedule):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], self.expected_result["timezone"],
                     self.expected_result["days"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.\
-                    update_cluster_on_off_schedule(
-                        testcase["organizationID"], testcase["projectID"],
-                        testcase["clusterID"],
-                        self.expected_result["timezone"],
-                        self.expected_result["days"], **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:

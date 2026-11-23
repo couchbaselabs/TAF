@@ -55,10 +55,6 @@ class PostUnassociate(PostAssociate):
 
             result = self.columnarAPI.delete_private_endpoint(
                 organization, project, analytics_cluster, endpoint)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.delete_private_endpoint(
-                    organization, project, analytics_cluster, endpoint)
 
             self.columnarAPI.unassociate_private_network_endpoint = (
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpoints/{}/unassociate")

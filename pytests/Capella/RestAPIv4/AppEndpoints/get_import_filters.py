@@ -137,12 +137,6 @@ class GetImportFilter(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_import_filter_info(
                 organization, project, cluster, appService, appEndpointKeyspace)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .fetch_import_filter_info(
-                            organization, project, cluster, appService,
-                            appEndpointKeyspace))
             self.capellaAPI.cluster_ops_apis.import_filter_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints/{}/importFilter"
@@ -168,13 +162,6 @@ class GetImportFilter(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .fetch_import_filter_info(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.appEndpointName, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -309,13 +296,6 @@ class GetImportFilter(GetAppEndpoints):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["appEndpointKeyspace"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_import_filter_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["appServiceID"],
-                    testcase["appEndpointKeyspace"],
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

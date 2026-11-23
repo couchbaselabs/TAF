@@ -113,10 +113,6 @@ class DeleteCluster(GetProject):
 
             result = self.capellaAPI.cluster_ops_apis.delete_cluster(
                 org, proj, clus)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_cluster(
-                    org, proj, clus)
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
             self.validate_testcase(result, [404], testcase, failures)
@@ -151,11 +147,6 @@ class DeleteCluster(GetProject):
             result = self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id, self.dummy_cluster_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_cluster(
-                    self.organisation_id, self.project_id,
-                    self.dummy_cluster_id, header)
             self.validate_testcase(result, [404], testcase, failures)
 
         if failures:
@@ -254,11 +245,6 @@ class DeleteCluster(GetProject):
             result = self.capellaAPI.cluster_ops_apis.delete_cluster(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_cluster(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
 
             self.validate_testcase(result, [404], testcase, failures)
 

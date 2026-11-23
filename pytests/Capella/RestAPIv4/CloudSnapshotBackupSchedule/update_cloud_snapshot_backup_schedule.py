@@ -85,12 +85,6 @@ class UpdateCloudSnapshotBackupSchedule(GetCloudSnapshotBackupSchedule):
                 upsert_cloud_snapshot_backup_schedule(
                     organization, project, cluster,
                     12, 240, self.build_start_time(3))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
-                    upsert_cloud_snapshot_backup_schedule(
-                        organization, project, cluster,
-                        12, 240, self.build_start_time(3))
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -111,12 +105,6 @@ class UpdateCloudSnapshotBackupSchedule(GetCloudSnapshotBackupSchedule):
                 upsert_cloud_snapshot_backup_schedule(
                     self.organisation_id, self.project_id, self.cluster_id,
                     12, 240, self.build_start_time(3), headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
-                    upsert_cloud_snapshot_backup_schedule(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        12, 240, self.build_start_time(3), headers=header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -183,13 +171,6 @@ class UpdateCloudSnapshotBackupSchedule(GetCloudSnapshotBackupSchedule):
                     self.organisation_id, self.project_id, self.cluster_id,
                     pld["interval"], pld["retention"], pld["startTime"],
                     copyToRegions=pld.get("copyToRegions"))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
-                    upsert_cloud_snapshot_backup_schedule(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        pld["interval"], pld["retention"], pld["startTime"],
-                        copyToRegions=pld.get("copyToRegions"))
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 

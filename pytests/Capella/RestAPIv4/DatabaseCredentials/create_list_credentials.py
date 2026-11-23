@@ -108,11 +108,6 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
             result = self.capellaAPI.cluster_ops_apis.create_database_user(
                 organization, project, cluster,
                 self.expected_res["name"], self.expected_res["password"], self.expected_res["credentialType"], self.expected_res["userRoles"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_database_user(
-                    organization, project, cluster,
-                    self.expected_res["name"], self.expected_res["access"])
             self.capellaAPI.cluster_ops_apis.db_user_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/users"
             self.validate_testcase(result, [201], testcase, failures)
@@ -151,12 +146,6 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["name"], self.expected_res["password"], self.expected_res["credentialType"], self.expected_res["userRoles"],
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_database_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["name"], self.expected_res["password"], self.expected_res["credentialType"], self.expected_res["userRoles"],
-                    headers=header)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug(
                     "Creation Successful, deleting credential so the next "
@@ -164,13 +153,6 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                 del_res = self.capellaAPI.cluster_ops_apis.delete_database_user(
                     self.organisation_id, self.project_id, self.cluster_id,
                     result.json()["id"])
-                if del_res.status_code == 429:
-                    self.handle_rate_limit(
-                        int(del_res.headers["Retry-After"]))
-                    del_res = \
-                        self.capellaAPI.cluster_ops_apis.delete_database_user(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, result.json()["id"])
                 if del_res.status_code != 204:
                     self.log.error(
                         "Error while deleting credential created during "
@@ -299,7 +281,7 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                 userRoles=testcase.get("userRoles"))
             print("Result: {}".format(result.json()))
             if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                self.handle_rate_limit(int(result.headers.get("Retry-After", 60)))
                 result = self.capellaAPI.cluster_ops_apis.create_database_user(
                     self.organisation_id, self.project_id, self.cluster_id,
                     testcase["name"], testcase.get("password"),
@@ -397,13 +379,6 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                 testcase["clusterID"],
                 self.expected_res["name"], self.expected_res["access"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_database_user(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    self.expected_res["name"], self.expected_res["access"],
-                    **kwarg)
             self.validate_testcase(result, [201], testcase, failures)
 
         if failures:
@@ -554,10 +529,6 @@ class ListDatabaseCredentials(DatabaseCredentialBase):
 
             result = self.capellaAPI.cluster_ops_apis.list_database_users(
                 organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_database_users(
-                    organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.db_user_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/users"
             self.validate_testcase(result, [200], testcase, failures)
@@ -580,11 +551,6 @@ class ListDatabaseCredentials(DatabaseCredentialBase):
             result = self.capellaAPI.cluster_ops_apis.list_database_users(
                 self.organisation_id, self.project_id, self.cluster_id,
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_database_users(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    headers=header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -673,11 +639,6 @@ class ListDatabaseCredentials(DatabaseCredentialBase):
             result = self.capellaAPI.cluster_ops_apis.list_database_users(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_database_users(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

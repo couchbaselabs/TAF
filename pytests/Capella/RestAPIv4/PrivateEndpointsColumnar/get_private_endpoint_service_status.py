@@ -74,10 +74,6 @@ class GetPrivateEndpointService(GetAnalyticsClusters):
 
             result = self.columnarAPI.fetch_private_endpoint_service_status_info(
                 organization, project, analytics_cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.fetch_private_endpoint_service_status_info(
-                    organization, project, analytics_cluster)
 
             self.columnarAPI.private_network_service_endpoint = (
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService")

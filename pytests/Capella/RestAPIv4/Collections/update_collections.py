@@ -146,10 +146,6 @@ class UpdateCollection(GetCollection):
 
             result = self.capellaAPI.cluster_ops_apis.update_collection(
                 org, proj, clus, buck, scope, coll, 20000)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_collection(
-                    org, proj, clus, buck, scope, coll, 20000)
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
                 "/{}/collections"
@@ -174,12 +170,6 @@ class UpdateCollection(GetCollection):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, self.collection_name,
                 0, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_collection(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name, self.collection_name,
-                    0, headers=header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -320,12 +310,6 @@ class UpdateCollection(GetCollection):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 testcase["scopeName"], testcase["collectionName"], 0, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_collection(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    testcase["scopeName"], testcase["collectionName"], 0, **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -382,12 +366,6 @@ class UpdateCollection(GetCollection):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, self.collection_name,
                 testcase["maxTTL"])
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.update_collection(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name, self.collection_name,
-                    testcase["maxTTL"])
             self.validate_testcase(res, [204], testcase, failures,
                                    payloadTest=True)
 

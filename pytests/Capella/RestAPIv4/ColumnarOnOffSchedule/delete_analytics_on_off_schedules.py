@@ -106,10 +106,6 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
 
             result = self.columnarAPI.delete_on_off_schedule(
                 organization, project, analyticsCluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.delete_on_off_schedule(
-                    organization, project, analyticsCluster)
             self.columnarAPI.schedule_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -144,11 +140,6 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
             result = self.columnarAPI.delete_on_off_schedule(
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.delete_on_off_schedule(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Deletion successful")
                 time.sleep(2)
@@ -254,11 +245,6 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
             result = self.columnarAPI.delete_on_off_schedule(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["analyticsClusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.delete_on_off_schedule(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"], **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Deletion successful")
                 time.sleep(2)

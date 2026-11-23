@@ -115,10 +115,6 @@ class DeleteBucket(GetBucket):
 
             result = self.capellaAPI.cluster_ops_apis.delete_bucket(
                 org, proj, clus, buck)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                    org, proj, clus, buck)
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
             self.validate_testcase(result, [204], testcase, failures)
@@ -148,11 +144,6 @@ class DeleteBucket(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.delete_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, headers=header)
             self.validate_testcase(result, [204], testcase, failures)
             if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
@@ -283,11 +274,6 @@ class DeleteBucket(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.delete_bucket(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"], **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
                 self.buckets.remove(self.bucket_id)

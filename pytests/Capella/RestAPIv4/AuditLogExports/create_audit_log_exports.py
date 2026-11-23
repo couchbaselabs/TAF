@@ -102,11 +102,6 @@ class CreateAuditLogExport(GetAuditLogExport):
             result = self.capellaAPI.cluster_ops_apis.create_audit_log_export(
                 organization, project, cluster, self.expected_res["start"],
                 self.expected_res["end"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_audit_log_export(
-                    organization, project, cluster, self.expected_res["start"],
-                    self.expected_res["end"])
             self.capellaAPI.cluster_ops_apis.audit_log_exports_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/auditLogExports"
             if self.validate_testcase(result, [202], testcase, failures):
@@ -131,12 +126,6 @@ class CreateAuditLogExport(GetAuditLogExport):
             result = self.capellaAPI.cluster_ops_apis.create_audit_log_export(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["start"], self.expected_res["end"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_audit_log_export(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["start"], self.expected_res["end"],
-                    header)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
 
@@ -231,12 +220,6 @@ class CreateAuditLogExport(GetAuditLogExport):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], self.expected_res["start"],
                 self.expected_res["end"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_audit_log_export(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["start"],
-                    self.expected_res["end"], **kwarg)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
 

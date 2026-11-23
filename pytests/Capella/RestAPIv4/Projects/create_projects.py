@@ -66,10 +66,6 @@ class CreateProject(GetProject):
 
             result = self.capellaAPI.org_ops_apis.create_project(
                 org, self.prefix + "CREATE")
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_project(
-                    org, self.prefix + "CREATE")
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
             self.validate_testcase(result, [201], testcase, failures)
@@ -79,10 +75,6 @@ class CreateProject(GetProject):
                 self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.org_ops_apis.delete_project(
-                        self.organisation_id, project_id)
                 if res.status_code != 204:
                     self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")
@@ -104,11 +96,6 @@ class CreateProject(GetProject):
             result = self.capellaAPI.org_ops_apis.create_project(
                 self.organisation_id, self.prefix + "CREATE",
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.prefix + "CREATE",
-                    headers=header)
             self.validate_testcase(result, [201], testcase, failures)
             if result.status_code == 201:
                 project_id = result.json()["id"]
@@ -116,10 +103,6 @@ class CreateProject(GetProject):
                 self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.org_ops_apis.delete_project(
-                        self.organisation_id, project_id)
                 if res.status_code != 204:
                     self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")
@@ -191,11 +174,6 @@ class CreateProject(GetProject):
             result = self.capellaAPI.org_ops_apis.create_project(
                 testcase["organizationID"], self.prefix + "CREATE",
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_project(
-                    testcase["organizationID"], self.prefix + "CREATE",
-                    **kwarg)
             self.validate_testcase(result, [201], testcase, failures)
             if result.status_code == 201:
                 project_id = result.json()["id"]
@@ -203,10 +181,6 @@ class CreateProject(GetProject):
                 self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.org_ops_apis.delete_project(
-                        self.organisation_id, project_id)
                 if res.status_code != 204:
                     self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")
@@ -286,11 +260,6 @@ class CreateProject(GetProject):
             result = self.capellaAPI.org_ops_apis.create_project(
                 self.organisation_id, testcase["name"],
                 testcase["description"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, testcase["name"],
-                    testcase["description"])
             self.validate_testcase(result, [201], testcase, failures,
                                    payloadTest=True)
             if result.status_code == 201:
@@ -299,10 +268,6 @@ class CreateProject(GetProject):
                 self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.org_ops_apis.delete_project(
-                        self.organisation_id, project_id)
                 if res.status_code != 204:
                     self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")

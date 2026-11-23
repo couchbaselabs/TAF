@@ -115,15 +115,6 @@ class PostNetworkPeerCommand(GetCluster):
                 self.expected_res["resourceGroup"],
                 self.expected_res["vnetId"],
                 self.expected_res["vnetPeeringServicePrincipal"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_azure_vnet_peering_command(
-                    organization, project, cluster,
-                    self.expected_res["tenantId"],
-                    self.expected_res["subscriptionId"],
-                    self.expected_res["resourceGroup"],
-                    self.expected_res["vnetId"],
-                    self.expected_res["vnetPeeringServicePrincipal"])
 
             self.capellaAPI.cluster_ops_apis.vnet_peering_cmd_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers/networkPeerCommand"
@@ -139,7 +130,10 @@ class PostNetworkPeerCommand(GetCluster):
 
     def test_authorization(self):
         resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
+            # Not the shared name: this copy is deleted at the end, and a
+            # suite running in parallel must never pick it up by name.
+            self.organisation_id, "Auth_Project_tmp_" +
+            self.generate_random_string(6, special_characters=False))
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
@@ -185,16 +179,6 @@ class PostNetworkPeerCommand(GetCluster):
                 self.expected_res["vnetId"],
                 self.expected_res["vnetPeeringServicePrincipal"],
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_azure_vnet_peering_command(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["tenantId"],
-                    self.expected_res["subscriptionId"],
-                    self.expected_res["resourceGroup"],
-                    self.expected_res["vnetId"],
-                    self.expected_res["vnetPeeringServicePrincipal"],
-                    header)
 
             if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Fetched azure peering CLI command successfully")
@@ -301,17 +285,6 @@ class PostNetworkPeerCommand(GetCluster):
                 self.expected_res["vnetId"],
                 self.expected_res["vnetPeeringServicePrincipal"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_azure_vnet_peering_command(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    self.expected_res["tenantId"],
-                    self.expected_res["subscriptionId"],
-                    self.expected_res["resourceGroup"],
-                    self.expected_res["vnetId"],
-                    self.expected_res["vnetPeeringServicePrincipal"],
-                    **kwarg)
 
             if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Fetched azure peering CLI command successfully")

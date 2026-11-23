@@ -106,11 +106,6 @@ class PutOnOffSchedule(GetOnOffSchedule):
             result = self.columnarAPI.update_on_off_schedule(
                 organization, project, analyticsCluster,
                 self.expected_res["timezone"], self.expected_res["days"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.update_on_off_schedule(
-                    organization, project, analyticsCluster,
-                    self.expected_res["timezone"], self.expected_res["days"])
             self.columnarAPI.schedule_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule"
             self.validate_testcase(result, [204], testcase, failures)
@@ -134,12 +129,6 @@ class PutOnOffSchedule(GetOnOffSchedule):
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, self.expected_res["timezone"],
                 self.expected_res["days"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.update_on_off_schedule(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, self.expected_res["timezone"],
-                    self.expected_res["days"], header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -234,13 +223,6 @@ class PutOnOffSchedule(GetOnOffSchedule):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["analyticsClusterID"], self.expected_res["timezone"],
                 self.expected_res["days"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.update_on_off_schedule(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"],
-                    self.expected_res["timezone"], self.expected_res["days"],
-                    **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:

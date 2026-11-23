@@ -173,10 +173,6 @@ class GetCollection(GetScope):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_collection_info(
                 org, proj, clus, buck, scope, coll)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_collection_info(
-                    org, proj, clus, buck, scope, coll)
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
                 "/{}/collections"
@@ -202,12 +198,6 @@ class GetCollection(GetScope):
             result = self.capellaAPI.cluster_ops_apis.fetch_collection_info(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, self.collection_name, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_collection_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name,
-                    self.collection_name, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.collection_name)
 
@@ -348,12 +338,6 @@ class GetCollection(GetScope):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 testcase["scopeName"], testcase["collectionName"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_collection_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    testcase["scopeName"], testcase["collectionName"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.collection_name)
 

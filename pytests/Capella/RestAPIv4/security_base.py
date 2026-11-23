@@ -8,6 +8,7 @@ from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
 from TestInput import TestInputSingleton
+from couchbase_utils.capella_utils import capella_http
 # from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.cb_basetest import CouchbaseBaseTest
 
@@ -18,6 +19,12 @@ class SecurityBase(CouchbaseBaseTest):
         CouchbaseBaseTest.setUp(self)
 
         self.log.info("-------Setup started for SecurityBase-------")
+
+        # Timeouts, retries and one 429 policy for every Capella client,
+        # including the per-role clients the tests create inline.
+        capella_http.install(capella_http.Config.from_params(self.input),
+                             logger=self.log)
+        capella_http.set_rate_limit_handler(None)
 
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
@@ -478,22 +485,36 @@ class SecurityBase(CouchbaseBaseTest):
 
         return payload
 
-    def get_cluster_status(self, cluster_id):
-        status = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.tenant_id,
-                                                                     self.project_id,
-                                                                     cluster_id)
-        status = status.json()["currentState"]
-        while status != 'healthy':
-            self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
-                       .format(status))
-            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                                                                                self.tenant_id,
-                                                                                self.project_id,
-                                                                                cluster_id)
-            cluster_ready_resp = cluster_ready_resp.json()
-            status = cluster_ready_resp["currentState"]
-
-        return status
+    def get_cluster_status(self, cluster_id, timeout=None):
+        """
+        Wait for the cluster to be healthy and return "healthy". Bounded by
+        `timeout` (param cluster_ready_timeout, default 3600s) and fails
+        fast on deploymentFailed; the old loop spun forever and crashed on
+        any non-JSON/error response.
+        """
+        if timeout is None:
+            timeout = int(self.input.param("cluster_ready_timeout", 3600))
+        end_time = time.time() + timeout
+        status = None
+        while True:
+            resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.tenant_id, self.project_id, cluster_id)
+            if resp.status_code == 200:
+                status = resp.json().get("currentState")
+                if status == "healthy":
+                    return status
+                if status == "deploymentFailed":
+                    self.fail("Cluster {} is in deploymentFailed and will "
+                              "never become healthy".format(cluster_id))
+            else:
+                self.log.warning("Could not read cluster {} state (HTTP {}): "
+                                 "{}".format(cluster_id, resp.status_code,
+                                             resp.content))
+            if time.time() >= end_time:
+                self.fail("Cluster {} not healthy after {}s (last state: {})"
+                          .format(cluster_id, timeout, status))
+            self.sleep(15, "Waiting for cluster to be in healthy state. "
+                           "Current status - {}".format(status))
 
     def create_initial_v4_api_keys(self):
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')

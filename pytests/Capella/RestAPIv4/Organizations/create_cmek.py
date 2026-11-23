@@ -30,10 +30,6 @@ class CreateCMEK(ListCMEK):
         self.update_auth_with_api_token(self.curr_owner_key)
         result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
             self.organisation_id, self.created_cmek_id)
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                self.organisation_id, self.created_cmek_id)
         if result.status_code not in [204, 404]:
             self.log.error("Cleanup failed for CMEK key {}: {}".format(
                 self.created_cmek_id, result.content))
@@ -94,14 +90,9 @@ class CreateCMEK(ListCMEK):
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
 
-            result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
+            result = self.create_cmek_metadata(
                 organization, payload["name"], payload["config"],
                 payload["description"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
-                    organization, payload["name"], payload["config"],
-                    payload["description"])
             self.capellaAPI.org_ops_apis.cmek_endpoint = \
                 "/v4/organizations/{}/cmek"
 
@@ -110,10 +101,6 @@ class CreateCMEK(ListCMEK):
                 self.created_cmek_id = result.json()["id"]
                 result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                     self.organisation_id, self.created_cmek_id)
-                if result.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                        self.organisation_id, self.created_cmek_id)
                 if result.status_code != 204:
                     self.fail("CMEK cleanup failed with {}".format(result.content))
                 self.created_cmek_id = None
@@ -140,15 +127,10 @@ class CreateCMEK(ListCMEK):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
-            result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
+            result = self.create_cmek_metadata(
                 self.organisation_id, payload["name"], payload["config"],
                 payload["description"])
 
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
-                    self.organisation_id, payload["name"], payload["config"],
-                    payload["description"])
             # 200 + {"id": ...} -> created (a valid cmek_arn is supplied,
             # 19839); 422 -> key-metadata validation error when no real CMEK
             # ARN is configured. Both prove the caller passed authorization
@@ -218,28 +200,17 @@ class CreateCMEK(ListCMEK):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["desc"]))
             payload = testcase["payload"]
-            result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
+            result = self.create_cmek_metadata(
                 self.organisation_id,
                 payload.get("name", ""),
                 payload.get("config", {}),
                 payload.get("description", ""))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
-                    self.organisation_id,
-                    payload.get("name", ""),
-                    payload.get("config", {}),
-                    payload.get("description", ""))
             self.validate_testcase(result, [200], testcase, failures,
                                    payloadTest=True)
             if result.status_code == 200:
                 self.created_cmek_id = result.json()["id"]
                 result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                     self.organisation_id, self.created_cmek_id)
-                if result.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                        self.organisation_id, self.created_cmek_id)
                 if result.status_code != 204:
                     self.fail("CMEK cleanup failed with {}".format(result.content))
                 self.created_cmek_id = None

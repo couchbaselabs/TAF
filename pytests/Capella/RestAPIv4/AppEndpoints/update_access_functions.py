@@ -140,12 +140,6 @@ class PutAccessControlFunction(GetAppEndpoints):
                       .update_access_control_function(
                         organization, project, cluster, appService,
                         appEndpointName, self.expected_res))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_access_control_function(
-                            organization, project, cluster, appService,
-                            appEndpointName, self.expected_res))
             self.capellaAPI.cluster_ops_apis\
                 .access_control_function_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
@@ -175,13 +169,6 @@ class PutAccessControlFunction(GetAppEndpoints):
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, self.appEndpointName,
                         self.expected_res, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_access_control_function(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.appEndpointName, self.expected_res, header))
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -317,14 +304,6 @@ class PutAccessControlFunction(GetAppEndpoints):
                         testcase["clusterID"], testcase["appServiceID"],
                         testcase["appEndpointName"], self.expected_res,
                         **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_access_control_function(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            testcase["appEndpointName"], self.expected_res,
-                            **kwarg))
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -384,13 +363,6 @@ class PutAccessControlFunction(GetAppEndpoints):
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, self.appEndpointName,
                         testcase["payload"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .update_access_control_function(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.appEndpointName, testcase["payload"]))
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 

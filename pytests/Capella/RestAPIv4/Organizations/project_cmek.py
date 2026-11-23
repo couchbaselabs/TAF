@@ -83,10 +83,6 @@ class ProjectCMEK(APIBase):
 
             result = self.capellaAPI.org_ops_apis.list_project_cmek_metadata(
                 organization, project)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_project_cmek_metadata(
-                    organization, project)
             self.capellaAPI.org_ops_apis.project_cmek_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmek"
             self.validate_testcase(result, [200], testcase, failures)
@@ -164,11 +160,6 @@ class ProjectCMEK(APIBase):
             result = self.capellaAPI.org_ops_apis.create_project_cmek_metadata(
                 organization, project, payload["name"], payload["config"],
                 payload["description"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.create_project_cmek_metadata(
-                    organization, project, payload["name"], payload["config"],
-                    payload["description"])
             self.capellaAPI.org_ops_apis.project_cmek_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmek"
             self.validate_testcase(result, [200, 400, 404, 422], testcase,

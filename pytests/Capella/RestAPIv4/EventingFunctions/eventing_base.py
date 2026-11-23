@@ -36,9 +36,6 @@ class EventingFunctionBase(GetBucket):
 
     def api_call_with_retry(self, method, *args, **kwargs):
         result = method(*args, **kwargs)
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = method(*args, **kwargs)
         return result
 
     def _create_metadata_bucket(self):
@@ -61,11 +58,14 @@ class EventingFunctionBase(GetBucket):
         self.buckets.append(result.json()["id"])
 
     def build_payload(self, function_name=None, code=None):
-        function_name = function_name or self.function_name
+        # Only None means "use the default": an explicit "" is a test input
+        # (e.g. the empty-name negative case) and must be sent as-is.
+        if function_name is None:
+            function_name = self.function_name
         return {
             "name": function_name,
             "description": "Eventing API automation",
-            "code": code or self.default_code,
+            "code": self.default_code if code is None else code,
             "eventSource": {
                 "bucket": self.expected_res["name"],
                 "scope": "_default",

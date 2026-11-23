@@ -107,13 +107,6 @@ class UpdateAuditLog(GetAuditLog):
                 self.expected_res["auditEnabled"],
                 self.expected_res["disabledUsers"],
                 self.expected_res["enabledEventIDs"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_audit_log(
-                    organization, project, cluster,
-                    self.expected_res["auditEnabled"],
-                    self.expected_res["disabledUsers"],
-                    self.expected_res["enabledEventIDs"])
             self.capellaAPI.cluster_ops_apis.audit_logs_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/auditLog"
             self.validate_testcase(result, [204], testcase, failures)
@@ -138,13 +131,6 @@ class UpdateAuditLog(GetAuditLog):
                 self.expected_res["auditEnabled"],
                 self.expected_res["disabledUsers"],
                 self.expected_res["enabledEventIDs"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_audit_log(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["auditEnabled"],
-                    self.expected_res["disabledUsers"],
-                    self.expected_res["enabledEventIDs"], header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -237,13 +223,6 @@ class UpdateAuditLog(GetAuditLog):
                 testcase["clusterID"], self.expected_res["auditEnabled"],
                 self.expected_res["disabledUsers"],
                 self.expected_res["enabledEventIDs"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_audit_log(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["auditEnabled"],
-                    self.expected_res["disabledUsers"],
-                    self.expected_res["enabledEventIDs"], **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:

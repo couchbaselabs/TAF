@@ -17,11 +17,6 @@ class ListIndices(PostIndex):
         res = self.capellaAPI.cluster_ops_apis.manage_query_indices(
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_res["defs"][0]["definition"])
-        if res.status_code == 429:
-            self.handle_rate_limit(self.curr_owner_key)
-            res = self.capellaAPI.cluster_ops_apis.manage_query_indices(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_res["defs"][0])
         if res.status_code == 409 and res.json()[
                 "message"] == "The index idx already exists.":
             self.capella["clusters"]["gsi"] = "def_city"
@@ -142,12 +137,6 @@ class ListIndices(PostIndex):
 
             result = self.capellaAPI.cluster_ops_apis.list_index_definitions(
                 organization, project, cluster, **{"bucket": bucket})
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          list_index_definitions(
-                            organization, project, cluster,
-                            **{"bucket": bucket}))
             self.capellaAPI.cluster_ops_apis.index_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/queryService/"
                  "indexes")
@@ -172,13 +161,6 @@ class ListIndices(PostIndex):
             result = self.capellaAPI.cluster_ops_apis.list_index_definitions(
                 self.organisation_id, self.project_id, self.cluster_id,
                 header, **{"bucket": self.bucket})
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          list_index_definitions(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, header,
-                            **{"bucket": self.bucket}))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -294,12 +276,6 @@ class ListIndices(PostIndex):
             result = self.capellaAPI.cluster_ops_apis.list_index_definitions(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          list_index_definitions(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

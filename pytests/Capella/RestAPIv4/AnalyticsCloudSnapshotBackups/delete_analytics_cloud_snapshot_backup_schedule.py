@@ -23,14 +23,6 @@ class DeleteAnalyticsCloudSnapshotBackupSchedule(
             self.schedule_payload["interval"],
             self.schedule_payload["retention"],
             self.schedule_payload["startTime"])
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.columnarAPI.upsert_cloud_snapshot_backup_schedule(
-                self.organisation_id, self.project_id,
-                self.analyticsCluster_id,
-                self.schedule_payload["interval"],
-                self.schedule_payload["retention"],
-                self.schedule_payload["startTime"])
         if res.status_code != 204:
             self.log.error(res.content)
             self.fail(

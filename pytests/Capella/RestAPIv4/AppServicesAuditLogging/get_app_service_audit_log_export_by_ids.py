@@ -35,12 +35,6 @@ class GetAuditLogExports(GetAppService):
         res = self.capellaAPI.cluster_ops_apis.create_app_svc_audit_log_export(
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id, self.start_time, self.end_time)
-        if res.status_code == 429:
-            self.handle_rate_limit(res.headers["Retry-After"])
-            res = (self.capellaAPI.cluster_ops_apis.
-                   create_app_svc_audit_log_export(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.start_time, self.end_time))
         if res.status_code != 202:
             self.log.error("Error: {}".format(res.content))
             self.tearDown()
@@ -176,12 +170,6 @@ class GetAuditLogExports(GetAppService):
                       .fetch_app_svc_audit_log_export_info(
                         organization, project, cluster, appService,
                         auditLogExport))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .fetch_app_svc_audit_log_export_info(
-                            organization, project, cluster, appService,
-                            auditLogExport))
             self.capellaAPI.cluster_ops_apis\
                 .app_svc_audit_log_exports_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
@@ -209,13 +197,6 @@ class GetAuditLogExports(GetAppService):
                       .fetch_app_svc_audit_log_export_info(
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, self.auditLogExport_id, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .fetch_app_svc_audit_log_export_info(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.auditLogExport_id, header))
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.auditLogExport_id)
 
@@ -339,13 +320,6 @@ class GetAuditLogExports(GetAppService):
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], testcase["appServiceID"],
                         testcase["auditLogExportID"], **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .fetch_app_svc_audit_log_export_info(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            testcase["auditLogExportID"], **kwarg))
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.auditLogExport_id)
 

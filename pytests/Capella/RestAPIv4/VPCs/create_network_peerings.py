@@ -111,13 +111,6 @@ class PostNetworkPeers(GetNetworkPeers):
                 self.expected_res["name"],
                 self.vpc_config,
                 self.expected_res["providerType"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_network_peer(
-                    organization, project, cluster,
-                    self.expected_res["name"],
-                    self.vpc_config,
-                    self.expected_res["providerType"])
             self.capellaAPI.cluster_ops_apis.vpc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers"
             self.validate_testcase(result, [201, 422], testcase, failures)
@@ -143,14 +136,6 @@ class PostNetworkPeers(GetNetworkPeers):
                 self.vpc_config,
                 self.expected_res["providerType"],
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_network_peer(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["name"],
-                    self.vpc_config,
-                    self.expected_res["providerType"],
-                    header)
             self.validate_testcase(result, [201, 422], testcase, failures)
 
         if failures:
@@ -247,15 +232,6 @@ class PostNetworkPeers(GetNetworkPeers):
                 self.vpc_config,
                 self.expected_res["providerType"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_network_peer(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    self.expected_res["name"],
-                    self.vpc_config,
-                    self.expected_res["providerType"],
-                    **kwarg)
             self.validate_testcase(result, [201, 422], testcase, failures)
 
         if failures:

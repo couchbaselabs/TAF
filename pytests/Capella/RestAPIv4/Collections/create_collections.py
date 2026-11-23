@@ -143,10 +143,6 @@ class CreateCollection(GetScope):
                 5, False, self.prefix)
             result = self.capellaAPI.cluster_ops_apis.create_collection(
                 org, proj, clus, buck, scope, collection_name)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_collection(
-                    org, proj, clus, buck, scope, collection_name)
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
                 "/{}/collections"
@@ -173,12 +169,6 @@ class CreateCollection(GetScope):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, collection_name,
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_collection(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name, collection_name,
-                    headers=header)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.collections.append(collection_name)
             if len(self.collections) == 1000:
@@ -319,12 +309,6 @@ class CreateCollection(GetScope):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 testcase["scopeName"], collection_name, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_collection(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    testcase["scopeName"], collection_name, **kwarg)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.collections.append(collection_name)
             if len(self.collections) == 1000:

@@ -131,11 +131,6 @@ class DeleteFreeTier(GetFreeTierApp):
             result = (self.capellaAPI.cluster_ops_apis.
                       delete_free_tier_app_service(
                         organization, project, cluster, appService))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          delete_free_tier_app_service(
-                            organization, project, cluster, appService))
             self.capellaAPI.cluster_ops_apis.free_tier_app_svc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/"\
                 "freeTier"
@@ -166,13 +161,6 @@ class DeleteFreeTier(GetFreeTierApp):
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id, self.free_tier_app_id,
                         header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          delete_free_tier_app_service(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, self.free_tier_app_id,
-                            header))
             self.validate_testcase(result, [202, 404], testcase, failures)
         if failures:
             for fail in failures:
@@ -297,11 +285,6 @@ class DeleteFreeTier(GetFreeTierApp):
             result = self.capellaAPI.cluster_ops_apis.delete_free_tier_app_service(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
                 self.free_tier_app_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_free_tier_app_service(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
-                    self.free_tier_app_id,
-                    **kwarg)
             self.validate_testcase(result, [202], testcase, failures)
         if failures:
             for fail in failures:

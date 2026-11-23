@@ -38,12 +38,6 @@ class PostUser(APIBase):
             self.organisation_id, self.expected_res["resources"],
             self.expected_res["email"], self.expected_res["name"], 
             self.expected_res["organizationRoles"])
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_user(
-                self.organisation_id, self.expected_res["resources"],
-                self.expected_res["email"], self.expected_res["name"], 
-                self.expected_res["organizationRoles"])
         if res.status_code != 201:
             self.log.error("Result: {}".format(res.content))
             self.tearDown()
@@ -111,12 +105,6 @@ class PostUser(APIBase):
                 organization, self.expected_res["resources"],
                 self.expected_res["email"], self.expected_res["name"], 
                 self.expected_res["organizationRoles"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_user(
-                    organization, self.expected_res["resources"],
-                    self.expected_res["email"], self.expected_res["name"], 
-                    self.expected_res["organizationRoles"])
             self.capellaAPI.cluster_ops_apis.user_endpoint = \
                 "/v4/organizations/{}/users"
             if self.validate_testcase(result, [201], testcase, failures):
@@ -142,12 +130,6 @@ class PostUser(APIBase):
                 self.organisation_id, self.expected_res["resources"],
                 self.expected_res["email"], self.expected_res["name"],
                 self.expected_res["organizationRoles"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_user(
-                    self.organisation_id, self.expected_res["resources"],
-                    self.expected_res["email"], self.expected_res["name"],
-                    self.expected_res["organizationRoles"], header)
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.delete_user(result.json()["id"])

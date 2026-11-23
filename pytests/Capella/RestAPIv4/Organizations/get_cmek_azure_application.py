@@ -51,10 +51,6 @@ class GetCMEKAzureApplication(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
                 organization)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
-                    organization)
             self.capellaAPI.org_ops_apis.cmek_azure_application_endpoint = \
                 "/v4/organizations/{}/cmekAzureApplication"
             # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
@@ -75,10 +71,6 @@ class GetCMEKAzureApplication(APIBase):
         ], None)
         probe = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
             self.organisation_id)
-        if probe.status_code == 429:
-            self.handle_rate_limit(int(probe.headers["Retry-After"]))
-            probe = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
-                self.organisation_id)
         if probe.status_code == 404:
             # Azure CMEK app not provisioned: the backend returns this 404
             # to every valid key before checking roles (19683), so RBAC
@@ -92,10 +84,6 @@ class GetCMEKAzureApplication(APIBase):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
                 self.organisation_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
-                    self.organisation_id, headers=header)
             # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
             # provisioned (CMEK not enabled for this tenant). Both are valid
             # post-authorization responses; an unauthorized caller gets 403.
@@ -139,10 +127,6 @@ class GetCMEKAzureApplication(APIBase):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
                 testcase["organizationID"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
-                    testcase["organizationID"])
             # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
             # provisioned (CMEK not enabled for this tenant). Both are valid
             # post-authorization responses; an unauthorized caller gets 403.

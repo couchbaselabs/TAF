@@ -58,10 +58,6 @@ class ListCMEKHistory(GetCMEK):
 
             result = self.capellaAPI.org_ops_apis.list_cmek_history(
                 organization, self.cmek_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_cmek_history(
-                    organization, self.cmek_id)
             self.capellaAPI.org_ops_apis.cmek_history_endpoint = \
                 "/v4/organizations/{}/cmek/{}/history"
             self.validate_testcase(result, [200], testcase, failures)
@@ -89,10 +85,6 @@ class ListCMEKHistory(GetCMEK):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.list_cmek_history(
                 self.organisation_id, self.cmek_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_cmek_history(
-                    self.organisation_id, self.cmek_id, headers=header)
             self.validate_testcase(result, [200 if self.cmek_created else 404],
                                    testcase, failures)
 
@@ -136,10 +128,6 @@ class ListCMEKHistory(GetCMEK):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.org_ops_apis.list_cmek_history(
                 self.organisation_id, testcase["cmekID"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_cmek_history(
-                    self.organisation_id, testcase["cmekID"])
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

@@ -162,10 +162,6 @@ class ListAppEndpointsCollections(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_collections(
                 organization, project, cluster, appService, AppEndpointName)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_collections(
-                    organization, project, cluster, appService, AppEndpointName)
             self.capellaAPI.cluster_ops_apis.app_endpoint_collections_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/collections"
             self.validate_testcase(result, [200], testcase, failures)
@@ -190,12 +186,6 @@ class ListAppEndpointsCollections(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_collections(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -327,11 +317,6 @@ class ListAppEndpointsCollections(GetAppEndpoints):
             result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_collections(self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_collections(self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

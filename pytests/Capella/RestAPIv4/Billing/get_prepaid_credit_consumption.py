@@ -57,10 +57,6 @@ class GetPrepaidCreditConsumption(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
                 organization, page=1, perPage=10)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                    organization, page=1, perPage=10)
             self.capellaAPI.cluster_ops_apis.billing_get_prepaid_credit_endpoint = \
                 "/v4/organizations/{}/prePaidCredits"
             self.validate_testcase(result, [200], testcase, failures)
@@ -83,10 +79,6 @@ class GetPrepaidCreditConsumption(GetCluster):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
                 self.organisation_id, page=1, perPage=10, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                    self.organisation_id, page=1, perPage=10, headers=header)
             self.validate_testcase(result, [200, 403], testcase, failures)
 
         if failures:
@@ -149,10 +141,6 @@ class GetPrepaidCreditConsumption(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
                 testcase["organizationID"], page=1, perPage=10)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                    testcase["organizationID"], page=1, perPage=10)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -205,11 +193,6 @@ class GetPrepaidCreditConsumption(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
                 self.organisation_id, page=testcase["page"],
                 perPage=testcase["perPage"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                    self.organisation_id, page=testcase["page"],
-                    perPage=testcase["perPage"])
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -289,7 +272,7 @@ class GetPrepaidCreditConsumption(GetCluster):
                 perPage=testcase["perPage"])
             print("\n***** Response: {}, {}".format(result.status_code, result.text))
             if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                self.handle_rate_limit(int(result.headers.get("Retry-After", 60)))
                 result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
                     self.organisation_id, page=testcase["page"],
                     perPage=testcase["perPage"])

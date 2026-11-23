@@ -144,11 +144,6 @@ class PutDefaultProvider(GetOidcProviders):
             result = self.capellaAPI.cluster_ops_apis.update_app_endpoint_o_i_d_c_default_provider(
                 organization, project, cluster, appService, appEndpointName,
                **oidc_overrides)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_endpoint_o_i_d_c_default_provider(
-                    organization, project, cluster, appService, appEndpointName,
-                    **oidc_overrides)
             self.capellaAPI.cluster_ops_apis.default_provider_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/oidcProviders/defaultProvider"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -179,14 +174,6 @@ class PutDefaultProvider(GetOidcProviders):
                 header,
                 **param
             )
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_endpoint_o_i_d_c_default_provider(
-                    self.organisation_id, self.project_id, self.cluster_id, 
-                    self.app_service_id, self.appEndpointName,
-                    header,
-                    **param
-                )
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -325,16 +312,6 @@ class PutDefaultProvider(GetOidcProviders):
                 **kwarg
             )
 
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_endpoint_o_i_d_c_default_provider(
-                    self.organisation_id,
-                    self.project_id,
-                    self.cluster_id,
-                    self.app_service_id,
-                    self.appEndpointName,
-                    **kwarg
-                )
 
             self.validate_testcase(result, [204], testcase, failures)
 
@@ -394,12 +371,6 @@ class PutDefaultProvider(GetOidcProviders):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 **testcase)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_endpoint_o_i_d_c_default_provider(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    **testcase)
             self.validate_testcase(result, [204], testcase, failures)
 
         self.flush_oidcProviders(self.project_id,self.cluster_id,self.app_service_id,self.appEndpointName,temporary_OIDC_Provider)

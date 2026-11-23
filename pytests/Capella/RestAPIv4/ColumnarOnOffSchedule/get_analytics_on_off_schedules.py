@@ -187,10 +187,6 @@ class GetOnOffSchedule(GetAnalyticsClusters):
 
             result = self.columnarAPI.fetch_on_off_schedule_info(
                 organization, project, analyticsCluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.fetch_on_off_schedule_info(
-                    organization, project, analyticsCluster)
             self.columnarAPI.schedule_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule"
             self.validate_testcase(result, [200], testcase, failures)
@@ -213,11 +209,6 @@ class GetOnOffSchedule(GetAnalyticsClusters):
             result = self.columnarAPI.fetch_on_off_schedule_info(
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.fetch_on_off_schedule_info(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -312,12 +303,6 @@ class GetOnOffSchedule(GetAnalyticsClusters):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["analyticsClusterID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.fetch_on_off_schedule_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"],
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

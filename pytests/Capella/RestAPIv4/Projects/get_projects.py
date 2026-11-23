@@ -93,10 +93,6 @@ class GetProject(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_project_info(
                 organisation, project)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_project_info(
-                    organisation, project)
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -120,10 +116,6 @@ class GetProject(APIBase):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.org_ops_apis.fetch_project_info(
                 self.organisation_id, self.project_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_project_info(
-                    self.organisation_id, self.project_id, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.project_id)
 
@@ -194,10 +186,6 @@ class GetProject(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_project_info(
                 testcase["organizationID"], testcase["projectID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_project_info(
-                    testcase["organizationID"], testcase["projectID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.project_id)
 

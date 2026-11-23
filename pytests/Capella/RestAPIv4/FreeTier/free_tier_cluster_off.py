@@ -103,11 +103,6 @@ class DeleteActivationState(GetFreeTier):
             result = (self.capellaAPI.cluster_ops_apis.
                       turn_free_tier_cluster_off(
                         organization, project, cluster))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          turn_free_tier_cluster_off(
-                            organization, project, cluster))
             self.capellaAPI.cluster_ops_apis.\
                 free_tier_cluster_activation_state_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/freeTier/{}/"\
@@ -132,12 +127,6 @@ class DeleteActivationState(GetFreeTier):
                       turn_free_tier_cluster_off(
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          turn_free_tier_cluster_off(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, header))
             self.validate_testcase(result, [202, 409], testcase, failures)
         if failures:
             for fail in failures:
@@ -228,10 +217,6 @@ class DeleteActivationState(GetFreeTier):
 
             result = self.capellaAPI.cluster_ops_apis.turn_free_tier_cluster_off(self.organisation_id, self.project_id, self.free_tier_cluster_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.turn_free_tier_cluster_off(self.organisation_id, self.project_id, self.free_tier_cluster_id,
-                    **kwarg)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.freetier_id = self.create_freetier_to_be_tested(

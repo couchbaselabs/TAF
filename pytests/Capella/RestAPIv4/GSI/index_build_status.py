@@ -121,11 +121,6 @@ class GetBuildStatus(GetIndex):
             result = self.capellaAPI.cluster_ops_apis.index_build_status(
                 organization, project, cluster, indexName,
                 **{"bucket": self.bucket})
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.index_build_status(
-                    organization, project, cluster, indexName,
-                    **{"bucket": self.bucket})
             self.capellaAPI.cluster_ops_apis.index_build_status_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/queryService/"
                  "indexBuildStatus")
@@ -150,11 +145,6 @@ class GetBuildStatus(GetIndex):
             result = self.capellaAPI.cluster_ops_apis.index_build_status(
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.indexName, header, **{"bucket": self.bucket})
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.index_build_status(
-                    self.organisation_id, self.project_id, self.cluster_id, 
-                    self.indexName, header, **{"bucket": self.bucket})
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -275,12 +265,6 @@ class GetBuildStatus(GetIndex):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["indexName"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.index_build_status(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["indexName"],
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

@@ -35,11 +35,6 @@ class DatabaseCredentialBase(GetCluster):
         res = self.capellaAPI.cluster_ops_apis.create_database_role(
             self.organisation_id, self.project_id, self.cluster_id,
             self.prefix + "cred-role", role_access, "Credential test role")
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_database_role(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.prefix + "cred-role", role_access, "Credential test role")
         if res.status_code != 201:
             self.log.error("Result: {}".format(res.content))
             self.tearDown()
@@ -54,10 +49,6 @@ class DatabaseCredentialBase(GetCluster):
 
         result = self.capellaAPI.cluster_ops_apis.list_database_users(
             self.organisation_id, self.project_id, self.cluster_id)
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = self.capellaAPI.cluster_ops_apis.list_database_users(
-                self.organisation_id, self.project_id, self.cluster_id)
 
         user_ids = []
         if result.status_code == 200:
@@ -73,11 +64,6 @@ class DatabaseCredentialBase(GetCluster):
             res = self.capellaAPI.cluster_ops_apis.delete_database_user(
                 self.organisation_id, self.project_id, self.cluster_id,
                 user_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_database_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    user_id)
             if res.status_code not in [200, 202, 204, 404]:
                 self.log.error(
                     "Failed to delete Database Credential {}: {}".format(
@@ -88,11 +74,6 @@ class DatabaseCredentialBase(GetCluster):
             res = self.capellaAPI.cluster_ops_apis.delete_database_role(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.role_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_database_role(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.role_id)
             if res.status_code not in [200, 202, 204, 404]:
                 self.log.error(
                     "Failed to delete Database Role {}: {}".format(

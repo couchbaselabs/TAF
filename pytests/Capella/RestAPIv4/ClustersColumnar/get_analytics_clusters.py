@@ -128,10 +128,6 @@ class GetAnalyticsClusters(GetProject):
 
             result = self.columnarAPI.fetch_analytics_cluster_info(
                 organization, project, analyticsCluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.fetch_analytics_cluster_info(
-                    organization, project, analyticsCluster)
             self.columnarAPI.analytics_clusters_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters"
             self.validate_testcase(result, [200], testcase, failures)
@@ -155,11 +151,6 @@ class GetAnalyticsClusters(GetProject):
             result = self.columnarAPI.fetch_analytics_cluster_info(
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.fetch_analytics_cluster_info(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -255,12 +246,6 @@ class GetAnalyticsClusters(GetProject):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["analyticsClusterID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.fetch_analytics_cluster_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"],
-                    **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures)
 

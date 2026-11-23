@@ -137,10 +137,6 @@ class PutAdminUsers(GetAdminUsers):
 
             result = self.capellaAPI.cluster_ops_apis.update_app_service_admin_user(
                 organization, project, cluster, appService, user)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_service_admin_user(
-                    organization, project, cluster, appService, user)
             self.capellaAPI.cluster_ops_apis.app_service_admin_users = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/adminUsers"
             self.validate_testcase(result, [204], testcase, failures)
@@ -164,12 +160,6 @@ class PutAdminUsers(GetAdminUsers):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.user_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.user_id,
-                    header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -303,12 +293,6 @@ class PutAdminUsers(GetAdminUsers):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.user_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.user_id,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -371,11 +355,6 @@ class PutAdminUsers(GetAdminUsers):
             result = self.capellaAPI.cluster_ops_apis.update_app_service_admin_user(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.user_id, **payload)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.user_id, **payload)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:

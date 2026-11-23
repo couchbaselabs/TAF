@@ -188,10 +188,6 @@ class ClusterZoneSelection(GetProject):
             self.log.info("Destroying Cluster: {}".format(cluster_id))
             res = self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id, cluster_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_cluster(
-                    self.organisation_id, self.project_id, cluster_id)
             if res.status_code in [202, 404]:
                 deleting.append(cluster_id)
             else:
@@ -349,10 +345,6 @@ class ClusterZoneSelection(GetProject):
             return None
         res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
             self.organisation_id, self.project_id, cluster_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, self.project_id, cluster_id)
         if res.status_code != 200:
             failures.append("{}: GET cluster returned {}".format(
                 label, res.status_code))
@@ -372,10 +364,6 @@ class ClusterZoneSelection(GetProject):
         expected_zones maps cluster ID to the zones its GET returned."""
         res = self.capellaAPI.cluster_ops_apis.list_clusters(
             self.organisation_id, self.project_id, 1, 100)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.list_clusters(
-                self.organisation_id, self.project_id, 1, 100)
         if res.status_code != 200:
             return ["List clusters returned {}".format(res.status_code)]
         failures = list()
@@ -517,11 +505,13 @@ class ClusterZoneSelection(GetProject):
         self.report(failures, 2)
 
     def require_support_api(self):
-        # Skipped from the test body, not setUp, so tearDown still runs and
+        # Checked in the test body, not setUp, so tearDown still runs and
         # the last test of the run can delete the wrapper resources.
+        # On stage/prod exclude these with EXCLUDE_GROUP=SUPPORT (the
+        # v4 executor adds it automatically for non-sandbox pods).
         if self._internal_support_token_env() != \
                 "sbx_token_for_internal_support":
-            self.skipTest("Support API tests run only on sandbox pods; there "
+            self.fail("Support API tests run only on sandbox pods; there "
                           "is no internal support token for {}"
                           .format(self.url))
         if not self.internal_support_token():

@@ -147,10 +147,6 @@ class DeleteCollection(GetCollection):
 
             result = self.capellaAPI.cluster_ops_apis.delete_collection(
                 org, proj, clus, buck, scope, coll)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_collection(
-                    org, proj, clus, buck, scope, coll)
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
                 "/{}/collections"
@@ -179,12 +175,6 @@ class DeleteCollection(GetCollection):
             result = self.capellaAPI.cluster_ops_apis.delete_collection(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, self.collection_name, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_collection(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name,
-                    self.collection_name, header)
             self.validate_testcase(result, [204], testcase, failures)
             if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
@@ -328,12 +318,6 @@ class DeleteCollection(GetCollection):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 testcase["scopeName"], testcase["collectionName"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_collection(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    testcase["scopeName"], testcase["collectionName"], **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
                 self.collection_name = self.create_collection_to_be_tested(

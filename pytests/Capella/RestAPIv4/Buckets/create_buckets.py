@@ -115,19 +115,6 @@ class CreateBucket(GetBucket):
                 self.expected_res['flush'],
                 self.expected_res['timeToLiveInSeconds'],
                 self.expected_res['priority'])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    org, proj, clus, self.expected_res['name'],
-                    self.expected_res['type'],
-                    self.expected_res['storageBackend'],
-                    self.expected_res['memoryAllocationInMb'],
-                    self.expected_res['bucketConflictResolution'],
-                    self.expected_res['durabilityLevel'],
-                    self.expected_res['replicas'],
-                    self.expected_res['flush'],
-                    self.expected_res['timeToLiveInSeconds'],
-                    self.expected_res['priority'])
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
             self.validate_testcase(result, [201, 6001], testcase, failures)
@@ -152,19 +139,11 @@ class CreateBucket(GetBucket):
             self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id, self.cluster_id)
             while res.json()["currentState"] != "healthy":
                 self.log.warning("Waiting for cluster to rebalance.")
                 time.sleep(10)
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, self.project_id, self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
             header = dict()
@@ -181,19 +160,6 @@ class CreateBucket(GetBucket):
                 self.expected_res['flush'],
                 self.expected_res['timeToLiveInSeconds'],
                 self.expected_res['priority'], headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res['name'], self.expected_res['type'],
-                    self.expected_res['storageBackend'],
-                    self.expected_res['memoryAllocationInMb'],
-                    self.expected_res['bucketConflictResolution'],
-                    self.expected_res['durabilityLevel'],
-                    self.expected_res['replicas'],
-                    self.expected_res['flush'],
-                    self.expected_res['timeToLiveInSeconds'],
-                    self.expected_res['priority'], headers=header)
             self.validate_testcase(result, [201, 6001], testcase, failures)
             if result.status_code == 201:
                 self.delete_buckets([result.json()['id']])
@@ -289,20 +255,11 @@ class CreateBucket(GetBucket):
             self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id, self.cluster_id)
             while res.json()["currentState"] != "healthy":
                 self.log.warning("Waiting for cluster to rebalance.")
                 time.sleep(10)
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
             result = self.capellaAPI.cluster_ops_apis.create_bucket(
@@ -317,20 +274,6 @@ class CreateBucket(GetBucket):
                 self.expected_res['flush'],
                 self.expected_res['timeToLiveInSeconds'],
                 self.expected_res['priority'], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res['name'],
-                    self.expected_res['type'],
-                    self.expected_res['storageBackend'],
-                    self.expected_res['memoryAllocationInMb'],
-                    self.expected_res['bucketConflictResolution'],
-                    self.expected_res['durabilityLevel'],
-                    self.expected_res['replicas'],
-                    self.expected_res['flush'],
-                    self.expected_res['timeToLiveInSeconds'],
-                    self.expected_res['priority'], **kwarg)
             self.validate_testcase(result, [201, 6001], testcase, failures)
             if result.status_code == 201:
                 self.delete_buckets([result.json()['id']])
@@ -569,23 +512,12 @@ class CreateBucket(GetBucket):
             self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id)
             while res.json()["currentState"] != "healthy":
                 self.log.warning("Waiting for cluster to rebalance.")
                 time.sleep(10)
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id,
                     self.cluster_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(
-                        int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
             result = self.capellaAPI.cluster_ops_apis.create_bucket(
@@ -596,17 +528,6 @@ class CreateBucket(GetBucket):
                 testcase["durabilityLevel"], testcase['replicas'],
                 testcase['flush'], testcase['timeToLiveInSeconds'],
                 testcase['priority'])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    testcase["name"], testcase["type"],
-                    testcase["storageBackend"],
-                    testcase["memoryAllocationInMb"],
-                    testcase["bucketConflictResolution"],
-                    testcase["durabilityLevel"], testcase['replicas'],
-                    testcase['flush'], testcase['timeToLiveInSeconds'],
-                    testcase['priority'])
             self.validate_testcase(result, [201], testcase, failures)
             if result.status_code == 201:
                 self.delete_buckets([result.json()['id']])

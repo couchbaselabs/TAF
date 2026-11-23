@@ -145,10 +145,6 @@ class PatchUsers(PostUser):
 
             result = self.capellaAPI.cluster_ops_apis.update_user(
                 organization, user, self.expected_res["body"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_user(
-                    organization, user, self.expected_res["body"])
             self.capellaAPI.cluster_ops_apis.user_endpoint = \
                 "/v4/organizations/{}/users"
             self.validate_testcase(result, [200], testcase, failures)
@@ -171,11 +167,6 @@ class PatchUsers(PostUser):
             result = self.capellaAPI.cluster_ops_apis.update_user(
                 self.organisation_id, self.user_id,
                 self.expected_res["body"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_user(
-                    self.organisation_id, self.user_id,
-                    self.expected_res["body"], header)
             self.validate_testcase(result, [200], testcase, failures)
         if failures:
             for fail in failures:

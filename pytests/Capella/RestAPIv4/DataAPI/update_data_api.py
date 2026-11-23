@@ -104,11 +104,6 @@ class UpdateDataAPI(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.update_data_api(
                 organization, project, cluster, self.expected_res["enabled"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_data_api(
-                    organization, project, cluster,
-                    self.expected_res["enabled"])
             self.capellaAPI.cluster_ops_apis.data_api_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/dataAPI"
             self.validate_testcase(result, [202, 204], testcase, failures)
@@ -131,11 +126,6 @@ class UpdateDataAPI(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.update_data_api(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["enabled"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_data_api(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["enabled"], header)
             self.validate_testcase(result, [202, 204], testcase, failures)
 
         if failures:
@@ -227,12 +217,6 @@ class UpdateDataAPI(GetCluster):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], self.expected_res["enabled"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_data_api(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["enabled"],
-                    **kwarg)
             self.validate_testcase(result, [202, 204], testcase, failures)
 
         if failures:
@@ -273,11 +257,6 @@ class UpdateDataAPI(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.update_data_api(
                 self.organisation_id, self.project_id, self.cluster_id,
                 payload["enabled"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_data_api(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    payload["enabled"])
             self.validate_testcase(result, [202, 204], testcase, failures,
                                    payloadTest=True)
 

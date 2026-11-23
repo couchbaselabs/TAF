@@ -28,13 +28,6 @@ class GetAdminUsers(GetAppService):
             self.app_service_id,
             **self.expected_res
         )
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
-                self.organisation_id, self.project_id, self.cluster_id, 
-                self.app_service_id,
-                **self.expected_res
-            )
         if res.status_code != 201:
             self.log.error("Result: {}".format(res.content))
             self.fail("Error while creating Admin User for the test.")
@@ -47,11 +40,6 @@ class GetAdminUsers(GetAppService):
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id)
 
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = self.capellaAPI.cluster_ops_apis.list_app_service_admin_user(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id)
 
         if result.status_code != 200:
             self.fail("Failed to list admin users: {} - {}".format(result.status_code,result.content))
@@ -72,15 +60,6 @@ class GetAdminUsers(GetAppService):
                 user_id
             )
 
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
-                    self.organisation_id,
-                    self.project_id,
-                    self.cluster_id,
-                    self.app_service_id,
-                    user_id
-                )
 
             if res.status_code not in [200, 202, 204, 404]:
                 self.log.error(
@@ -213,10 +192,6 @@ class GetAdminUsers(GetAppService):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_app_service_admin_user_info(
                 organization, project, cluster, appService, user)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_service_admin_user_info(
-                    organization, project, cluster, appService, user)
             self.capellaAPI.cluster_ops_apis.app_service_admin_users = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/adminUsers"
             self.validate_testcase(result, [200], testcase, failures)
@@ -242,12 +217,6 @@ class GetAdminUsers(GetAppService):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.user_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_service_admin_user_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.user_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -372,13 +341,6 @@ class GetAdminUsers(GetAppService):
                 testcase["clusterID"], testcase["appServiceID"], 
                 testcase["userID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_service_admin_user_info(
-                    testcase["organizationID"], testcase["projectID"], 
-                    testcase["clusterID"], testcase["appServiceID"], 
-                    testcase["userID"],
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

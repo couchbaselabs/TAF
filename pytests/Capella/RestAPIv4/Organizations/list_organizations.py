@@ -79,9 +79,6 @@ class ListOrganization(APIBase):
                     testcase["url"]
 
             result = self.capellaAPI.org_ops_apis.list_organizations()
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_organizations()
             self.capellaAPI.org_ops_apis.organization_endpoint = \
                 "/v4/organizations"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -104,10 +101,6 @@ class ListOrganization(APIBase):
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.list_organizations(header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_organizations(
-                    header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.organisation_id)
 

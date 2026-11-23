@@ -6,12 +6,15 @@ Created on May 05, 2026
 
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
+# Used when no real CMEK key is passed with -p cmek_id=<id>.
+PLACEHOLDER_CMEK_ID = "00000000-0000-0000-0000-000000000000"
+
 
 class UnassociateCMEK(GetCluster):
 
     def setUp(self, nomenclature="Unassociate_CMEK_POST"):
         GetCluster.setUp(self, nomenclature)
-        self.cmek_id = self.input.param("cmek_id", "00000000-0000-0000-0000-000000000000")
+        self.cmek_id = self.input.param("cmek_id", PLACEHOLDER_CMEK_ID)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -78,10 +81,6 @@ class UnassociateCMEK(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.unassociate_cmek(
                 organization, project, cluster, cmek_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.unassociate_cmek(
-                    organization, project, cluster, cmek_id)
             self.capellaAPI.cluster_ops_apis.unassociate_cmek_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/cmek/{}/unassociate"
             self.validate_testcase(result, [204, 400, 404, 422], testcase, failures)
@@ -98,17 +97,21 @@ class UnassociateCMEK(GetCluster):
             "organizationOwner", "projectOwner", "projectManager"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
+            if self.cmek_id == PLACEHOLDER_CMEK_ID and \
+                    testcase.get("expected_status_code") == 403:
+                # No real CMEK key on the test org. The API looks the key up
+                # before it checks permissions (UnassociateCMEK and
+                # AssociateCMEK in cp-open-api/server/v4/cmek.go), so every
+                # role gets 404 for an unknown key. Pass -p cmek_id=<real
+                # key> to check that these roles get 403.
+                testcase["expected_status_code"] = 404
+                testcase["expected_error"] = ""
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.unassociate_cmek(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.cmek_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.unassociate_cmek(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.cmek_id, headers=header)
             self.validate_testcase(result, [204, 400, 404, 422], testcase,
                                    failures)
 

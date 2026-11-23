@@ -103,11 +103,6 @@ class PostActivationState(GetFreeTier):
             result = (self.capellaAPI.cluster_ops_apis.
                       turn_free_tier_cluster_on(
                         organization, project, cluster, False))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          turn_free_tier_cluster_on(
-                            organization, project, cluster, False))
             self.capellaAPI.cluster_ops_apis.\
                 free_tier_cluster_activation_state_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/freeTier/{}/"\
@@ -132,12 +127,6 @@ class PostActivationState(GetFreeTier):
                       turn_free_tier_cluster_on(
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id, False, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          turn_free_tier_cluster_on(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, False, header))
             self.validate_testcase(result, [202, 409], testcase, failures)
         if failures:
             for fail in failures:
@@ -228,10 +217,6 @@ class PostActivationState(GetFreeTier):
 
             result = self.capellaAPI.cluster_ops_apis.turn_free_tier_cluster_on(self.organisation_id, self.project_id, self.free_tier_cluster_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.turn_free_tier_cluster_on(self.organisation_id, self.project_id, self.free_tier_cluster_id,
-                    **kwarg)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
                 self.flush_freetiers(self.project_id, self.free_tier_cluster_id, 
@@ -273,13 +258,6 @@ class PostActivationState(GetFreeTier):
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id,
                         testcase["turnOnLinkedAppService"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          turn_free_tier_cluster_on(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id,
-                            testcase["turnOnLinkedAppService"]))
             self.validate_testcase(result, [202, 409], testcase, failures,
                                    payloadTest=True)
         if failures:

@@ -111,10 +111,6 @@ class ListCluster(GetCluster):
                 proj = testcase["invalid_projectID"]
 
             result = self.capellaAPI.cluster_ops_apis.list_clusters(org, proj)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_clusters(
-                    org, proj)
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -138,10 +134,6 @@ class ListCluster(GetCluster):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.list_clusters(
                 self.organisation_id, self.project_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_clusters(
-                    self.organisation_id, self.project_id, headers=header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.cluster_id)
 
@@ -211,10 +203,6 @@ class ListCluster(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.list_clusters(
                 testcase["organizationID"], testcase["projectID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_clusters(
-                    testcase["organizationID"], testcase["projectID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.cluster_id)

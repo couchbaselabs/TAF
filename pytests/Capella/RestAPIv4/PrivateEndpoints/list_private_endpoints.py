@@ -109,10 +109,6 @@ class ListEndpoints(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.list_private_endpoint(
                 organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_private_endpoint(
-                    organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.list_private_networks_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpoints"
             self.validate_testcase(result, [200], testcase, failures)
@@ -136,11 +132,6 @@ class ListEndpoints(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.list_private_endpoint(
                 self.organisation_id, self.project_id, self.cluster_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_private_endpoint(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -232,12 +223,6 @@ class ListEndpoints(GetCluster):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_private_endpoint(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

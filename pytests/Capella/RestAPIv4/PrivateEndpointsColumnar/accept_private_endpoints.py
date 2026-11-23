@@ -67,10 +67,6 @@ class PostAssociate(GetAnalyticsClusters):
                 organization, project, analytics_cluster)
             result = self.columnarAPI.accept_private_endpoint(
                 organization, project, analytics_cluster, endpoint)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.accept_private_endpoint(
-                    organization, project, analytics_cluster, endpoint)
 
             self.columnarAPI.associate_private_network_endpoint = (
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/privateEndpointService/endpoints/{}/associate")

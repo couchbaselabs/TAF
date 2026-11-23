@@ -8,6 +8,31 @@ import copy
 from pytests.Capella.RestAPIv4.AppEndpoints.get_app_endpoints \
     import GetAppEndpoints
 
+# Starting or stopping a resync needs Update access on the app endpoint
+# (couchbase-cloud 1ea7984327b, AV-153183, merged 2026-11-24).
+RESYNC_ALLOWED_ROLES = [
+    "organizationOwner", "projectOwner", "projectManager",
+    "projectDataReaderWriter"
+]
+# Before that change these read-only roles could also resync. Until the
+# change is deployed everywhere these tests run (prod as well as
+# sandboxes), a role whose only access is one of these may get either 403
+# or 202. Remove this once prod returns 403 for them.
+RESYNC_READ_ONLY_ROLES = ("projectViewer", "projectDataReader")
+
+
+def resync_auth_testcases(test):
+    """RBAC cases for the start/stop resync APIs (see RESYNC_ALLOWED_ROLES)."""
+    roles_by_token = dict((key["token"], key["roles"])
+                          for key in test.api_keys.values() if "roles" in key)
+    testcases = test.v4_RBAC_injection_init(RESYNC_ALLOWED_ROLES)
+    for testcase in testcases:
+        roles = roles_by_token.get(testcase.get("token"), [])
+        if testcase.get("expected_status_code") == 403 and any(
+                r in roles for r in RESYNC_READ_ONLY_ROLES):
+            testcase["expected_status_code"] = [403, 202]
+    return testcases
+
 
 class PostResync(GetAppEndpoints):
 
@@ -146,11 +171,6 @@ class PostResync(GetAppEndpoints):
             result = self.capellaAPI.cluster_ops_apis.start_resync(
                 organization, project, cluster, appService, appEndpointName,
                 self.expected_res["scopes"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.start_resync(
-                    organization, project, cluster, appService,
-                    appEndpointName, self.expected_res["scopes"])
             self.capellaAPI.cluster_ops_apis.app_endpoint_resync_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                  "appEndpoints/{}/resync"
@@ -164,13 +184,7 @@ class PostResync(GetAppEndpoints):
 
     def test_authorization(self):
         failures = list()
-        # Starting a resync is a write action: projectViewer and
-        # projectDataReader are denied with 403 (19895). Read access is
-        # covered by GetAppEndpointResync.
-        for testcase in self.v4_RBAC_injection_init([
-                 "organizationOwner", "projectOwner",
-                 "projectDataReaderWriter", "projectManager"
-        ]):
+        for testcase in resync_auth_testcases(self):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
@@ -179,12 +193,6 @@ class PostResync(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.app_service_id, self.appEndpointName,
                 self.expected_res["scopes"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.start_resync(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    self.expected_res["scopes"], header)
             if result.status_code >= 500:
                 self.log.warning("Skipping testcase due to server error: {}"
                                  .format(result.content))
@@ -325,13 +333,6 @@ class PostResync(GetAppEndpoints):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["appEndpointName"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.start_resync(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["appServiceID"],
-                    testcase["appEndpointName"],
-                    **kwarg)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
 
@@ -373,12 +374,6 @@ class PostResync(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 testcase["scopes"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.start_resync(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    testcase["scopes"])
             self.validate_testcase(result, [202, 412], testcase, failures,
                                    payloadTest=True)
 

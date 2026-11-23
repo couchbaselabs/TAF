@@ -131,10 +131,6 @@ class ListAuditLogExport(GetAuditLogExport):
 
             result = self.capellaAPI.cluster_ops_apis.list_audit_log_exports(
                 organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_audit_log_exports(
-                    organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.audit_log_exports_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/auditLogExports"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -159,11 +155,6 @@ class ListAuditLogExport(GetAuditLogExport):
             result = self.capellaAPI.cluster_ops_apis.list_audit_log_exports(
                 self.organisation_id, self.project_id, self.cluster_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_audit_log_exports(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.auditlogexport_id)
 
@@ -254,11 +245,6 @@ class ListAuditLogExport(GetAuditLogExport):
             result = self.capellaAPI.cluster_ops_apis.list_audit_log_exports(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_audit_log_exports(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.auditlogexport_id)
 

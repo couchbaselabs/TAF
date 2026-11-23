@@ -126,10 +126,6 @@ class EnableClusterExpressScaling(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.enable_express_scaling(
                                 self.organisation_id, self.project_id, self.cluster_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.enable_express_scaling(
-                                self.organisation_id, self.project_id, self.cluster_id)
             self.capellaAPI.cluster_ops_apis.express_scaling_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/expressScaling"
             self.validate_testcase(result, [testcase["expected_status_code"]], testcase, failures)

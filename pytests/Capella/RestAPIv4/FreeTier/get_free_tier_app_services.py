@@ -19,12 +19,6 @@ class GetFreeTierApp(GetFreeTier):
         res = self.capellaAPI.cluster_ops_apis.create_free_tier_app_service(
             self.organisation_id, self.project_id,
             self.free_tier_cluster_id, self.expected_res["name"])
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = (self.capellaAPI.cluster_ops_apis.
-                   create_free_tier_app_service(
-                    self.organisation_id, self.project_id,
-                    self.free_tier_cluster_id, self.expected_res["name"]))
         if res.status_code == 422:
             self.log.warning("A free tier App already exists.. "
                              "response: {0}".format(res.status_code))
@@ -146,11 +140,6 @@ class GetFreeTierApp(GetFreeTier):
             result = (self.capellaAPI.cluster_ops_apis.
                       fetch_free_tier_app_service_info(
                         organization, project, cluster, appService))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_free_tier_app_service_info(
-                            organization, project, cluster, appService))
             self.capellaAPI.cluster_ops_apis.free_tier_app_svc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/"\
                 "freeTier"
@@ -176,13 +165,6 @@ class GetFreeTierApp(GetFreeTier):
                         self.organisation_id, self.project_id,
                         self.free_tier_cluster_id, self.free_tier_app_id,
                         header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_free_tier_app_service_info(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, self.free_tier_app_id,
-                            header))
             self.validate_testcase(result, [200], testcase, failures)
         if failures:
             for fail in failures:
@@ -307,11 +289,6 @@ class GetFreeTierApp(GetFreeTier):
             result = self.capellaAPI.cluster_ops_apis.fetch_free_tier_app_service_info(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
                 self.free_tier_app_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_free_tier_app_service_info(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
-                    self.free_tier_app_id,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

@@ -100,10 +100,6 @@ class DeleteAlert(GetAlert):
 
             result = self.capellaAPI.cluster_ops_apis.delete_alert(
                 org, proj, alert)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_alert(
-                    org, proj, alert)
 
             self.capellaAPI.cluster_ops_apis.alerts_endpoint = \
                 "/v4/organizations/{}/projects/{}/alertIntegrations"
@@ -128,7 +124,10 @@ class DeleteAlert(GetAlert):
                 [self.project_id]))
 
         resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
+            # Not the shared name: this copy is deleted at the end, and a
+            # suite running in parallel must never pick it up by name.
+            self.organisation_id, "Auth_Project_tmp_" +
+            self.generate_random_string(6, special_characters=False))
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
@@ -163,11 +162,6 @@ class DeleteAlert(GetAlert):
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.delete_alert(
                 self.organisation_id, self.project_id, self.alert_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_alert(
-                    self.organisation_id, self.project_id, self.alert_id,
-                    header)
 
             self.validate_testcase(result, [204], testcase, failures)
             if result.status_code == 204:
@@ -269,11 +263,6 @@ class DeleteAlert(GetAlert):
             result = self.capellaAPI.cluster_ops_apis.delete_alert(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["alertID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_alert(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["alertID"], **kwarg)
 
             self.validate_testcase(result, [204], testcase, failures)
             if result.status_code == 204:

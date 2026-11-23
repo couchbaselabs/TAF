@@ -101,10 +101,6 @@ class DeletePrivateEndpointService(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.disable_private_endpoint_service(
                 organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.disable_private_endpoint_service(
-                    organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.private_network_service_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService"
             if self.validate_testcase(result, [202], testcase, failures):
@@ -156,12 +152,6 @@ class DeletePrivateEndpointService(GetCluster):
                     disable_private_endpoint_service(
                         self.organisation_id, self.project_id,
                         self.cluster_id, header)
-                if result.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    result = self.capellaAPI.cluster_ops_apis.\
-                        disable_private_endpoint_service(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, header)
                 if self.validate_testcase(result, [202, 500], testcase,
                                           failures):
                     self.log.debug("Deletion Successful")
@@ -188,11 +178,6 @@ class DeletePrivateEndpointService(GetCluster):
         enable_res = self.capellaAPI.cluster_ops_apis.\
             enable_private_endpoint_service(
                 self.organisation_id, self.project_id, self.cluster_id)
-        if enable_res.status_code == 429:
-            self.handle_rate_limit(int(enable_res.headers["Retry-After"]))
-            enable_res = self.capellaAPI.cluster_ops_apis.\
-                enable_private_endpoint_service(
-                    self.organisation_id, self.project_id, self.cluster_id)
         if enable_res.status_code != 202:
             self.log.error("Error while re-enabling private endpoint "
                            "service: {}".format(enable_res.content))
@@ -282,12 +267,6 @@ class DeletePrivateEndpointService(GetCluster):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.disable_private_endpoint_service(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    **kwarg)
             if self.validate_testcase(result, [202, 500], testcase, failures):
                 self.log.debug("Deletion Successful")
 

@@ -128,10 +128,6 @@ class DeleteScope(GetScope):
 
             result = self.capellaAPI.cluster_ops_apis.delete_scope(
                 org, proj, clus, buck, scope)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_scope(
-                    org, proj, clus, buck, scope)
             self.capellaAPI.cluster_ops_apis.scope_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -164,11 +160,6 @@ class DeleteScope(GetScope):
             result = self.capellaAPI.cluster_ops_apis.delete_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_scope(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.scope_name, header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
                 self.scope_name = self.create_scope_to_be_tested(
@@ -301,12 +292,6 @@ class DeleteScope(GetScope):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 testcase["scopeName"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_scope(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    self.scope_name, **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
                 self.scope_name = self.create_scope_to_be_tested(

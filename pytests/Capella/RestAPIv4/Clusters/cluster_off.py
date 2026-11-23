@@ -102,10 +102,6 @@ class ClusterOff(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
                 org, proj, clus)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
-                    org, proj, clus)
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/activationState"
             if self.validate_testcase(result, [409, 202], testcase, failures):
@@ -142,11 +138,6 @@ class ClusterOff(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
                 self.organisation_id, self.project_id, self.cluster_id,
                 headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    headers=header)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
                 res, _ = self.validate_onoff_state(
@@ -247,11 +238,6 @@ class ClusterOff(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
                 res, _ = self.validate_onoff_state(["turningOff", "turnedOff"], sleep=1)

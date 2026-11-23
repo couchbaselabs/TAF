@@ -112,10 +112,6 @@ class ListSample(GetSample):
 
             result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
                 org, proj, clus)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
-                    org, proj, clus)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
             self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
@@ -139,11 +135,6 @@ class ListSample(GetSample):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
                 self.organisation_id, self.project_id, self.cluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
 
@@ -231,11 +222,6 @@ class ListSample(GetSample):
             result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
 

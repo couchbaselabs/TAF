@@ -152,10 +152,6 @@ class GetScope(GetBucket):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
                 org, proj, clus, buck, scope)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
-                    org, proj, clus, buck, scope)
             self.capellaAPI.cluster_ops_apis.scope_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -180,11 +176,6 @@ class GetScope(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.scope_name)
 
@@ -314,12 +305,6 @@ class GetScope(GetBucket):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
                 testcase["scopeName"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["bucketID"],
-                    testcase["scopeName"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.scope_name)
 

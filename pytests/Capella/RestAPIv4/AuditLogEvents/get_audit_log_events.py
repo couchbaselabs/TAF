@@ -107,10 +107,6 @@ class GetAuditLogEvent(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_audit_log_event_info(
                 organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_audit_log_event_info(
-                    organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.audit_log_events_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/auditLogEvents"
             self.validate_testcase(result, [200], testcase, failures)
@@ -133,11 +129,6 @@ class GetAuditLogEvent(GetCluster):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.fetch_audit_log_event_info(
                 self.organisation_id, self.project_id, self.cluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_audit_log_event_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -228,11 +219,6 @@ class GetAuditLogEvent(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.fetch_audit_log_event_info(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_audit_log_event_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

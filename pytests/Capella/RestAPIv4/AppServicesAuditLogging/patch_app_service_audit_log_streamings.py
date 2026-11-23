@@ -136,13 +136,6 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
                         organization, project, cluster, appService,
                         self.expected_res["op"], self.expected_res["path"],
                         self.expected_res["value"]))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .patch_app_service_audit_log_streaming(
-                            organization, project, cluster, appService,
-                            self.expected_res["op"], self.expected_res["path"],
-                            self.expected_res["value"]))
             self.capellaAPI.cluster_ops_apis\
                 .app_svc_audit_log_streaming_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
@@ -170,14 +163,6 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
                         self.app_service_id, self.expected_res["op"],
                         self.expected_res["path"], self.expected_res["value"],
                         header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .patch_app_service_audit_log_streaming(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.expected_res["op"], self.expected_res["path"],
-                            self.expected_res["value"], header))
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:
@@ -283,14 +268,6 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
                         testcase["clusterID"], testcase["appServiceID"],
                         self.expected_res["op"], self.expected_res["path"],
                         self.expected_res["value"], **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .patch_app_service_audit_log_streaming(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            self.expected_res["op"], self.expected_res["path"],
-                            self.expected_res["value"], **kwarg))
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:

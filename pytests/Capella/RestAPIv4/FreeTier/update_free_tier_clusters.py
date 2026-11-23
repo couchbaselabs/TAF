@@ -104,13 +104,6 @@ class PutFreeTier(GetFreeTier):
                 organization, project, cluster,
                 self.expected_res["name"],
                 self.expected_res["description"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_free_tier_cluster(
-                            organization, project, cluster,
-                            self.expected_res["name"],
-                            self.expected_res["description"]))
             self.capellaAPI.cluster_ops_apis.free_tier_cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/freeTier"
             self.validate_testcase(result, [204], testcase, failures)
@@ -133,14 +126,6 @@ class PutFreeTier(GetFreeTier):
                 self.organisation_id, self.project_id,
                 self.free_tier_cluster_id, self.expected_res["name"],
                 self.expected_res["description"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_free_tier_cluster(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id,
-                            self.expected_res["name"],
-                            self.expected_res["description"], header))
             self.validate_testcase(result, [204], testcase, failures)
         if failures:
             for fail in failures:
@@ -231,12 +216,6 @@ class PutFreeTier(GetFreeTier):
                 self.expected_res["name"],
                 self.expected_res["description"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_free_tier_cluster(self.organisation_id, self.project_id, self.free_tier_cluster_id,
-                    self.expected_res["name"],
-                    self.expected_res["description"],
-                    **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -319,13 +298,6 @@ class PutFreeTier(GetFreeTier):
                 self.organisation_id, self.project_id,
                 self.free_tier_cluster_id, testcase["name"],
                 testcase["description"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_free_tier_cluster(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, testcase["name"],
-                            testcase["description"]))
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
         if failures:

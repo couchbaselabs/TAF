@@ -167,10 +167,6 @@ class ListOidcProviders(GetOidcProviders):
 
             result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_o_i_d_c_providers(
                 organization, project, cluster, appService, appEndpointName)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_o_i_d_c_providers(
-                    organization, project, cluster, appService, appEndpointName)
             self.capellaAPI.cluster_ops_apis.app_endpoint_OIDC_provider = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/oidcProviders"
             self.validate_testcase(result, [200], testcase, failures)
@@ -194,12 +190,6 @@ class ListOidcProviders(GetOidcProviders):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_o_i_d_c_providers(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -332,12 +322,6 @@ class ListOidcProviders(GetOidcProviders):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_app_endpoint_o_i_d_c_providers(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

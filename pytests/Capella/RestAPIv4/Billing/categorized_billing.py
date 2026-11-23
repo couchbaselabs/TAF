@@ -73,10 +73,6 @@ class CategorizedBilling(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
                 organization, json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    organization, json_body)
             self.capellaAPI.cluster_ops_apis.billing_categorized_endpoint = \
                 "/v4/organizations/{}/billing"
             self.validate_testcase(result, [200], testcase, failures)
@@ -108,10 +104,6 @@ class CategorizedBilling(GetCluster):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
                 self.organisation_id, json_body, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    self.organisation_id, json_body, headers=header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -181,10 +173,6 @@ class CategorizedBilling(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
                 testcase["organizationID"], **json_body)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    testcase["organizationID"], **json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
         print("*" * 80)
@@ -326,10 +314,6 @@ class CategorizedBilling(GetCluster):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    self.organisation_id, testcase["json"])
             if testcase.get("print_response"):
                 self.log.info("*" * 80)
                 self.log.info("Response for: {}".format(testcase["description"]))
@@ -407,10 +391,6 @@ class CategorizedBilling(GetCluster):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
                 self.organisation_id, testcase["json"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
         print("*" * 80)

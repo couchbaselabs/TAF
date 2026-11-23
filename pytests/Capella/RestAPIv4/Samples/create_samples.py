@@ -106,10 +106,6 @@ class CreateSample(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                 org, proj, clus, self.expected_res["name"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
-                    org, proj, clus, self.expected_res["name"])
             self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
             if self.validate_testcase(result, [201], testcase, failures):
@@ -138,11 +134,6 @@ class CreateSample(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["name"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["name"], header)
             self.validate_testcase(result, [201], testcase, failures)
 
         if failures:
@@ -232,11 +223,6 @@ class CreateSample(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], self.expected_res["name"], kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["name"], kwarg)
             self.validate_testcase(result, [201], testcase, failures)
 
         if failures:

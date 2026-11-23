@@ -66,14 +66,6 @@ class GetAppEndpoints(GetAppService):
             self.expected_res["name"], self.expected_res["deltaSync"],
             self.expected_res["bucket"], self.expected_res["scopes"],
             self.expected_res["userXattrKey"], self.expected_res["cors"])
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id,
-                self.expected_res["name"], self.expected_res["deltaSync"],
-                self.expected_res["bucket"], self.expected_res["scopes"],
-                self.expected_res["userXattrKey"], self.expected_res["cors"])
         if result.status_code == 412:
             self.log.debug("App endpoint {} already exists".format(
                 self.expected_res["name"]))
@@ -210,12 +202,6 @@ class GetAppEndpoints(GetAppService):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_app_endpoint_info(
                 organization, project, cluster, appService, AppEndpointName)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_app_endpoint_info(
-                              organization, project, cluster, appService,
-                              AppEndpointName))
             self.capellaAPI.cluster_ops_apis.app_endpoints_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints"
@@ -241,13 +227,6 @@ class GetAppEndpoints(GetAppService):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_app_endpoint_info(
-                              self.organisation_id, self.project_id,
-                              self.cluster_id, self.app_service_id,
-                              self.appEndpointName, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -382,14 +361,6 @@ class GetAppEndpoints(GetAppService):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["AppEndpointName"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_app_endpoint_info(
-                              testcase["organizationID"], testcase["projectID"],
-                              testcase["clusterID"], testcase["appServiceID"],
-                              testcase["AppEndpointName"],
-                              **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

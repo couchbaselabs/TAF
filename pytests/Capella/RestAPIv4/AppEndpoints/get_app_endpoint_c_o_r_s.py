@@ -136,10 +136,6 @@ class GetCors(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_app_endpoint_c_o_r_s_info(
                 organization, project, cluster, appService, appEndpointName)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_endpoint_c_o_r_s_info(
-                    organization, project, cluster, appService, appEndpointName)
             self.capellaAPI.cluster_ops_apis.cors_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/cors"
             self.validate_testcase(result, [200], testcase, failures)
@@ -164,12 +160,6 @@ class GetCors(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_endpoint_c_o_r_s_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -302,11 +292,6 @@ class GetCors(GetAppEndpoints):
             result = self.capellaAPI.cluster_ops_apis.fetch_app_endpoint_c_o_r_s_info(self.organisation_id, self.project_id, self.cluster_id, 
                 self.app_service_id, self.appEndpointName,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_endpoint_c_o_r_s_info(self.organisation_id, self.project_id, self.cluster_id, 
-                    self.app_service_id, self.appEndpointName,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

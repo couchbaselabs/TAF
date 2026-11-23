@@ -67,13 +67,6 @@ class GetCluster(GetProject):
                 app_svc_template,
                 self.app_svc_templates[app_svc_template]["compute"],
                 self.app_svc_templates[app_svc_template]["nodes"])
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = self.capellaAPI.cluster_ops_apis.create_appservice(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    app_svc_template,
-                    self.app_svc_templates[app_svc_template]["compute"],
-                    self.app_svc_templates[app_svc_template]["nodes"])
             if res.status_code == 409:
                 apps = self.capellaAPI.cluster_ops_apis.list_appservices(
                     self.organisation_id)
@@ -184,10 +177,6 @@ class GetCluster(GetProject):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -211,11 +200,6 @@ class GetCluster(GetProject):
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.cluster_id)
 
@@ -305,11 +289,6 @@ class GetCluster(GetProject):
             result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.cluster_id)

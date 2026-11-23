@@ -115,11 +115,6 @@ class PutBucketStorageMigration(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
                 organization, project, cluster,
                 self.buckets)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
-                    organization, project, cluster,
-                    self.buckets)
             self.capellaAPI.cluster_ops_apis.bucket_migration_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}"
                  "/bucketStorageMigration")
@@ -144,12 +139,6 @@ class PutBucketStorageMigration(GetCluster):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.buckets,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.buckets,
-                    header)
             self.validate_testcase(result, [202, 422], testcase, failures)
 
         if failures:
@@ -241,13 +230,6 @@ class PutBucketStorageMigration(GetCluster):
                 testcase["clusterID"],
                 self.buckets,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    self.buckets,
-                    **kwarg)
 
             self.validate_testcase(result, [202], testcase, failures)
 

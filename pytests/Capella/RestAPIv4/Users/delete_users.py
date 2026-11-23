@@ -85,10 +85,6 @@ class DeleteUsers(PostUser):
 
             result = self.capellaAPI.cluster_ops_apis.delete_user(
                 organization, user)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_user(
-                    organization, user)
             self.capellaAPI.cluster_ops_apis.user_endpoint = \
                 "/v4/organizations/{}/users"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -116,11 +112,6 @@ class DeleteUsers(PostUser):
             result = self.capellaAPI.cluster_ops_apis.delete_user(
                 self.organisation_id, self.user_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_user(
-                    self.organisation_id, self.user_id,
-                    header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.user_id = self.create_user_to_be_tested(

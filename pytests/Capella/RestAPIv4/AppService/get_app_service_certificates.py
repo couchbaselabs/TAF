@@ -121,10 +121,6 @@ class GetCertificates(GetAppService):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_app_service_certificate_info(
                 organization, project, cluster, appService)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_service_certificate_info(
-                    organization, project, cluster, appService)
             self.capellaAPI.cluster_ops_apis.certificates_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/certificates"
             self.validate_testcase(result, [200], testcase, failures)
@@ -149,12 +145,6 @@ class GetCertificates(GetAppService):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_service_certificate_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -280,11 +270,6 @@ class GetCertificates(GetAppService):
             result = self.capellaAPI.cluster_ops_apis.fetch_app_service_certificate_info(self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_app_service_certificate_info(self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

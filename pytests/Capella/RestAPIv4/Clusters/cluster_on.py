@@ -102,10 +102,6 @@ class ClusterOn(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 org, proj, clus, False)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                    org, proj, clus, False)
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/activationState"
             if self.validate_testcase(result, [409, 202], testcase, failures):
@@ -140,11 +136,6 @@ class ClusterOn(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 self.organisation_id, self.project_id, self.cluster_id,
                 False, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    False, headers=header)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
                 res, _ = self.validate_onoff_state(
@@ -245,11 +236,6 @@ class ClusterOn(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], False, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], False, **kwarg)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
                 res, _ = self.validate_onoff_state(
@@ -294,10 +280,6 @@ class ClusterOn(GetCluster):
             self.log.info("Executing test: {}".format(testcase["desc"]))
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 self.organisation_id, self.project_id, self.cluster_id, val)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                    self.organisation_id, self.project_id, self.cluster_id, val)
             if self.validate_testcase(result, [409, 202], testcase,
                                       failures, payloadTest=True):
                 start_time = time.time()

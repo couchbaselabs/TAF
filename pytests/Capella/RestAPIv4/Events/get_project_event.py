@@ -110,10 +110,6 @@ class GetProjectEvent(GetProject):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
                 organization, project, event)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
-                    organization, project, event)
             self.capellaAPI.cluster_ops_apis.project_events_endpoint = \
                 "/v4/organizations/{}/projects/{}/events"
             self.validate_testcase(result, [200], testcase, failures)
@@ -135,11 +131,6 @@ class GetProjectEvent(GetProject):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
                 self.organisation_id, self.project_id, self.event_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
-                    self.organisation_id, self.project_id, self.event_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -245,11 +236,6 @@ class GetProjectEvent(GetProject):
             result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["eventID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["eventID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

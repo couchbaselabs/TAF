@@ -124,11 +124,6 @@ class GetDatabaseRole(DatabaseRoleBase):
 
             result = self.capellaAPI.cluster_ops_apis.fetch_database_role_info(
                 organization, project, cluster, role)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = \
-                    self.capellaAPI.cluster_ops_apis.fetch_database_role_info(
-                        organization, project, cluster, role)
             self.capellaAPI.cluster_ops_apis.db_role_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/roles"
             self.validate_testcase(result, [200], testcase, failures)
@@ -151,12 +146,6 @@ class GetDatabaseRole(DatabaseRoleBase):
             result = self.capellaAPI.cluster_ops_apis.fetch_database_role_info(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.role_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = \
-                    self.capellaAPI.cluster_ops_apis.fetch_database_role_info(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.role_id, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -260,12 +249,6 @@ class GetDatabaseRole(DatabaseRoleBase):
             result = self.capellaAPI.cluster_ops_apis.fetch_database_role_info(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["roleID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = \
-                    self.capellaAPI.cluster_ops_apis.fetch_database_role_info(
-                        testcase["organizationID"], testcase["projectID"],
-                        testcase["clusterID"], testcase["roleID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -418,11 +401,6 @@ class UpdateDatabaseRole(DatabaseRoleBase):
             result = self.capellaAPI.cluster_ops_apis.update_database_role(
                 organization, project, cluster, role,
                 self.update_access, self.update_description)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_database_role(
-                    organization, project, cluster, role,
-                    self.update_access, self.update_description)
             self.capellaAPI.cluster_ops_apis.db_role_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/roles"
             self.validate_testcase(result, [204], testcase, failures)
@@ -446,12 +424,6 @@ class UpdateDatabaseRole(DatabaseRoleBase):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.role_id, self.update_access, self.update_description,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_database_role(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.role_id, self.update_access, self.update_description,
-                    header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -521,12 +493,6 @@ class UpdateDatabaseRole(DatabaseRoleBase):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.role_id, testcase["access"],
                 testcase.get("description", ""))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_database_role(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.role_id, testcase["access"],
-                    testcase.get("description", ""))
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
 
@@ -633,12 +599,6 @@ class UpdateDatabaseRole(DatabaseRoleBase):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["roleID"],
                 self.update_access, self.update_description, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_database_role(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["roleID"],
-                    self.update_access, self.update_description, **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -782,10 +742,6 @@ class DeleteDatabaseRole(DatabaseRoleBase):
 
             result = self.capellaAPI.cluster_ops_apis.delete_database_role(
                 organization, project, cluster, role)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_database_role(
-                    organization, project, cluster, role)
             self.capellaAPI.cluster_ops_apis.db_role_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/roles"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -794,12 +750,6 @@ class DeleteDatabaseRole(DatabaseRoleBase):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"], self.expected_res["access"],
                     self.expected_res["description"])
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.create_database_role(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_res["name"], self.expected_res["access"],
-                        self.expected_res["description"])
                 if res.status_code == 201:
                     self.role_id = res.json()["id"]
 
@@ -821,23 +771,12 @@ class DeleteDatabaseRole(DatabaseRoleBase):
             result = self.capellaAPI.cluster_ops_apis.delete_database_role(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.role_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_database_role(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.role_id, header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful, recreating role.")
                 res = self.capellaAPI.cluster_ops_apis.create_database_role(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"], self.expected_res["access"],
                     self.expected_res["description"])
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.create_database_role(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_res["name"], self.expected_res["access"],
-                        self.expected_res["description"])
                 if res.status_code == 201:
                     self.role_id = res.json()["id"]
 
@@ -942,23 +881,12 @@ class DeleteDatabaseRole(DatabaseRoleBase):
             result = self.capellaAPI.cluster_ops_apis.delete_database_role(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["roleID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_database_role(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["roleID"], **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful, recreating role.")
                 res = self.capellaAPI.cluster_ops_apis.create_database_role(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"], self.expected_res["access"],
                     self.expected_res["description"])
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.create_database_role(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_res["name"], self.expected_res["access"],
-                        self.expected_res["description"])
                 if res.status_code == 201:
                     self.role_id = res.json()["id"]
 

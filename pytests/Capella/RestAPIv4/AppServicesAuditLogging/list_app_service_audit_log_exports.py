@@ -147,11 +147,6 @@ class ListAuditLogExports(GetAuditLogExports):
             result = (self.capellaAPI.cluster_ops_apis
                       .list_app_svc_audit_log_exports(
                         organization, project, cluster, appService))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .list_app_svc_audit_log_exports(
-                            organization, project, cluster, appService))
             self.capellaAPI.cluster_ops_apis.\
                 app_svc_audit_log_exports_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
@@ -178,12 +173,6 @@ class ListAuditLogExports(GetAuditLogExports):
                       .list_app_svc_audit_log_exports(
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .list_app_svc_audit_log_exports(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -290,13 +279,6 @@ class ListAuditLogExports(GetAuditLogExports):
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], testcase["appServiceID"],
                         **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis
-                          .list_app_svc_audit_log_exports(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

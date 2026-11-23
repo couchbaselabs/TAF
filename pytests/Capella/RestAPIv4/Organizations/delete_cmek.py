@@ -57,10 +57,6 @@ class DeleteCMEK(GetCMEK):
 
             result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                 organization, self.cmek_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                    organization, self.cmek_id)
             self.capellaAPI.org_ops_apis.cmek_endpoint = \
                 "/v4/organizations/{}/cmek"
             self.validate_testcase(result, [204], testcase, failures)
@@ -86,10 +82,6 @@ class DeleteCMEK(GetCMEK):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                 self.organisation_id, self.cmek_id, headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                    self.organisation_id, self.cmek_id, headers=header)
             self.validate_testcase(result, [204 if self.cmek_created else 404],
                                    testcase, failures)
             if result.status_code == 204:
@@ -135,10 +127,6 @@ class DeleteCMEK(GetCMEK):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                 self.organisation_id, testcase["cmekID"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                    self.organisation_id, testcase["cmekID"])
             self.validate_testcase(result, [204], testcase, failures)
             if result.status_code == 204 and testcase["cmekID"] == self.cmek_id:
                 self.cmek_created = False

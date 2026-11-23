@@ -144,10 +144,6 @@ class DeleteAdminUsers(GetAdminUsers):
 
             result = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
                 organization, project, cluster, appService, user)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
-                    organization, project, cluster, appService, user)
             self.capellaAPI.cluster_ops_apis.app_service_admin_users = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/adminUsers"
             if self.validate_testcase(result, [202], testcase, failures):
@@ -182,12 +178,6 @@ class DeleteAdminUsers(GetAdminUsers):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.user_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.user_id,
-                    header)
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.user_id = self.create_app_service_admin_user_to_be_tested(
@@ -327,12 +317,6 @@ class DeleteAdminUsers(GetAdminUsers):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.user_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.user_id,
-                    **kwarg)
             if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.user_id = self.create_app_service_admin_user_to_be_tested(

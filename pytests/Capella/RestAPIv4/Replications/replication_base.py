@@ -38,9 +38,6 @@ class ReplicationBase(GetCluster):
 
     def api_call_with_retry(self, method, *args, **kwargs):
         result = method(*args, **kwargs)
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = method(*args, **kwargs)
         return result
 
     def payload_copy(self):

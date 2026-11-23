@@ -119,10 +119,6 @@ class DeleteNetworkPeers(GetNetworkPeers):
 
             result = self.capellaAPI.cluster_ops_apis.delete_network_peer(
                 organization, project, cluster, peer)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_network_peer(
-                    organization, project, cluster, peer)
             self.capellaAPI.cluster_ops_apis.vpc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers"
             self.validate_testcase(result, [204], testcase, failures)
@@ -146,12 +142,6 @@ class DeleteNetworkPeers(GetNetworkPeers):
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.peer_id,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_network_peer(
-                    self.organisation_id, self.project_id, self.cluster_id, 
-                    self.peer_id,
-                    header)
 
             self.validate_testcase(result, [204, 404], testcase, failures)
             if result.status_code == 204:
@@ -260,12 +250,6 @@ class DeleteNetworkPeers(GetNetworkPeers):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["peerID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_network_peer(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["peerID"],
-                    **kwarg)
             self.validate_testcase(result, [204, 404], testcase, failures)
             if result.status_code == 204:
                 self.wait_for_deployment()

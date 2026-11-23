@@ -126,10 +126,6 @@ class ListFreeTier(GetFreeTierBucket):
 
             result = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
                 organization, project, cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
-                    organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.free_tier_bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets/freeTier"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -153,11 +149,6 @@ class ListFreeTier(GetFreeTierBucket):
             result = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
                 self.organisation_id, self.project_id,
                 self.free_tier_cluster_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
-                    self.organisation_id, self.project_id,
-                    self.free_tier_cluster_id, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.free_tier_cluster_id)
         if failures:
@@ -247,10 +238,6 @@ class ListFreeTier(GetFreeTierBucket):
 
             result = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(self.organisation_id, self.project_id, self.free_tier_cluster_id,
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(self.organisation_id, self.project_id, self.free_tier_cluster_id,
-                    **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.free_tier_cluster_id)
 

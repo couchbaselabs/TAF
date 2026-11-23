@@ -164,11 +164,6 @@ class PostOnOffSchedule(GetAnalyticsClusters):
             result = self.columnarAPI.create_on_off_schedule(
                 organization, project, analyticsCluster,
                 self.expected_res["timezone"], self.expected_res["days"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.create_on_off_schedule(
-                    organization, project, analyticsCluster,
-                    self.expected_res["timezone"], self.expected_res["days"])
             self.columnarAPI.schedule_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/operationalInsightsClusters/{}/onOffSchedule"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -203,12 +198,6 @@ class PostOnOffSchedule(GetAnalyticsClusters):
                 self.organisation_id, self.project_id,
                 self.analyticsCluster_id, self.expected_res["timezone"],
                 self.expected_res["days"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.create_on_off_schedule(
-                    self.organisation_id, self.project_id,
-                    self.analyticsCluster_id, self.expected_res["timezone"],
-                    self.expected_res["days"], header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)
@@ -318,13 +307,6 @@ class PostOnOffSchedule(GetAnalyticsClusters):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["analyticsClusterID"], self.expected_res["timezone"],
                 self.expected_res["days"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.create_on_off_schedule(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["analyticsClusterID"],
-                    self.expected_res["timezone"], self.expected_res["days"],
-                    **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)

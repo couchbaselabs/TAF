@@ -207,12 +207,6 @@ class ToggleAzureAutoExpansion(GetCluster):
                 org, proj, clus, self.expected_res["name"], "",
                 self.expected_res['support'],
                 self.update_service_group, False)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                    org, proj, clus, self.expected_res["name"], "",
-                    self.expected_res['support'],
-                    self.update_service_group, True)
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
             if self.validate_testcase(result, [204], testcase, failures):
@@ -240,13 +234,6 @@ class ToggleAzureAutoExpansion(GetCluster):
                 self.expected_res["name"], "",
                 self.expected_res['support'], self.update_service_group,
                 False, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["name"], "",
-                    self.expected_res['support'],
-                    self.update_service_group, False, header)
             if self.validate_testcase(result, [204], testcase, failures):
                 if not self.validate_auto_expansion(self.cluster_id):
                     self.log.warning("Result : {}".format(result.content))
@@ -340,13 +327,6 @@ class ToggleAzureAutoExpansion(GetCluster):
                 testcase["clusterID"], self.expected_res["name"], "",
                 self.expected_res['support'], self.update_service_group,
                 False, **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["name"], "",
-                    self.expected_res['support'], self.update_service_group,
-                    False, **kwarg)
 
             if self.validate_testcase(result, [204], testcase, failures):
                 if not self.validate_auto_expansion(self.cluster_id):

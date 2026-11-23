@@ -125,10 +125,6 @@ class GetAIWorkflow(AIWorkflowBase):
 
             result = self.capellaAPI.cluster_ops_apis.get_ai_workflow(
                 organization, project, cluster, workflow)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_ai_workflow(
-                    organization, project, cluster, workflow)
             self.capellaAPI.cluster_ops_apis.ai_workflow_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}" \
                 "/aiServices/workflows/{}"
@@ -153,11 +149,6 @@ class GetAIWorkflow(AIWorkflowBase):
             result = self.capellaAPI.cluster_ops_apis.get_ai_workflow(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.workflow_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_ai_workflow(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.workflow_id, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -261,11 +252,6 @@ class GetAIWorkflow(AIWorkflowBase):
             result = self.capellaAPI.cluster_ops_apis.get_ai_workflow(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["workflowID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_ai_workflow(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["workflowID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -411,10 +397,6 @@ class DeleteAIWorkflow(AIWorkflowBase):
 
             result = self.capellaAPI.cluster_ops_apis.delete_ai_workflow(
                 organization, project, cluster, workflow)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_ai_workflow(
-                    organization, project, cluster, workflow)
             self.capellaAPI.cluster_ops_apis.ai_workflow_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}" \
                 "/aiServices/workflows/{}"
@@ -423,11 +405,6 @@ class DeleteAIWorkflow(AIWorkflowBase):
                 res = self.capellaAPI.cluster_ops_apis.create_ai_workflow(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.create_ai_workflow(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_res)
                 if res.status_code == 201:
                     self.workflow_id = res.json()["id"]
 
@@ -449,21 +426,11 @@ class DeleteAIWorkflow(AIWorkflowBase):
             result = self.capellaAPI.cluster_ops_apis.delete_ai_workflow(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.workflow_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_ai_workflow(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.workflow_id, header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful, recreating workflow.")
                 res = self.capellaAPI.cluster_ops_apis.create_ai_workflow(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.create_ai_workflow(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_res)
                 if res.status_code == 201:
                     self.workflow_id = res.json()["id"]
 
@@ -568,21 +535,11 @@ class DeleteAIWorkflow(AIWorkflowBase):
             result = self.capellaAPI.cluster_ops_apis.delete_ai_workflow(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["workflowID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_ai_workflow(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["workflowID"], **kwarg)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful, recreating workflow.")
                 res = self.capellaAPI.cluster_ops_apis.create_ai_workflow(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.create_ai_workflow(
-                        self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_res)
                 if res.status_code == 201:
                     self.workflow_id = res.json()["id"]
 

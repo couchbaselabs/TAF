@@ -15,11 +15,6 @@ class PostActivationStatus(GetAppEndpoints):
         result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id, self.appEndpointName)
-        if result.status_code == 429:
-            self.handle_rate_limit(int(result.headers["Retry-After"]))
-            result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id, self.appEndpointName)
         if result.status_code != 202:
             self.log.error(result.content)
             self.tearDown()
@@ -150,11 +145,6 @@ class PostActivationStatus(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
                 organization, project, cluster, appService, appEndpointName)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
-                    organization, project, cluster, appService,
-                    appEndpointName)
             self.capellaAPI.cluster_ops_apis.app_endpoint_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints/{}/activationStatus"
@@ -180,12 +170,6 @@ class PostActivationStatus(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.app_service_id, self.appEndpointName,
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    header)
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:
@@ -322,13 +306,6 @@ class PostActivationStatus(GetAppEndpoints):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["appEndpointNameID"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], testcase["appServiceID"],
-                    testcase["appEndpointNameID"],
-                    **kwarg)
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:

@@ -73,10 +73,6 @@ class GetOrganization(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_organization_info(
                 self.organisation_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                    self.organisation_id)
             self.capellaAPI.org_ops_apis.organization_endpoint = \
                 "/v4/organizations"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -100,10 +96,6 @@ class GetOrganization(APIBase):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.fetch_organization_info(
                 self.organisation_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                    self.organisation_id, header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.organisation_id)
 
@@ -168,10 +160,6 @@ class GetOrganization(APIBase):
 
             result = self.capellaAPI.org_ops_apis.fetch_organization_info(
                 testcase["organizationID"], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                    testcase["organizationID"], **kwarg)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.organisation_id)
 

@@ -121,12 +121,6 @@ class PutFreeTier(GetFreeTierBucket):
             result = self.capellaAPI.cluster_ops_apis.update_free_tier_bucket(
                 organization, project, cluster, bucket,
                 self.expected_res["memoryAllocationInMb"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_free_tier_bucket(
-                            organization, project, cluster, bucket,
-                            self.expected_res["memoryAllocationInMb"]))
             self.capellaAPI.cluster_ops_apis.free_tier_bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets/freeTier"
             self.validate_testcase(result, [204], testcase, failures)
@@ -149,13 +143,6 @@ class PutFreeTier(GetFreeTierBucket):
                 self.organisation_id, self.project_id,
                 self.free_tier_cluster_id, self.bucket_id,
                 self.expected_res["memoryAllocationInMb"], header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_free_tier_bucket(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, self.bucket_id,
-                            self.expected_res["memoryAllocationInMb"], header))
             self.validate_testcase(result, [204], testcase, failures)
         if failures:
             for fail in failures:
@@ -281,12 +268,6 @@ class PutFreeTier(GetFreeTierBucket):
                 self.bucket_id,
                 self.expected_res["memoryAllocationInMb"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_free_tier_bucket(self.organisation_id, self.project_id, self.free_tier_cluster_id, 
-                    self.bucket_id,
-                    self.expected_res["memoryAllocationInMb"],
-                    **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -370,13 +351,6 @@ class PutFreeTier(GetFreeTierBucket):
                 self.organisation_id, self.project_id,
                 self.free_tier_cluster_id, self.bucket_id,
                 testcase["memoryAllocationInMb"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          update_free_tier_bucket(
-                            self.organisation_id, self.project_id,
-                            self.free_tier_cluster_id, self.bucket_id,
-                            testcase["memoryAllocationInMb"]))
             self.validate_testcase(result, [204], testcase, failures,
                                    payloadTest=True)
         if failures:

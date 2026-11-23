@@ -137,11 +137,6 @@ class PutCors(GetImportFilter):
             result = self.capellaAPI.cluster_ops_apis.update_cors(
                 organization, project, cluster, appService, appEndpointName,
                 self.expected_res["cors"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cors(
-                    organization, project, cluster, appService, appEndpointName,
-                    self.expected_res["cors"])
             self.capellaAPI.cluster_ops_apis.cors_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/cors"
             self.validate_testcase(result, [204], testcase, failures)
@@ -167,13 +162,6 @@ class PutCors(GetImportFilter):
                 self.app_service_id, self.appEndpointName,
                 self.expected_res["cors"],
                 header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cors(
-                    self.organisation_id, self.project_id, self.cluster_id, 
-                    self.app_service_id, self.appEndpointName,
-                    self.expected_res["cors"],
-                    header)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -307,13 +295,6 @@ class PutCors(GetImportFilter):
                 self.app_service_id, self.appEndpointName,
                 self.expected_res["cors"],
                 **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cors(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    self.expected_res["cors"],
-                    **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
@@ -349,12 +330,6 @@ class PutCors(GetImportFilter):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 self.expected_res["cors"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_cors(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName,
-                    self.expected_res["cors"])
             self.validate_testcase(result, [204], testcase, failures)
 
         if failures:

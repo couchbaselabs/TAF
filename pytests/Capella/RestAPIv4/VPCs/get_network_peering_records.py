@@ -13,7 +13,7 @@ class GetNetworkPeers(GetCluster):
         GetCluster.setUp(self, nomenclature)
         self.provider_type = str(self.input.param("providerType", "aws"))
         if self.provider_type == "azure":
-            self.skipTest("!!!SKIPPING AZURE VNET PEERING TESTS!!!")
+            self.fail("!!!SKIPPING AZURE VNET PEERING TESTS!!!")
 
         vpc_config = {
             "providerId": None
@@ -194,11 +194,6 @@ class GetNetworkPeers(GetCluster):
             result = (self.capellaAPI.cluster_ops_apis.
                       fetch_network_peer_record_info(
                         organization, project, cluster, peer))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_network_peer_record_info(
-                            organization, project, cluster, peer))
             self.capellaAPI.cluster_ops_apis.vpc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers"
             self.validate_testcase(result, [200], testcase, failures, True,
@@ -223,12 +218,6 @@ class GetNetworkPeers(GetCluster):
                       fetch_network_peer_record_info(
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.peer_id, header))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_network_peer_record_info(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.peer_id,
-                    header)
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.peer_id)
 
@@ -334,13 +323,6 @@ class GetNetworkPeers(GetCluster):
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], testcase["peerID"],
                         **kwarg))
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = (self.capellaAPI.cluster_ops_apis.
-                          fetch_network_peer_record_info(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["peerID"],
-                            **kwarg))
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.peer_id)
 

@@ -46,12 +46,6 @@ class GetAppService(GetCluster):
             self.organisation_id, self.project_id, self.cluster_id,
             "bucketForAppEndpoint", "couchbase", "magma", 1024, "seqno",
             "none", 1, False, 0)
-        if res.status_code == 429:
-            self.handle_rate_limit(res.headers["Retry-After"])
-            res = self.capellaAPI.cluster_ops_apis.create_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                "bucketForAppEndpoint", "couchbase", "magma", 1024, "seqno",
-                "none", 1, False, 0)
         if res.status_code != 201:
             try:
                 if res.json()["code"] == 6001 and res.json()["hint"] == \

@@ -61,9 +61,6 @@ class ListCloudAccounts(APIBase):
                 organization = testcase["invalid_organizationId"]
 
             result = self.capellaAPI.org_ops_apis.list_cloud_accounts(organization)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_cloud_accounts(organization)
             self.capellaAPI.org_ops_apis.cloud_accounts_endpoint = \
                 "/v4/organizations/{}/cloudAccounts"
             self.validate_testcase(result, [200], testcase, failures)
@@ -84,10 +81,6 @@ class ListCloudAccounts(APIBase):
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.list_cloud_accounts(
                 self.organisation_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_cloud_accounts(
-                    self.organisation_id, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -128,10 +121,6 @@ class ListCloudAccounts(APIBase):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.org_ops_apis.list_cloud_accounts(
                 testcase["organizationID"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.list_cloud_accounts(
-                    testcase["organizationID"])
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:

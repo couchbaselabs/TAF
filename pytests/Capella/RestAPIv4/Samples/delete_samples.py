@@ -112,10 +112,6 @@ class DeleteSample(GetSample):
 
             result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                 org, proj, clus, samp)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                    org, proj, clus, samp)
             self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
             self.validate_testcase(result, [204, 6008], testcase, failures)
@@ -138,11 +134,6 @@ class DeleteSample(GetSample):
             result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.sample_bucket_id, header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.sample_bucket_id, header)
             self.validate_testcase(result, [204, 6008], testcase, failures)
 
         if failures:
@@ -264,11 +255,6 @@ class DeleteSample(GetSample):
             result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["sampleBucketID"], kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.sample_bucket_id, kwarg)
             self.validate_testcase(result, [204, 6008], testcase, failures)
 
         if failures:
