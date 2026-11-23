@@ -5,6 +5,20 @@
 # recently was) actively using never gets reclaimed as "abandoned".
 touch "$WORKSPACE/.executor_lock" 2>/dev/null
 
+# Capella V4 REST API confs (every module Capella.RestAPIv4.*) run on the
+# lightweight executor: no install/clones/pip/maven, pinned capellaAPI,
+# offline gradle, hard suite timeout. V4_LIGHT_EXECUTOR=false opts out,
+# =true forces it.
+if [ "${V4_LIGHT_EXECUTOR:-auto}" != "false" ] && [ -n "${confFile:-}" ] \
+    && [ -f "${confFile}" ] && [ -f scripts/executor_script_v4_api.sh ]; then
+  v4_modules=$(grep -E '^[A-Za-z_][A-Za-z0-9_.]*:[[:space:]]*$' "$confFile")
+  if [ "${V4_LIGHT_EXECUTOR:-auto}" = "true" ] || { [ -n "$v4_modules" ] \
+      && ! echo "$v4_modules" | grep -qv '^Capella\.RestAPIv4\.'; }; then
+    echo "$confFile is a V4 API conf: running scripts/executor_script_v4_api.sh"
+    exec bash scripts/executor_script_v4_api.sh
+  fi
+fi
+
 support_ver="6.5"
 small_ver=${version_number:0:3}
 py_executable=python3
