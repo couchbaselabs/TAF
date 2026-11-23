@@ -1250,9 +1250,9 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 or self.input.param("rebl_services", "kv").split("-")
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
             for service in self.rebl_services:
-                # Set here rather than in Step 11, which a fixed topology
-                # skips but Step 13 below still reads it from. Graceful
-                # failover exists only for the data service.
+                # Set here, not in Step 11: a fixed topology skips Step 11,
+                # but the full and delta recovery steps below read it.
+                # ns_server allows graceful failover only for kv nodes.
                 graceful = service == "kv"
 
                 # Steps 5 - 12 add or remove nodes. A fixed topology
@@ -1403,6 +1403,10 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                     for node in self.chosen:
                         failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
                         node.id = failover_node.id
+                        failover_type = "graceful" if graceful else "hard"
+                        self.log.info(f"Failing over {failover_node.id} "
+                                      f"(services: {failover_node.services}) "
+                                      f"with {failover_type} failover")
                         success_failed_over = self.rest.fail_over(failover_node.id,
                                                                   graceful=graceful)
                         self.success_failed_over = self.success_failed_over and success_failed_over
@@ -1528,6 +1532,10 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                     failover_node = self.cluster_util.find_node_info(
                         self.cluster.master, node)
                     node.id = failover_node.id
+                    failover_type = "graceful" if graceful else "hard"
+                    self.log.info(f"Failing over {failover_node.id} "
+                                  f"(services: {failover_node.services}) "
+                                  f"with {failover_type} failover")
                     success_failed_over = self.rest.fail_over(
                         failover_node.id, graceful=graceful)
                     self.success_failed_over = self.success_failed_over and success_failed_over
@@ -1622,8 +1630,12 @@ class Murphy(BaseTestCase, OPD, WorkloadTemplateMixin):
                 for node in self.chosen:
                     failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
                     node.id = failover_node.id
+                    failover_type = "graceful" if graceful else "hard"
+                    self.log.info(f"Failing over {failover_node.id} "
+                                  f"(services: {failover_node.services}) "
+                                  f"with {failover_type} failover")
                     success_failed_over = self.rest.fail_over(failover_node.id,
-                                                                   graceful=True)
+                                                                   graceful=graceful)
                     self.success_failed_over = self.success_failed_over and success_failed_over
                     self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                     self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
