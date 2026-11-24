@@ -482,6 +482,13 @@ class CRLUtils:
         return cert.public_bytes(serialization.Encoding.PEM)
 
     @staticmethod
+    def chain_to_pem(cert, chain=()):
+        """`cert` followed by each cert in `chain` -- leaf first, the order
+        a TLS peer sends them and the inbox chain files expect."""
+        return b"".join(c.public_bytes(serialization.Encoding.PEM)
+                        for c in (cert, *chain))
+
+    @staticmethod
     def cert_to_der(cert):
         return cert.public_bytes(serialization.Encoding.DER)
 
@@ -1211,7 +1218,7 @@ class CRLUtils:
         CA-specific subfolder, shared by deploy_node_cert/deploy_client_cert."""
         return f"{CRLUtils._var_lib_dir(shell)}{x509main.CHAINFILEPATH}"
 
-    def deploy_node_cert(self, rest, server, cert, key):
+    def deploy_node_cert(self, rest, server, cert, key, chain=()):
         """
         Write cert/key (in-memory cryptography objects, e.g. from
         generate_leaf_cert) into server's inbox as the node certificate
@@ -1224,13 +1231,16 @@ class CRLUtils:
 
         `rest` must already be bound to `server` (mirrors
         trust_ca_on_cluster's rest/server split).
+
+        `chain`: intermediate CA certs written after the leaf in chain.pem,
+        leaf-first, for a node cert issued below the trusted root.
         """
         shell = RemoteMachineShellConnection(server)
         try:
             inbox_dir = self._inbox_dir(shell)
             shell.execute_command(f"mkdir -p {shlex.quote(inbox_dir)}")
             for filename, pem_bytes in (
-                (x509main.CHAINCERTFILE, self.cert_to_pem(cert)),
+                (x509main.CHAINCERTFILE, self.chain_to_pem(cert, chain)),
                 (x509main.NODECAKEYFILE, self.key_to_pem(key)),
             ):
                 with tempfile.NamedTemporaryFile(
@@ -1253,7 +1263,7 @@ class CRLUtils:
                 f"Failed to reload node certificate on {server.ip}: {content}"
             )
 
-    def deploy_client_cert(self, server, cert, key):
+    def deploy_client_cert(self, server, cert, key, chain=()):
         """
         Write cert/key into server's inbox as the node-to-node *client*
         certificate (client_chain.pem/client_pkey.key) and activate it via
@@ -1264,13 +1274,15 @@ class CRLUtils:
         cert's reload_certificate()), so this calls it directly, matching
         enable_client_cert_auth/disable_client_cert_auth's existing
         raw-requests style in this module.
+
+        `chain`: as for deploy_node_cert.
         """
         shell = RemoteMachineShellConnection(server)
         try:
             inbox_dir = self._inbox_dir(shell)
             shell.execute_command(f"mkdir -p {shlex.quote(inbox_dir)}")
             for filename, pem_bytes in (
-                ("client_chain.pem", self.cert_to_pem(cert)),
+                ("client_chain.pem", self.chain_to_pem(cert, chain)),
                 ("client_pkey.key", self.key_to_pem(key)),
             ):
                 with tempfile.NamedTemporaryFile(

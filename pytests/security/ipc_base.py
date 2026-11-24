@@ -65,6 +65,7 @@ class IPCBase(ClusterSetup):
     KV_SSL_PORT = 11207
 
     def setUp(self):
+        self._self_heal_stuck_n2n_strict()
         self._self_heal_stuck_client_cert_auth()
         super().setUp()
 
@@ -78,6 +79,10 @@ class IPCBase(ClusterSetup):
         # RBAC users created during a test -- cleaned up in tearDown. Trusted
         # CAs and temp PEM files are tracked on self.crl_utils itself.
         self._rbac_users = []
+        # Node-to-node encryption a test turned on (None when off), and the
+        # auto-failover setting held back while 'strict' closes 8091.
+        self._n2n_level = None
+        self._n2n_prior_af = None
         # Rotation settings a test changed, as {name: value at setUp}.
         self._rotation_restore = {}
 
@@ -96,7 +101,15 @@ class IPCBase(ClusterSetup):
         self._trust_ca_on_cluster(self.ca_cert)
 
     def tearDown(self):
-        # clientCertAuth first: left 'mandatory', it blocks the HTTPS REST
+        # Node-to-node encryption before anything else: left at 'strict' it
+        # closes the plain-HTTP 8091 every restore below goes through.
+        if getattr(self, "_n2n_level", None):
+            try:
+                self.set_n2n_encryption(
+                    self.cluster.servers[:self.nodes_init], "off")
+            except Exception as exc:
+                self.log.warning(f"Node-to-node encryption off error: {exc}")
+        # clientCertAuth next: left 'mandatory', it blocks the HTTPS REST
         # call that restores the setting.
         try:
             self._disable_client_cert_auth()
@@ -342,12 +355,17 @@ class IPCBase(ClusterSetup):
         return cert_path, key_path
 
     def generate_client_cert(self, cn, ca_cert=None, ca_key=None,
-                             **leaf_kwargs):
+                             chain=(), **leaf_kwargs):
         """
         Any client certificate, written to temp PEM files tracked for
         teardown. Issued by the cluster's trusted CA unless another is
         given; `leaf_kwargs` go to CRLUtils.generate_leaf_cert (SANs, EKU,
         validity window, extra_extension).
+
+        `chain`: intermediate CA certs written after the leaf, so the
+        client presents leaf + intermediates the way a certificate issued
+        below a corporate root is actually sent. Leave empty to present
+        the leaf alone.
 
         Returns:
             (cert_path, key_path, serial)
@@ -357,7 +375,8 @@ class IPCBase(ClusterSetup):
             ca_key if ca_key is not None else self.ca_key,
             cn, **leaf_kwargs,
         )
-        cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+        cert_path = self._write_temp_pem(
+            self.crl_utils.chain_to_pem(cert, chain))
         key_path = self._write_temp_pem(self.crl_utils.key_to_pem(key))
         return cert_path, key_path, serial
 
@@ -637,21 +656,113 @@ class IPCBase(ClusterSetup):
         self.assert_status(resp, 200, "C-21 extractUserFromCert")
         return resp.json()
 
+    # -- Service TLS ports ----------------------------------------------------
+
+    # nodeServices key -> (service, path on the service's own TLS port,
+    # path through ns_server's /_p/ proxy on 18091). Each path needs an
+    # authenticated caller. Analytics has its own suite (ipc_analytics_*)
+    # and 18091 itself is covered throughout this one.
+    SERVICE_PROBES = {
+        "n1qlSSL": ("query", "/admin/vitals", "/_p/query/admin/vitals"),
+        "indexHttps": ("index", "/api/v1/stats", "/_p/index/api/v1/stats"),
+        "ftsSSL": ("search", "/api/index", "/_p/fts/api/index"),
+        "eventingSSL": ("eventing", "/api/v1/status",
+                        "/_p/event/api/v1/status"),
+        "backupHttps": ("backup", "/api/v1/cluster/self",
+                        "/_p/backup/api/v1/cluster/self"),
+    }
+
+    def node_tls_ports(self, server):
+        """
+        {nodeServices key: port} of `server`'s own services that have a
+        SERVICE_PROBES entry, read from its /pools/default/nodeServices.
+        """
+        admin = self._auth_of(server)
+        resp = requests.get(
+            f"http://{server.ip}:8091/pools/default/nodeServices",
+            auth=admin, timeout=30)
+        self.assert_status(resp, 200, f"nodeServices on {server.ip}")
+        entry = next((n for n in resp.json().get("nodesExt", [])
+                      if n.get("thisNode")), None)
+        if entry is None:
+            self.fail(f"nodeServices on {server.ip} has no thisNode entry")
+        return {key: port for key, port in entry.get("services", {}).items()
+                if key in self.SERVICE_PROBES}
+
+    def service_probe_targets(self, servers):
+        """
+        Every (label, port, path) to probe on `servers`: each service's own
+        TLS port, plus ns_server's /_p/ proxy path on 18091 once per
+        service.
+
+        Calibrated with admin credentials first, so a result in the IPC
+        checks reflects authentication and not a wrong path. A direct path
+        the admin cannot read is a broken probe and fails the test. A
+        proxy path the admin gets 404 on is a proxy this build does not
+        have, logged and dropped.
+        """
+        targets, proxied = [], set()
+        for server in servers:
+            for key, port in sorted(self.node_tls_ports(server).items()):
+                service, direct, proxy = self.SERVICE_PROBES[key]
+                candidates = [(f"{service} :{port}{direct}", server, port,
+                               direct)]
+                if service not in proxied:
+                    proxied.add(service)
+                    candidates.append((f"{service} proxy :18091{proxy}",
+                                       server, self.MGMT_SSL_PORT, proxy))
+                for label, srv, prt, path in candidates:
+                    resp = self._service_request(srv, prt, path,
+                                                 auth=self._auth_of(srv))
+                    if resp.status_code == 404 and prt == self.MGMT_SSL_PORT:
+                        self.log.info(f"No /_p/ proxy for {service} on "
+                                      f"this build: {label}")
+                        continue
+                    self.assert_status(resp, (200,),
+                                       f"admin calibration {label} on "
+                                       f"{srv.ip}")
+                    targets.append((f"[{srv.ip}] {label}", srv, prt, path))
+        return targets
+
+    def _service_request(self, server, port, path, cert=None, auth=None):
+        """One GET to https://server:port/path, with the certificate pair
+        `cert` and/or Basic `auth` -- either may be None."""
+        return self._retry_on_timeout(
+            requests.get, f"https://{server.ip}:{port}{path}",
+            cert=cert, auth=auth, verify=False, timeout=30,
+            headers={"Connection": "close"})
+
     # -- Cluster security and restart fixtures -------------------------------
 
     def set_n2n_encryption(self, servers, level):
         """
-        Node-to-node encryption to `level` ('control' or 'all'), or 'off'.
-        Same call order as CRLBase: auto-failover off while the inter-node
-        listeners bounce, and 'control' before disabling.
+        Node-to-node encryption to `level` ('control', 'all' or 'strict'),
+        or 'off'. Same call order as CRLBase: auto-failover off while the
+        inter-node listeners bounce, and 'control' before disabling.
+
+        'strict' closes plain HTTP 8091 to remote callers, which is all the
+        framework's REST and IPCUtils speak. couchbase-cli runs against
+        localhost over SSH so it is unaffected, but the auto-failover REST
+        around it is not: entering strict, the prior setting is kept in
+        self._n2n_prior_af instead of being restored, and leaving strict it
+        is restored from there once 8091 is open again.
         """
-        prior = self.rest.get_autofailover_settings()
-        self.rest.update_autofailover_settings(False, prior.timeout)
+        # Recorded before the CLI runs, so a failure part-way through still
+        # leaves tearDown knowing n2n may be on.
+        if level != "off":
+            self._n2n_level = level
+        if self._n2n_prior_af is not None:
+            prior = self._n2n_prior_af
+        else:
+            prior = self.rest.get_autofailover_settings()
+            self.rest.update_autofailover_settings(False, prior.timeout)
         try:
             for server in servers:
                 shell = RemoteMachineShellConnection(server)
                 try:
-                    cb_cli = CbCli(shell, no_ssl_verify=True)
+                    cb_cli = CbCli(shell, username=server.rest_username,
+                                   password=server.rest_password,
+                                   no_ssl_verify=True)
                     if level == "off":
                         cb_cli.set_n2n_encryption_level(level="control")
                         cb_cli.disable_n2n_encryption()
@@ -660,10 +771,16 @@ class IPCBase(ClusterSetup):
                         cb_cli.set_n2n_encryption_level(level=level)
                 finally:
                     shell.disconnect()
+            if level == "off":
+                self._n2n_level = None
         finally:
-            if prior.enabled:
-                self.rest.update_autofailover_settings(
-                    True, prior.timeout, maxCount=prior.maxCount)
+            if self._n2n_level == "strict":
+                self._n2n_prior_af = prior
+            else:
+                self._n2n_prior_af = None
+                if prior.enabled:
+                    self.rest.update_autofailover_settings(
+                        True, prior.timeout, maxCount=prior.maxCount)
 
     def wait_for_https(self, servers, cert_path, key_path, timeout=120):
         """Wait until every node answers an authenticated mTLS request --
@@ -773,11 +890,15 @@ class IPCBase(ClusterSetup):
 
     SPARE_PASSWORD = "SparePass@1234"
 
-    def deploy_test_node_certs(self, server, ca_cert, ca_key, crl_utils=None):
+    def deploy_test_node_certs(self, server, ca_cert, ca_key, crl_utils=None,
+                               chain=()):
         """
         Give `server` a node certificate and an internal client certificate
         issued by `ca_cert`. The client certificate is what a node presents
         when it adds or joins another under client certificate auth.
+
+        `chain`: intermediate CA certs between `ca_cert` and the trusted
+        root, deployed after each leaf so peers can build the path.
         """
         utils = crl_utils or self.crl_utils
         node_cert, node_key, _ = utils.generate_leaf_cert(
@@ -785,12 +906,13 @@ class IPCBase(ClusterSetup):
             extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH,
                                 ExtendedKeyUsageOID.CLIENT_AUTH])
         utils.deploy_node_cert(RestConnection(server), server, node_cert,
-                               node_key)
+                               node_key, chain=chain)
         client_cert, client_key, _ = utils.generate_leaf_cert(
             ca_cert, ca_key, cn=server.ip,
             email_names=[f"{server.ip.replace('.', '-')}"
                          f"@{self.INTERNAL_CERT_DOMAIN}"])
-        utils.deploy_client_cert(server, client_cert, client_key)
+        utils.deploy_client_cert(server, client_cert, client_key,
+                                 chain=chain)
 
     def prepare_joinee(self, server, ipc, trusted_cas, issuer=None,
                        initialize=True, cca="mandatory"):
@@ -799,7 +921,8 @@ class IPCBase(ClusterSetup):
         optionally initialised as its own single-node cluster with its own
         admin password, trusting `trusted_cas`, with node and client certs
         from `issuer` (default: the first CA), clientCertAuth `cca` and IPC
-        `ipc`.
+        `ipc`. `issuer` may carry a third element, the intermediate chain
+        to deploy after each leaf.
 
         An initialised joinee matters: an uninitialised node accepts any
         caller, so it would hide what IPC does to the joining handshake.
@@ -824,7 +947,9 @@ class IPCBase(ClusterSetup):
                                             ca_cert)
         issuer = issuer or trusted_cas[0]
         self.deploy_test_node_certs(joinee, issuer[0], issuer[1],
-                                    crl_utils=spare_utils)
+                                    crl_utils=spare_utils,
+                                    chain=issuer[2] if len(issuer) > 2
+                                    else ())
         if initialize:
             IPCUtils.set_client_cert_auth(
                 joinee, cca, self.DEFAULT_CCA_PREFIXES,
@@ -942,6 +1067,42 @@ class IPCBase(ClusterSetup):
             )
 
     # -- Self-healing preconditions ------------------------------------------
+
+    def _self_heal_stuck_n2n_strict(self):
+        """
+        Turn node-to-node encryption off on any node whose 8091 refuses
+        connections -- what an aborted run left at 'strict' looks like.
+
+        Under strict the framework's whole setUp, which talks plain HTTP to
+        8091, fails before the suite can report anything. couchbase-cli
+        over SSH against localhost is not affected, so it is used here.
+        Same constraints as _self_heal_stuck_client_cert_auth: runs before
+        super().setUp(), uses print(), best-effort, never raises.
+        """
+        for server in TestInputSingleton.input.servers:
+            try:
+                requests.get(f"http://{server.ip}:8091/pools", timeout=10)
+                continue
+            except requests.exceptions.ConnectionError:
+                pass
+            except requests.exceptions.RequestException:
+                continue
+            print(f"[IPCBase] {server.ip} refuses 8091 -- assuming a "
+                  f"previous run left n2n encryption at 'strict'; turning "
+                  f"it off over SSH before setUp().")
+            try:
+                shell = RemoteMachineShellConnection(server)
+                try:
+                    cb_cli = CbCli(shell, username=server.rest_username,
+                                   password=server.rest_password,
+                                   no_ssl_verify=True)
+                    cb_cli.set_n2n_encryption_level(level="control")
+                    cb_cli.disable_n2n_encryption()
+                finally:
+                    shell.disconnect()
+            except Exception as exc:
+                print(f"[IPCBase] n2n strict self-heal on {server.ip} "
+                      f"failed: {exc}")
 
     def _self_heal_stuck_client_cert_auth(self):
         """

@@ -725,6 +725,10 @@ class IPCTest(IPCBase):
                still connects.
             5. An internal cert whose EKU lacks clientAuth fails at TLS in
                both states.
+            6. An internal cert issued by an intermediate CA, with only the
+               root trusted and leaf + intermediate presented: the bypass
+               reproduces with IPC off and is refused with IPC on. The same
+               leaf without its intermediate fails at TLS in both states.
         """
         domain = self.INTERNAL_CERT_DOMAIN
         self._set_client_cert_auth_http("enable")
@@ -840,9 +844,118 @@ class IPCTest(IPCBase):
                 f"O-08 ipc={ipc}: internal cert without clientAuth EKU "
                 f"must fail at TLS")
 
+        self.log.info("Step 6: internal cert issued by an intermediate CA")
+        # The customer's CA was a corporate PKI, and those issue through
+        # intermediates: only the root is trusted, the client sends the
+        # intermediate with its leaf, and the server builds the path.
+        int_cert, int_key, _ = self.crl_utils.generate_intermediate_ca(
+            self.ca_cert, self.ca_key, "IPCTestIntermediate")
+        chained, chained_key, _ = self.generate_client_cert(
+            "ads-dashboard.example.com", ca_cert=int_cert, ca_key=int_key,
+            chain=[int_cert], email_names=internal)
+        unchained, unchained_key, _ = self.generate_client_cert(
+            "ads-dashboard.example.com", ca_cert=int_cert, ca_key=int_key,
+            email_names=internal)
+        for ipc in (False, True):
+            self.set_ipc_setting(ipc)
+            expected = ("", 401) if ipc else ("@internal", 200)
+            actual = self.probe_identity(chained, chained_key)
+            self.assertEqual(
+                actual, expected,
+                f"O-09 ipc={ipc}: internal cert via an intermediate "
+                f"(leaf + intermediate sent, root trusted): expected "
+                f"{expected}, got {actual}")
+            # Control: without the intermediate the server cannot build a
+            # path to the root, so O-09's result came from a validated
+            # chain and not from the leaf being accepted on its own.
+            self.assertEqual(
+                self.probe_identity(unchained, unchained_key)[0],
+                self.TLS_REJECT,
+                f"O-10 ipc={ipc}: leaf sent without its intermediate must "
+                f"fail at TLS")
+
         self.log.info(
             "Test passed: only the exact internal domain is internal, IPC "
-            "neutralises every variant, and validation precedes identity")
+            "neutralises every variant, including one issued through an "
+            "intermediate CA, and validation precedes identity")
+
+    def test_ipc_service_ports_and_proxy(self):
+        """
+        Enforcement on the other services' TLS ports and through ns_server's
+        /_p/ proxy, not just on 18091.
+
+        Those services learn who the caller is from ns_server, over cbauth;
+        the proxy forwards with the identity ns_server resolved. Either is
+        a way around a check that only held on 18091.
+
+        Steps:
+            1. Every query, index, search, eventing and backup TLS port the
+               cluster runs, plus each service's /_p/ proxy path on 18091,
+               calibrated with admin credentials.
+            2. IPC on: the internal certificate alone is refused with 401
+               everywhere. 403 is a failure here -- it means an identity was
+               assigned and only lacked a permission.
+            3. IPC off: the same certificate is accepted everywhere, so the
+               bypass reproduces per service and step 2 is not vacuous.
+            4. IPC on: an ordinary prefix-mapped certificate (CN -> a
+               ro_admin user) still authenticates everywhere.
+            5. No certificate and no credentials is refused everywhere.
+        """
+        nodes = self.cluster.servers[:self.nodes_init]
+        self._set_client_cert_auth_http("enable")
+        internal = self.generate_internal_client_cert(self.ca_cert,
+                                                      self.ca_key)
+        user, _ = self._create_rbac_test_user("ipcqsvcuser", "ro_admin")
+        user_cert = self.generate_client_cert(user)[:2]
+
+        self.log.info("Step 1: service ports and proxy paths")
+        targets = self.service_probe_targets(nodes)
+        self.assertTrue(targets, "No query/index/search/eventing/backup "
+                                 "service on the cluster -- run with a "
+                                 "services_init that includes them")
+        self.log.info(f"Q targets: {[t[0] for t in targets]}")
+
+        def sweep(cert, auth=None):
+            out = {}
+            for label, server, port, path in targets:
+                try:
+                    out[label] = self._service_request(
+                        server, port, path, cert=cert,
+                        auth=auth).status_code
+                except (requests.exceptions.SSLError,
+                        requests.exceptions.ConnectionError):
+                    out[label] = self.TLS_REJECT
+            return out
+
+        def mismatches(result, allowed):
+            return {k: v for k, v in result.items() if v not in allowed}
+
+        self.log.info("Step 2: IPC on, internal certificate alone")
+        self.set_ipc_setting(True)
+        bad = mismatches(sweep(internal), (401,))
+        self.assertFalse(bad, f"Q-01 internal cert alone with IPC on must "
+                              f"be 401 everywhere: {bad}")
+
+        self.log.info("Step 3: IPC off, same certificate")
+        self.set_ipc_setting(False)
+        bad = mismatches(sweep(internal), (200,))
+        self.assertFalse(bad, f"Q-02 internal cert alone with IPC off must "
+                              f"be accepted everywhere: {bad}")
+
+        self.log.info("Step 4: IPC on, prefix-mapped certificate")
+        self.set_ipc_setting(True)
+        bad = mismatches(sweep(user_cert), (200, 403, 404))
+        self.assertFalse(bad, f"Q-03 prefix-mapped cert for {user} must "
+                              f"still authenticate with IPC on: {bad}")
+
+        self.log.info("Step 5: no certificate, no credentials")
+        bad = mismatches(sweep(None), (401, 403))
+        self.assertFalse(bad, f"Q-04 unauthenticated request must be "
+                              f"refused everywhere: {bad}")
+
+        self.log.info(
+            "Test passed: IPC holds on every service TLS port and through "
+            "the ns_server proxy, without affecting prefix-mapped certs")
 
     def test_ipc_prefix_mapped_cert_regression_and_no_narrowing(self):
         """
@@ -1173,6 +1286,12 @@ class IPCTest(IPCBase):
                the cluster trusts that CA the same addition succeeds.
             2. newNodeHostname is rejected by addNode as an unknown
                parameter, and accepted by a node-initiated join.
+            3. Every node certificate and internal client certificate
+               issued by an intermediate CA, with only the root trusted on
+               both sides. Joinee IPC off: a certificate-only addition
+               succeeds, so the chained internal identity is accepted at
+               all. Joinee IPC on: a certificate-only addition is refused
+               and one with the joinee's admin credentials succeeds.
         """
         master = self.cluster.master
         spare, joiner = self.cluster.servers[1], self.cluster.servers[2]
@@ -1214,14 +1333,46 @@ class IPCTest(IPCBase):
                 joiner, master.ip, user=admin, password=admin_pw,
                 client_cert_auth=True, new_node_hostname=joiner.ip)
             self.assert_status(resp, 200, "E-15 doJoinCluster")
+
+            self.log.info("Step 3: certificates issued by an intermediate")
+            # Ejected after E-12; prepare_joinee hard-resets it if the
+            # reset has not finished.
+            int_cert, int_key, _ = self.crl_utils.generate_intermediate_ca(
+                self.ca_cert, self.ca_key, "IPCNodeIntermediate")
+            via_int = (int_cert, int_key, [int_cert])
+            self.deploy_test_node_certs(master, int_cert, int_key,
+                                        chain=[int_cert])
+            otp = self.otp_of(spare)
+            self.prepare_joinee(spare, ipc=False, trusted_cas=[ca1],
+                                issuer=via_int)
+            resp = IPCUtils.add_node(master, spare.ip, client_cert_auth=True)
+            self.assert_status(resp, 200,
+                               "E-19 chained cert-only add, IPC off")
+            self.assert_status(IPCUtils.eject_node(master, otp), 200,
+                               "eject after E-19 IPC off")
+            self.wait_until_uninitialized(spare)
+            self.prepare_joinee(spare, ipc=True, trusted_cas=[ca1],
+                                issuer=via_int)
+            resp = IPCUtils.add_node(master, spare.ip, client_cert_auth=True)
+            self.assert_status(resp, 400,
+                               "E-19 chained cert-only add, IPC on")
+            self.assertIn("supply a username and password as well",
+                          resp.text, "E-19 message")
+            resp = IPCUtils.add_node(master, spare.ip, user=admin,
+                                     password=self.SPARE_PASSWORD,
+                                     client_cert_auth=True)
+            self.assert_status(resp, 200,
+                               "E-19 chained add with credentials")
+            self.rebalance_cluster()
+            self.assert_node_active(spare)
         finally:
             self.reset_spares([spare, joiner])
             self.crl_utils.regenerate_cluster_certificate_when_healthy(
                 self.rest, log=self.log)
 
         self.log.info(
-            "Test passed: CA trust and join parameters behave as designed "
-            "with IPC on")
+            "Test passed: CA trust, join parameters and intermediate-CA "
+            "chains behave as designed with IPC on")
 
     def test_ipc_internal_password_rotation_enforcement(self):
         """
@@ -1738,7 +1889,9 @@ class IPCTest(IPCBase):
         through process and cluster restarts, on every node.
 
         Steps:
-            1. Node-to-node encryption at 'control', then 'all', then off.
+            1. Node-to-node encryption at 'control', then 'all', then
+               'strict', then off. Strict closes plain HTTP 8091, so the
+               probes there are 18091 mTLS only.
             2. Minimum TLS version 1.3, then 1.2, then a restricted cipher
                list; the original settings are restored afterwards.
             3. ns_server and memcached on one node killed with SIGKILL;
@@ -1759,7 +1912,7 @@ class IPCTest(IPCBase):
 
         self.log.info("Step 1: node-to-node encryption levels")
         try:
-            for level in ("control", "all"):
+            for level in ("control", "all", "strict"):
                 self.set_n2n_encryption(nodes, level)
                 self.assert_enforced_everywhere(nodes, cert, key,
                                                 f"P-04 n2n {level}")
