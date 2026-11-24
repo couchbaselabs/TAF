@@ -34,29 +34,32 @@ class DeleteAnalyticsCloudSnapshotBackup(
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
+                # Unlike create/update/restore, delete looks up the resource
+                # by path before validating UUID format, so a malformed ID
+                # here is a plain route-miss 404, not a 400.
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": self.expected_invalid_uuid_error()
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex projectId",
                 "invalid_projectId": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": self.expected_invalid_uuid_error()
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex analyticsClusterId",
                 "invalid_analyticsClusterId": self.replace_last_character(
                     self.analyticsCluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": self.expected_invalid_uuid_error()
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex backupId",
                 "invalid_backupId": self.replace_last_character(
                     self.backup_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": self.expected_invalid_uuid_error()
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
