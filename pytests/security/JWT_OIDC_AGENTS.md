@@ -317,6 +317,7 @@ and is run through `conf/security/py-jwt_auth_test.conf`:
 | `test_jwt_nested_claim_paths` | P0 | Dot-notation extraction for subClaim, audClaim, and groupsClaim |
 | `test_jwt_mapping_rules_with_capture_groups` | P0 | subMaps regex capture substitution, e.g. `(.*)@example.com cb-\1` |
 | `test_jwt_custom_claims_validation` | P0 | customClaims validation for string pattern, number min/max, boolean const, and mandatory claims |
+| `test_kv_multiple_impersonate_frames_rejected` | P0 | MB-74588: KV request with two Impersonate / ImpersonateWithTokenAuthDataId frames (token registered via RegisterAuthToken) fails with Einval "Only one impersonate frame may be present"; checks single-frame behaviour, unchanged doc on rejected SET, and data-access audit effective user. Raw KV via `MemcachedClient.get/set(frame_extras=...)` + `mc_bin_client.encode_frame_info` |
 
 ---
 

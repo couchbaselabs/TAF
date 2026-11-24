@@ -1736,5 +1736,102 @@ class TestSiriusStallDetector(unittest.TestCase):
         self.assertEqual(1800, ended_at)
 
 
+class TestMcBinClientFrameExtras(unittest.TestCase):
+    """Tests for frame extras support in lib/mc_bin_client.py (MB-74588)"""
+
+    SEED = 0
+
+    def setUp(self):
+        import socket
+        sys.path.insert(0, os.path.join(PROJECT_ROOT, "py_constants"))
+        import mc_bin_client
+        import memcacheConstants
+        self.mc = mc_bin_client
+        self.const = memcacheConstants
+        self.client_sock, self.server_sock = socket.socketpair()
+        self.addCleanup(self.client_sock.close)
+        self.addCleanup(self.server_sock.close)
+
+    def _client(self):
+        """MemcachedClient on the socketpair, without opening a connection"""
+        import random
+        client = self.mc.MemcachedClient.__new__(self.mc.MemcachedClient)
+        client.s = self.client_sock
+        client.r = random.Random(self.SEED)
+        client.vbucket_count = 1024
+        client.error_map = None
+        client.collections_supported = False
+        client.host = "test"
+        return client
+
+    def _reply(self, opcode, status=0, body=b""):
+        """Queue the response to the client's first request"""
+        import random
+        import struct
+        opaque = random.Random(self.SEED).randint(0, 2 ** 32)
+        self.server_sock.sendall(struct.pack(self.const.RES_PKT_FMT, 0x81, opcode, 0, 0, 0,
+                                             status, len(body), opaque, 0) + body)
+
+    def test_encode_frame_info_short(self):
+        """id 4 + 3-byte payload packs into one header byte 0x43"""
+        self.assertEqual(bytes.fromhex("43") + b"bob",
+                         self.mc.encode_frame_info(self.const.FRAME_INFO_IMPERSONATE, "bob"))
+
+    def test_encode_token_frame(self):
+        """token frame is id 7, length 2, big-endian token id"""
+        import struct
+        frame = self.mc.encode_frame_info(
+            self.const.FRAME_INFO_IMPERSONATE_WITH_TOKEN_AUTH_DATA_ID, struct.pack(">H", 5))
+        self.assertEqual(bytes.fromhex("720005"), frame)
+
+    def test_encode_frame_info_escapes_length_and_id(self):
+        """lengths/ids >= 15 use the 0x0f / 0xf0 escape nibble plus an extra byte"""
+        user = "a" * 20
+        self.assertEqual(bytes([0x4F, 5]) + user.encode(), self.mc.encode_frame_info(4, user))
+        self.assertEqual(bytes([0xF0, 2]), self.mc.encode_frame_info(17))
+        self.assertEqual(bytes([0xFF, 1, 1]) + b"x" * 16, self.mc.encode_frame_info(16, b"x" * 16))
+        with self.assertRaises(ValueError):
+            self.mc.encode_frame_info(4, b"x" * 300)
+
+    def test_get_with_frames_uses_alt_encoding(self):
+        """frame_extras switch GET to magic 0x08 with 1-byte framing/key
+        lengths; the Einval reply is raised with its XError body"""
+        import struct
+        err = b'{"error":{"context":"Only one impersonate frame may be present"}}'
+        self._reply(self.const.CMD_GET, self.const.ERR_EINVAL, err)
+        frames = self.mc.encode_frame_info(4, "a") + self.mc.encode_frame_info(4, "b")
+        with self.assertRaises(self.mc.MemcachedError) as ctx:
+            self._client().get("k1", vbucket=7, frame_extras=frames)
+        sent = self.server_sock.recv(4096)
+        magic, opcode, framing_len, key_len, extras_len, _, vbucket, body_len, _, _ = \
+            struct.unpack(self.const.ALT_REQ_PKT_FMT, sent[:24])
+        self.assertEqual((0x08, self.const.CMD_GET, len(frames), 2, 0, 7, len(frames) + 2),
+                         (magic, opcode, framing_len, key_len, extras_len, vbucket, body_len))
+        self.assertEqual(frames + b"k1", sent[24:])
+        self.assertEqual(self.const.ERR_EINVAL, ctx.exception.status)
+        self.assertIn("Only one impersonate frame may be present", ctx.exception.msg)
+
+    def test_set_without_frames_keeps_classic_encoding(self):
+        """no frame_extras -> unchanged 0x80 header with a 2-byte key length"""
+        import struct
+        self._reply(self.const.CMD_SET)
+        self._client().set("key", 0, 0, "v", vbucket=3)
+        sent = self.server_sock.recv(4096)
+        magic, opcode, key_len, extras_len, _, vbucket, body_len, _, _ = \
+            struct.unpack(self.const.REQ_PKT_FMT, sent[:24])
+        self.assertEqual((0x80, self.const.CMD_SET, 3, 8, 3, 12),
+                         (magic, opcode, key_len, extras_len, vbucket, body_len))
+
+    def test_register_auth_token_sends_json(self):
+        """RegisterAuthToken: opcode 0x2f, JSON datatype, id/type/token body"""
+        import json
+        self._reply(self.const.CMD_REGISTER_AUTH_TOKEN)
+        self._client().register_auth_token(5, "tok")
+        sent = self.server_sock.recv(4096)
+        self.assertEqual(self.const.CMD_REGISTER_AUTH_TOKEN, sent[1])
+        self.assertEqual(self.const.DATATYPE_JSON, sent[5])
+        self.assertEqual({"id": 5, "type": "JWT", "token": "tok"}, json.loads(sent[24:]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

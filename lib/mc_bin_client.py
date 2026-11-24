@@ -18,7 +18,7 @@ import zlib
 from cb_constants import CbServer
 from cb_constants.ClusterRun import ClusterRun
 from memcacheConstants import REQ_MAGIC_BYTE, RES_MAGIC_BYTE, ALT_REQ_MAGIC_BYTE, ALT_RES_MAGIC_BYTE, ALT_RES_PKT_FMT
-from memcacheConstants import REQ_PKT_FMT, RES_PKT_FMT, MIN_RECV_PACKET, REQ_PKT_SD_EXTRAS, SUBDOC_FLAGS_MKDIR_P
+from memcacheConstants import ALT_REQ_PKT_FMT, REQ_PKT_FMT, RES_PKT_FMT, MIN_RECV_PACKET, REQ_PKT_SD_EXTRAS, SUBDOC_FLAGS_MKDIR_P
 from memcacheConstants import SET_PKT_FMT, INCRDECR_RES_FMT, INCRDECR_RES_WITH_UUID_AND_SEQNO_FMT
 from memcacheConstants import REQ_PKT_SD_EXTRAS_EXPIRY
 import memcacheConstants
@@ -44,6 +44,24 @@ def decodeCollectionID(key):
             #  We should of stopped for a stop byte, not the end of the buffer
             raise ValueError("encoded key did not contain a stop byte")
     return cid, key[end:]
+
+
+def encode_frame_info(frame_id, data=b''):
+    """Encode one frame info for the frame extras of an alt request.
+
+    The first byte holds the id (high nibble) and the data length (low
+    nibble). An id or length of 15 or more is sent as nibble 0xF followed
+    by one extra byte holding value - 15 (the id's extra byte comes first).
+    """
+    if isinstance(data, str):
+        data = data.encode()
+    if not 0 <= frame_id <= 0xFF + 0x0F or len(data) > 0xFF + 0x0F:
+        raise ValueError(f"frame id {frame_id} / length {len(data)} out of range")
+    id_nibble, id_extra = (frame_id, b'') if frame_id < 0x0F \
+        else (0x0F, bytes([frame_id - 0x0F]))
+    len_nibble, len_extra = (len(data), b'') if len(data) < 0x0F \
+        else (0x0F, bytes([len(data) - 0x0F]))
+    return bytes([(id_nibble << 4) | len_nibble]) + id_extra + len_extra + data
 
 
 class MemcachedError(Exception):
@@ -135,15 +153,19 @@ class MemcachedClient(KeepRefs):
         return rv
 
     def _sendCmd(self, cmd, key, val, opaque, extraHeader='', cas=0, scope=None, collection=None,
-                 extended_meta_data='', extraHeaderLength=None):
+                 extended_meta_data='', extraHeaderLength=None, frame_extras=b''):
         self._sendMsg(cmd, key, val, opaque, extraHeader=extraHeader, cas=cas,
                       vbucketId=self.vbucketId, scope=scope, collection=collection,
-                      extended_meta_data=extended_meta_data, extraHeaderLength=extraHeaderLength)
+                      extended_meta_data=extended_meta_data, extraHeaderLength=extraHeaderLength,
+                      frame_extras=frame_extras)
 
     def _sendMsg(self, cmd, key, val, opaque, extraHeader='', cas=0,
                  dtype=0, vbucketId=0,
                  fmt=REQ_PKT_FMT, magic=REQ_MAGIC_BYTE, scope=None, collection=None, extended_meta_data='',
-                 extraHeaderLength=None):
+                 extraHeaderLength=None, frame_extras=b''):
+        """frame_extras: encoded frame infos (see encode_frame_info). When
+        set, the request is sent in the alternative (0x08) encoding, which
+        needs HELLO FEATURE_ALT_REQUEST_SUPPORT on the connection."""
         if collection:
             key = self._encodeCollectionId(key, scope, collection)
         # a little bit unfortunate but the delWithMeta command expects the extra data length to be the
@@ -151,9 +173,15 @@ class MemcachedClient(KeepRefs):
         if extraHeaderLength is None:
             extraHeaderLength = len(extraHeader)
 
-        msg = struct.pack(fmt, magic,
-                          cmd, len(key), extraHeaderLength, dtype, vbucketId,
-                          len(key) + len(extraHeader) + len(val) + len(extended_meta_data), opaque, cas)
+        body_len = len(key) + len(extraHeader) + len(val) + len(extended_meta_data)
+        if frame_extras:
+            msg = struct.pack(ALT_REQ_PKT_FMT, ALT_REQ_MAGIC_BYTE,
+                              cmd, len(frame_extras), len(key), extraHeaderLength, dtype, vbucketId,
+                              len(frame_extras) + body_len, opaque, cas) + frame_extras
+        else:
+            msg = struct.pack(fmt, magic,
+                              cmd, len(key), extraHeaderLength, dtype, vbucketId,
+                              body_len, opaque, cas)
 
         try:
             key = key.encode()
@@ -229,11 +257,11 @@ class MemcachedClient(KeepRefs):
         return opaque, cas, data
 
     def _doCmd(self, cmd, key, val, extraHeader='', cas=0, scope=None, collection=None,
-               extended_meta_data='', extraHeaderLength=None):
+               extended_meta_data='', extraHeaderLength=None, frame_extras=b''):
         """Send a command and await its response."""
         opaque = self.r.randint(0, 2 ** 32)
         self._sendCmd(cmd, key, val, opaque, extraHeader, cas, scope, collection, extended_meta_data=extended_meta_data,
-                      extraHeaderLength=extraHeaderLength)
+                      extraHeaderLength=extraHeaderLength, frame_extras=frame_extras)
         return self._handleSingleResponse(opaque)
 
     def _doSdCmd(self, cmd, key, path, val=None, expiry=0, opaque=0, cas=0, create=False, scope=None, collection=None):
@@ -291,9 +319,10 @@ class MemcachedClient(KeepRefs):
         self._sendMsg(cmd, key, body, opaque, extraHeader, cas=0, scope=scope, collection=collection)
         return self._handleSingleResponse(opaque)
 
-    def _mutate(self, cmd, key, exp, flags, cas, val, scope='_default', collection='_default'):
+    def _mutate(self, cmd, key, exp, flags, cas, val, scope='_default', collection='_default',
+                frame_extras=b''):
         return self._doCmd(cmd, key, val, struct.pack(SET_PKT_FMT, flags, exp),
-                           cas, scope, collection)
+                           cas, scope, collection, frame_extras=frame_extras)
 
     def _cat(self, cmd, key, cas, val, scope=None, collection=None):
         scope, collection = self.collection_name(scope, collection)
@@ -334,11 +363,12 @@ class MemcachedClient(KeepRefs):
         self._set_vbucket(key, vbucket)
         return self.__incrdecr(memcacheConstants.CMD_DECR, key, amt, init, exp, scope, collection)
 
-    def set(self, key, exp, flags, val, vbucket=-1, scope=None, collection=None):
+    def set(self, key, exp, flags, val, vbucket=-1, scope=None, collection=None, frame_extras=b''):
         """Set a value in the memcached server."""
         scope, collection = self.collection_name(scope, collection)
         self._set_vbucket(key, vbucket)
-        return self._mutate(memcacheConstants.CMD_SET, key, exp, flags, 0, val, scope, collection)
+        return self._mutate(memcacheConstants.CMD_SET, key, exp, flags, 0, val, scope, collection,
+                            frame_extras=frame_extras)
 
     def pack_the_extended_meta_data(self, adjusted_time, conflict_resolution_mode):
         return struct.pack(memcacheConstants.EXTENDED_META_DATA_FMT,
@@ -535,11 +565,12 @@ class MemcachedClient(KeepRefs):
         else:
             return flags, data[1], b"{" + data[-1].split(b'{')[-1]  # take only the value and value starts with "{"
 
-    def get(self, key, vbucket=-1, scope=None, collection=None):
+    def get(self, key, vbucket=-1, scope=None, collection=None, frame_extras=b''):
         """Get the value for a given key within the memcached server."""
         scope, collection = self.collection_name(scope, collection)
         self._set_vbucket(key, vbucket)
-        parts = self._doCmd(memcacheConstants.CMD_GET, key, '', scope=scope, collection=collection)
+        parts = self._doCmd(memcacheConstants.CMD_GET, key, '', scope=scope, collection=collection,
+                            frame_extras=frame_extras)
 
         return self.__parseGet(parts)
 
@@ -823,6 +854,16 @@ class MemcachedClient(KeepRefs):
         """Flush all storage in a memcached instance."""
         return self._doCmd(memcacheConstants.CMD_FLUSH, '', '',
                            struct.pack(memcacheConstants.FLUSH_PKT_FMT, timebomb))
+
+    def register_auth_token(self, token_id, token, token_type="JWT"):
+        """RegisterAuthToken: store `token` on this connection under
+        `token_id`, for use by FRAME_INFO_IMPERSONATE_WITH_TOKEN_AUTH_DATA_ID
+        frames. Needs HELLO FEATURE_JSON."""
+        opaque = self.r.randint(0, 2 ** 32)
+        body = json.dumps({"id": token_id, "type": token_type, "token": token})
+        self._sendMsg(memcacheConstants.CMD_REGISTER_AUTH_TOKEN, '', body, opaque,
+                      dtype=memcacheConstants.DATATYPE_JSON)
+        return self._handleSingleResponse(opaque)
 
     def bucket_select(self, name):
         return self._doCmd(memcacheConstants.CMD_SELECT_BUCKET, name, '')
