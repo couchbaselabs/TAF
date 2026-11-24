@@ -30,6 +30,10 @@ class GetCMEK(APIBase):
                 self.cmek_created = True
 
     def tearDown(self):
+        # test_authorization leaves the client on the last role key it tried
+        # (e.g. a revoked key), so restore the owner key before cleanup;
+        # otherwise the delete gets 401 and the CMEK leaks (19839).
+        self.update_auth_with_api_token(self.curr_owner_key)
         if self.cmek_created:
             resp = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                 self.organisation_id, self.cmek_id)
@@ -39,7 +43,6 @@ class GetCMEK(APIBase):
                     self.organisation_id, self.cmek_id)
             if resp.status_code not in [204, 404]:
                 self.log.error("CMEK cleanup failed: {}".format(resp.content))
-        self.update_auth_with_api_token(self.curr_owner_key)
         super(GetCMEK, self).tearDown()
 
     def test_api_path(self):
@@ -106,8 +109,10 @@ class GetCMEK(APIBase):
 
     def test_authorization(self):
         failures = list()
+        # projectCreator is an org-level role and can read CMEK metadata,
+        # same as ListCMEK (19839).
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "organizationMember"
+            "organizationOwner", "organizationMember", "projectCreator"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

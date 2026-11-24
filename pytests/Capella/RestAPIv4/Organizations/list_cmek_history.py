@@ -74,8 +74,10 @@ class ListCMEKHistory(GetCMEK):
 
     def test_authorization(self):
         failures = list()
+        # projectCreator is an org-level role and can read CMEK history,
+        # same as ListCMEK/GetCMEK (19839).
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "organizationMember"
+            "organizationOwner", "organizationMember", "projectCreator"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

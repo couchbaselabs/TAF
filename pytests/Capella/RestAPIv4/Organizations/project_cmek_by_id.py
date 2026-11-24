@@ -43,6 +43,10 @@ class ProjectCMEKById(APIBase):
                 self.cmek_created = True
 
     def tearDown(self):
+        # Restore the owner key before cleanup: the authorization tests leave
+        # the client on the last role key they tried, and deleting with that
+        # key gets 401 and leaks the CMEK (19839).
+        self.update_auth_with_api_token(self.curr_owner_key)
         if self.cmek_created:
             resp = self.capellaAPI.org_ops_apis.delete_project_cmek_metadata(
                 self.organisation_id, self.project_id, self.cmek_id)
@@ -53,7 +57,6 @@ class ProjectCMEKById(APIBase):
             if resp.status_code not in [204, 404]:
                 self.log.error("Project CMEK cleanup failed: {}"
                                .format(resp.content))
-        self.update_auth_with_api_token(self.curr_owner_key)
         super(ProjectCMEKById, self).tearDown()
 
     def test_get_api_path(self):

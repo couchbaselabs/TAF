@@ -78,9 +78,11 @@ class UpdateCMEK(GetCMEK):
 
     def test_authorization(self):
         failures = list()
+        # Rotating an org-level CMEK is organizationOwner only, like create
+        # and delete; every other role (project roles included) gets 403
+        # (19839).
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+            "organizationOwner"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

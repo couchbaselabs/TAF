@@ -14,18 +14,30 @@ class CreateCMEK(ListCMEK):
         self.created_cmek_id = None
 
     def tearDown(self):
-        if self.created_cmek_id:
+        self.delete_created_cmek()
+        super(CreateCMEK, self).tearDown()
+
+    def delete_created_cmek(self):
+        """Delete the CMEK metadata created by the last call, if any.
+
+        test_authorization leaves the API client authenticated with whichever
+        role key it tried last (possibly a revoked/expired key), so switch
+        back to the owner key first; otherwise the delete gets 401 and the
+        key leaks (19839).
+        """
+        if not self.created_cmek_id:
+            return
+        self.update_auth_with_api_token(self.curr_owner_key)
+        result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
+            self.organisation_id, self.created_cmek_id)
+        if result.status_code == 429:
+            self.handle_rate_limit(int(result.headers["Retry-After"]))
             result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
                 self.organisation_id, self.created_cmek_id)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                    self.organisation_id, self.created_cmek_id)
-            if result.status_code != 204:
-                self.log.error("Cleanup failed for CMEK key {}: {}".format(
-                    self.created_cmek_id, result.content))
+        if result.status_code not in [204, 404]:
+            self.log.error("Cleanup failed for CMEK key {}: {}".format(
+                self.created_cmek_id, result.content))
         self.created_cmek_id = None
-        super(CreateCMEK, self).tearDown()
 
     def test_api_path(self):
         cmek_arn = self._get_cmek_arn()
@@ -121,7 +133,6 @@ class CreateCMEK(ListCMEK):
                 "arn": cmek_arn
             }
         }
-        cmek_arn = self._get_cmek_arn()
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner"
@@ -138,12 +149,17 @@ class CreateCMEK(ListCMEK):
                 result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
                     self.organisation_id, payload["name"], payload["config"],
                     payload["description"])
-            # 204 -> created (when a valid cmek_arn is supplied); 422 ->
-            # key-metadata validation error when no real CMEK ARN is provided.
-            # Both prove the caller passed authorization (an unauthorized role
-            # is denied with 403 before validation), which is what this RBAC
-            # test verifies.
-            self.validate_testcase(result, [204, 422], testcase, failures)
+            # 200 + {"id": ...} -> created (a valid cmek_arn is supplied,
+            # 19839); 422 -> key-metadata validation error when no real CMEK
+            # ARN is configured. Both prove the caller passed authorization
+            # (an unauthorized role is denied with 403 before validation),
+            # which is what this RBAC test verifies.
+            self.validate_testcase(result, [200, 422], testcase, failures)
+            if result.status_code == 200:
+                # Every allowed role creates a new key; delete it right away
+                # so the org doesn't collect one CMEK per role per run.
+                self.created_cmek_id = result.json()["id"]
+                self.delete_created_cmek()
 
         if failures:
             for fail in failures:
