@@ -28,7 +28,7 @@ class CreateCMEK(ListCMEK):
         super(CreateCMEK, self).tearDown()
 
     def test_api_path(self):
-        cmek_arn = self.input.param("cmek_arn", "")
+        cmek_arn = self._get_cmek_arn()
         payload = {
             "name": self.prefix + "cmek",
             "description": "CMEK metadata create path test",
@@ -113,7 +113,7 @@ class CreateCMEK(ListCMEK):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        cmek_arn = self.input.param("cmek_arn", "")
+        cmek_arn = self._get_cmek_arn()
         payload = {
             "name": self.prefix + "cmek",
             "description": "CMEK metadata create path test",
@@ -121,7 +121,7 @@ class CreateCMEK(ListCMEK):
                 "arn": cmek_arn
             }
         }
-        cmek_arn = self.input.param("cmek_arn", "")
+        cmek_arn = self._get_cmek_arn()
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner"
@@ -151,7 +151,7 @@ class CreateCMEK(ListCMEK):
             self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_payload(self):
-        cmek_arn = self.input.param("cmek_arn", "")
+        cmek_arn = self._get_cmek_arn()
         testcases = [
             {
                 "desc": "Missing required name and config fields",
@@ -236,14 +236,14 @@ class CreateCMEK(ListCMEK):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-        cmek_arn = self.input.param("cmek_arn", "")
+        cmek_arn = self._get_cmek_arn()
         api_func_list = [[self.capellaAPI.org_ops_apis.create_cmek_metadata,
                           (self.organisation_id, self.prefix + "cmek",
                            {"arn": cmek_arn}, "throttle test")]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
-        cmek_arn = self.input.param("cmek_arn", "")
+        cmek_arn = self._get_cmek_arn()
         api_func_list = [[self.capellaAPI.org_ops_apis.create_cmek_metadata,
                           (self.organisation_id, self.prefix + "cmek",
                            {"arn": cmek_arn}, "throttle test")]]

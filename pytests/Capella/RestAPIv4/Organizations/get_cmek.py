@@ -13,7 +13,7 @@ class GetCMEK(APIBase):
         super(GetCMEK, self).setUp()
         self.cmek_id = self.invalid_UUID
         self.cmek_created = False
-        self.cmek_arn = self.input.param("cmek_arn", "")
+        self.cmek_arn = self._get_cmek_arn()
         if self.cmek_arn:
             resp = self.capellaAPI.org_ops_apis.create_cmek_metadata(
                 self.organisation_id, self.prefix + "cmek-get",

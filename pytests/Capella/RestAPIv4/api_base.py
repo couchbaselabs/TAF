@@ -65,6 +65,11 @@ class APIBase(CouchbaseBaseTest):
         return self.REGION_EQUIVALENTS.get(region, {}).get(
             cloud_provider, region)
 
+    def _get_cmek_arn(self, default=""):
+        # -p param wins; otherwise use the [capella] section from the ini
+        return self.input.param(
+            "cmek_arn", self.input.capella.get("cmek_arn", default))
+
     def setUp(self, nomenclature="WRAPPER", services=[]):
         CouchbaseBaseTest.setUp(self)
 
