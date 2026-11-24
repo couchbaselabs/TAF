@@ -141,6 +141,9 @@ if [ "$server_type" = "PROVISIONED_ONCLOUD" ]; then
   if [ -n "$secret_key" ]; then
     cluster_info="${cluster_info%\}}, \"secret_key\": \"$secret_key\"}"
   fi
+  if [ -n "$cmek_arn" ]; then
+    cluster_info="${cluster_info%\}}, \"cmek_arn\": \"$cmek_arn\"}"
+  fi
   echo $cluster_info
   servers="None"
 fi
@@ -161,6 +164,9 @@ if [ "$server_type" = "SERVERLESS_ONCLOUD" ]; then
   fi
   if [ -n "$secret_key" ]; then
     cluster_info="${cluster_info%\}}, \"secret_key\": \"$secret_key\"}"
+  fi
+  if [ -n "$cmek_arn" ]; then
+    cluster_info="${cluster_info%\}}, \"cmek_arn\": \"$cmek_arn\"}"
   fi
   echo $cluster_info
   servers="None"
