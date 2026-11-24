@@ -1,6 +1,7 @@
 
 import json
 import re
+import struct
 import time
 import unittest
 import uuid
@@ -8,11 +9,16 @@ import urllib.parse
 import base64
 import jwt
 
+import memcacheConstants
+from BucketLib.BucketOperations import BucketHelper
+from cb_constants import CbServer
 from couchbase_utils.security_utils import jwt_utils
 from couchbase_utils.security_utils.crl_utils import (
     audit_keyword_count,
     get_audit_event,
+    grep_remote_log,
 )
+from mc_bin_client import MemcachedClient, MemcachedError, encode_frame_info
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux, Mac, Windows
 from pytests.onPrem_basetestcase import OnPremBaseTest
@@ -3923,4 +3929,331 @@ class JWTTokenTest(OnPremBaseTest):
             )
         finally:
             self._disable_jwt()
+
+    # ------------------------------------------------------------------
+    # MB-74588: a KV request may carry at most one impersonate frame
+    # ------------------------------------------------------------------
+    MB74588_TOKEN_ID = 5
+    MB74588_UNREGISTERED_TOKEN_ID = 99
+    MB74588_SEED_VALUE = '{"seed":"original"}'
+    MB74588_ONLY_ONE_FRAME = "Only one impersonate frame may be present"
+    # Document read / document modify: the audit events that name the effective user
+    MB74588_DATA_ACCESS_AUDIT_EVENTS = (20488, 20490)
+
+    def _mb74588_set_audit(self, settings, disabled):
+        disabled_users = ",".join(
+            f"{u['name']}/{u['domain']}" for u in settings.get("disabledUsers", [])
+        )
+        result = self.rest.setAuditSettings(
+            enabled=str(settings["auditdEnabled"]).lower(),
+            rotateInterval=settings["rotateInterval"],
+            logPath=settings["logPath"],
+            disabled=",".join(str(e) for e in disabled),
+            users=disabled_users,
+            rotateSize=settings["rotateSize"],
+        )
+        if result is not True:
+            self.log.error(f"Failed to update audit settings: {result}")
+        return result is True
+
+    def _mb74588_connect(self, bucket):
+        """Admin KV connection with XError/JSON/AltRequest and the bucket selected."""
+        master = self.cluster.master
+        port = CbServer.ssl_memcached_port if CbServer.use_https else master.memcached_port
+        client = MemcachedClient(master.ip, port)
+        client.vbucket_count = bucket.numVBuckets
+        features = {
+            memcacheConstants.FEATURE_XERROR,
+            memcacheConstants.FEATURE_JSON,
+            memcacheConstants.FEATURE_ALT_REQUEST_SUPPORT,
+        }
+        client.hello(sorted(features))
+        missing = features - client.features
+        if missing:
+            client.close()
+            self.fail(f"Server did not enable HELLO features {sorted(missing)}")
+        client.sasl_auth_plain(master.rest_username, master.rest_password)
+        client.bucket_select(bucket.name)
+        return client
+
+    def _mb74588_register_token(self, client, token, timeout=60):
+        """RegisterAuthToken, retried while ns_server's external auth
+        provider connection to memcached comes up. Right after JWT is
+        enabled ns_server can register as provider before memcached applies
+        "external auth enabled" (debug.log: "Support for external
+        authentication service is disabled"); it retries on a timer and
+        until then RegisterAuthToken fails with Einternal (0x84)."""
+        end_time = time.time() + timeout
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                client.register_auth_token(self.MB74588_TOKEN_ID, token)
+                self.log.info(f"RegisterAuthToken succeeded on attempt {attempt}")
+                return
+            except MemcachedError as err:
+                if err.status != memcacheConstants.ERR_EINTERNAL or time.time() > end_time:
+                    self.fail(f"RegisterAuthToken failed on attempt {attempt}: {err}")
+                self.log.info(f"RegisterAuthToken attempt {attempt}: {err}")
+                self.sleep(3, "Waiting for ns_server's external auth provider")
+
+    def _mb74588_key_on_master(self, name, bucket, vb_map, master_index):
+        """A key (and its vbucket) whose active copy is on the master node."""
+        for i in range(100000):
+            key = f"{self.mb74588_key_prefix}-{name}-{i}"
+            vbucket = self.bucket_util.get_vbucket_num_for_key(key, bucket.numVBuckets)
+            if vb_map[vbucket][0] == master_index:
+                return key, vbucket
+        self.fail(f"No key for {name} maps to a vbucket active on the master")
+
+    def _mb74588_run_scenario(self, client, bucket, vb_map, master_index, scenario):
+        """Seed the doc, send the framed request, read the doc back.
+        Returns a list of mismatch strings (empty = scenario passed)."""
+        key, vbucket = self._mb74588_key_on_master(
+            scenario["id"], bucket, vb_map, master_index)
+        scenario["key"] = key
+        client.set(key, 0, 0, self.MB74588_SEED_VALUE, vbucket=vbucket)
+
+        frames = b"".join(scenario["frames"])
+        status, error = memcacheConstants.ERR_SUCCESS, ""
+        try:
+            if scenario["op"] == "GET":
+                client.get(key, vbucket=vbucket, frame_extras=frames)
+            else:
+                client.set(key, 0, 0, scenario["value"], vbucket=vbucket,
+                           frame_extras=frames)
+        except MemcachedError as err:
+            status, error = err.status, str(err.msg)
+        doc_after = client.get(key, vbucket=vbucket)[2].decode(errors="replace")
+
+        self.log.info(
+            f"[{scenario['id']}] {scenario['desc']}: {scenario['op']} {key} "
+            f"vb={vbucket} frames={frames.hex()} -> 0x{status:02x} {error!r}; "
+            f"doc after={doc_after}")
+        problems = []
+        if status != scenario["status"]:
+            problems.append(f"status 0x{status:02x} {error!r}, "
+                            f"expected 0x{scenario['status']:02x}")
+        if scenario.get("context") and scenario["context"] not in error:
+            problems.append(f"error {error!r} does not contain {scenario['context']!r}")
+        if scenario["op"] == "SET":
+            if scenario["status"] == memcacheConstants.ERR_SUCCESS:
+                expected_doc = scenario["value"]
+            else:
+                expected_doc = self.MB74588_SEED_VALUE
+            if doc_after != expected_doc:
+                problems.append(f"document is {doc_after!r} after the request, "
+                                f"expected {expected_doc!r}")
+        return [f"[{scenario['id']}] {scenario['desc']}: {p}" for p in problems]
+
+    def _mb74588_validate_audit(self, valid_scenarios, rejected_scenarios, timeout=60):
+        """Valid requests must be audited with the right effective user; no
+        data-access event may carry an effective user for a rejected key."""
+        expected = {s["key"]: s["audit_euid"] for s in valid_scenarios if s.get("audit_euid")}
+        seen = {}
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            end_time = time.time() + timeout
+            while True:
+                lines = grep_remote_log(shell, self.AUDIT_LOG_PATH,
+                                        self.mb74588_key_prefix, lines=10000)
+                seen = {}
+                for line in lines.splitlines():
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    euid = event.get("effective_userid")
+                    if event.get("id") in self.MB74588_DATA_ACCESS_AUDIT_EVENTS and euid:
+                        seen.setdefault(event.get("key"), set()).add(euid["user"])
+                if all(user in seen.get(key, set()) for key, user in expected.items()) \
+                        or time.time() > end_time:
+                    break
+                self.sleep(5, "Waiting for data-access audit events to be written")
+        finally:
+            shell.disconnect()
+        self.log.info(f"Effective users per key in the audit log: {seen}")
+
+        problems = [
+            f"audit: no document read/modify event for {key} with effective user {user} "
+            f"(seen {sorted(seen.get(key, set()))})"
+            for key, user in expected.items() if user not in seen.get(key, set())
+        ]
+        problems.extend(
+            f"audit: rejected request [{s['id']}] key {s['key']} was audited with "
+            f"effective user(s) {sorted(seen[s['key']])}"
+            for s in rejected_scenarios if seen.get(s["key"])
+        )
+        return problems
+
+    def test_kv_multiple_impersonate_frames_rejected(self):
+        """
+        MB-74588: a KV request may carry at most one Impersonate (frame id 4)
+        or ImpersonateWithTokenAuthDataId (frame id 7) frame.
+
+        Impersonate only sets the effective user (euid); its privilege
+        context is built later and only if none exists yet. The token frame
+        sets both the euid and the privilege context from a JWT registered on
+        the connection with RegisterAuthToken. Before the fix,
+        [Token(A), Impersonate(B)] ran with A's privileges while audit named
+        B. Now any request with more than one such frame must fail with
+        Einval "Only one impersonate frame may be present" (kv_engine
+        74d875a68, 8.5+).
+
+        1. Single-frame requests behave (preconditions).
+        2. Every two-frame combination is rejected; a rejected SET leaves the
+           document unchanged.
+        3. The connection still serves a valid request afterwards.
+        4. (validate_audit) Valid requests are audited with the expected
+           effective user; rejected requests produce no data-access event.
+        """
+        validate_audit = self.input.param("validate_audit", True)
+        run_id = uuid.uuid4().hex[:8]
+        self.mb74588_key_prefix = f"mb74588-{run_id}"
+        reader = f"mb74588_reader_{run_id}"
+        reader2 = f"mb74588_reader2_{run_id}"
+        no_access_user = f"mb74588_no_access_{run_id}"  # "user B" in the ticket
+        unknown_user = f"mb74588_missing_{run_id}"
+        token_user = f"mb74588_token_{run_id}"
+
+        # JWTTokenTest (OnPremBaseTest) runs on the master node only, whatever
+        # nodes_init says, so 0 replicas keeps the majority-durability SET possible.
+        self.bucket_util.create_default_bucket(
+            self.cluster, bucket_type=self.bucket_type, ram_quota=self.bucket_size,
+            replica=0, storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy)
+        bucket = self.cluster.buckets[0]
+
+        created_users = []
+        original_audit = None
+        client = None
+        try:
+            for user, roles in ((reader, f"data_reader[{bucket.name}]"),
+                                (reader2, f"data_reader[{bucket.name}]"),
+                                (no_access_user, "query_system_catalog")):
+                self.rest.add_set_builtin_user(user, urllib.parse.urlencode(
+                    {"password": f"Mb74588-{uuid.uuid4().hex}!", "roles": roles}))
+                created_users.append(user)
+            self.jwt_utils.create_external_user(
+                self.rest, user_name=token_user,
+                roles=f"data_reader[{bucket.name}],data_writer[{bucket.name}]")
+
+            # No group maps / JIT: the token user's roles come from the
+            # external user above, not from a group mapped to admin.
+            config = self.jwt_utils.get_jwt_config(
+                issuer_name=self.issuer_name, algorithm=self.algorithm,
+                pub_key=self.pub_key, token_audience=self.token_audience,
+                token_group_matching_rule=[], jit_provisioning=False)
+            status, content = self._put_jwt_config(config)
+            self.assertEqual(status, 200, f"JWT config PUT failed: {content}")
+
+            if validate_audit:
+                original_audit = self.rest.getAuditSettings()
+                disabled = [e for e in original_audit.get("disabled", [])
+                            if e not in self.MB74588_DATA_ACCESS_AUDIT_EVENTS]
+                self.assertTrue(
+                    self._mb74588_set_audit(dict(original_audit, auditdEnabled=True), disabled),
+                    "Failed to enable the document read/modify audit events")
+
+            client = self._mb74588_connect(bucket)
+            self._mb74588_register_token(
+                client, self.create_token(user_name=token_user, user_groups=[], ttl=900))
+
+            vbs_map = BucketHelper(self.cluster.master).get_buckets_json(
+                bucket.name)["vBucketServerMap"]
+            hosts = [h.rsplit(":", 1)[0].strip("[]") for h in vbs_map["serverList"]]
+            self.assertIn(self.cluster.master.ip, hosts, f"Master not in serverList {hosts}")
+            master_index = hosts.index(self.cluster.master.ip)
+
+            def run(scenario):
+                return self._mb74588_run_scenario(
+                    client, bucket, vbs_map["vBucketMap"], master_index, scenario)
+
+            def imp(user):
+                return encode_frame_info(memcacheConstants.FRAME_INFO_IMPERSONATE, user)
+
+            def tok(token_id):
+                return encode_frame_info(
+                    memcacheConstants.FRAME_INFO_IMPERSONATE_WITH_TOKEN_AUTH_DATA_ID,
+                    struct.pack(">H", token_id))
+
+            token = tok(self.MB74588_TOKEN_ID)
+            unregistered = tok(self.MB74588_UNREGISTERED_TOKEN_ID)
+            majority = encode_frame_info(
+                memcacheConstants.FRAME_INFO_DURABILITY_REQUIREMENT,
+                bytes([memcacheConstants.DURABILITY_LEVEL_MAJORITY]))
+            ok = memcacheConstants.ERR_SUCCESS
+            einval = memcacheConstants.ERR_EINVAL
+            eaccess = memcacheConstants.ERR_EACCESS
+
+            # 1. Single-frame preconditions
+            preconditions = [
+                {"id": "single-imp-reader", "desc": "Impersonate(reader)", "op": "GET",
+                     "frames": [imp(reader)], "status": ok, "audit_euid": reader},
+                {"id": "single-imp-unknown", "desc": "Impersonate(unknown user)", "op": "GET",
+                     "frames": [imp(unknown_user)], "status": eaccess,
+                     "context": "is not a Couchbase user"},
+                {"id": "single-imp-no-access", "desc": "Impersonate(no-access user)", "op": "GET",
+                     "frames": [imp(no_access_user)], "status": eaccess},
+                {"id": "single-token-get", "desc": "Token(token user)", "op": "GET",
+                     "frames": [token], "status": ok, "audit_euid": token_user},
+                {"id": "single-token-set-durability", "desc": "Token(token user) + Durability",
+                     "op": "SET", "value": '{"by":"token-user"}', "frames": [token, majority],
+                     "status": ok, "audit_euid": token_user},
+                {"id": "single-token-unregistered", "desc": "unregistered Token id", "op": "GET",
+                     "frames": [unregistered], "status": einval, "context": "Unknown token auth id"},
+            ]
+            problems = [p for s in preconditions for p in run(s)]
+            if problems:
+                self.fail("Single-frame preconditions failed, so the multi-frame results "
+                          "would not be meaningful:\n" + "\n".join(problems))
+
+            # 2. Two impersonate frames of any kind: always Einval
+            two_frame_cases = (
+                ("imp-imp", "Impersonate(reader) + Impersonate(reader2)", "GET",
+                 [imp(reader), imp(reader2)]),
+                # Checked before the token lookup, so not "Unknown token auth id"
+                ("imp-token-unregistered", "Impersonate(reader) + unregistered Token", "GET",
+                 [imp(reader), unregistered]),
+                # The ticket's case: token privileges, audit would have named B
+                ("token-imp-no-access-get", "Token + Impersonate(no-access user)", "GET",
+                 [token, imp(no_access_user)]),
+                ("token-imp-no-access-set", "Token + Impersonate(no-access user)", "SET",
+                 [token, imp(no_access_user)]),
+                ("token-imp-unknown", "Token + Impersonate(unknown user)", "GET",
+                 [token, imp(unknown_user)]),
+                ("token-token", "Token + Token", "GET", [token, token]),
+                ("imp-token", "Impersonate(reader) + Token", "GET", [imp(reader), token]),
+            )
+            rejected = [
+                {"id": sid, "desc": desc, "op": op, "frames": frames, "status": einval,
+                     "context": self.MB74588_ONLY_ONE_FRAME,
+                     "value": '{"by":"MB-74588-must-not-be-written"}'}
+                for sid, desc, op, frames in two_frame_cases
+            ]
+            problems = [p for s in rejected for p in run(s)]
+
+            # 3. The connection must still serve a valid request
+            after = {"id": "single-imp-reader-after", "op": "GET",
+                         "desc": "Impersonate(reader) after the rejected requests",
+                         "frames": [imp(reader)], "status": ok, "audit_euid": reader}
+            problems.extend(run(after))
+
+            # 4. Audit trail
+            if validate_audit:
+                problems.extend(
+                    self._mb74588_validate_audit(preconditions + [after], rejected))
+
+            if problems:
+                self.fail("MB-74588: requests with more than one impersonate frame were "
+                          "not handled as expected:\n" + "\n".join(problems))
+            self.log.info(f"All {len(rejected)} multi-impersonate-frame requests were rejected")
+        finally:
+            if client:
+                client.close()
+            if original_audit is not None:
+                self._mb74588_set_audit(original_audit, original_audit.get("disabled", []))
+            self.jwt_utils.delete_external_user(self.rest, token_user)
+            for user in created_users:
+                self.rest.delete_builtin_user(user)
 
