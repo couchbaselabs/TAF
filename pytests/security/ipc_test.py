@@ -892,9 +892,12 @@ class IPCTest(IPCBase):
             1. Every query, index, search, eventing and backup TLS port the
                cluster runs, plus each service's /_p/ proxy path on 18091,
                calibrated with admin credentials.
-            2. IPC on: the internal certificate alone is refused with 401
-               everywhere. 403 is a failure here -- it means an identity was
-               assigned and only lacked a permission.
+            2. IPC on: the internal certificate alone is refused as
+               unauthenticated everywhere. A 403 that is a permission
+               refusal is a failure here -- it means an identity was
+               assigned. (Search answers unauthenticated callers with 403
+               too, told apart by its body; see
+               classify_service_response.)
             3. IPC off: the same certificate is accepted everywhere, so the
                bypass reproduces per service and step 2 is not vacuous.
             4. IPC on: an ordinary prefix-mapped certificate (CN -> a
@@ -915,16 +918,20 @@ class IPCTest(IPCBase):
                                  "services_init that includes them")
         self.log.info(f"Q targets: {[t[0] for t in targets]}")
 
-        def sweep(cert, auth=None):
+        def sweep(cert):
+            """{label: outcome} -- 'ok' (2xx), 'unauth' (refused as
+            unauthenticated), 'forbidden' (authenticated, no permission),
+            'not_found', TLS_REJECT, or the raw status otherwise."""
             out = {}
             for label, server, port, path in targets:
                 try:
-                    out[label] = self._service_request(
-                        server, port, path, cert=cert,
-                        auth=auth).status_code
+                    resp = self._service_request(server, port, path,
+                                                 cert=cert)
                 except (requests.exceptions.SSLError,
                         requests.exceptions.ConnectionError):
                     out[label] = self.TLS_REJECT
+                    continue
+                out[label] = self.classify_service_response(resp)
             return out
 
         def mismatches(result, allowed):
@@ -932,24 +939,25 @@ class IPCTest(IPCBase):
 
         self.log.info("Step 2: IPC on, internal certificate alone")
         self.set_ipc_setting(True)
-        bad = mismatches(sweep(internal), (401,))
+        bad = mismatches(sweep(internal), ("unauth",))
         self.assertFalse(bad, f"Q-01 internal cert alone with IPC on must "
-                              f"be 401 everywhere: {bad}")
+                              f"be refused as unauthenticated everywhere: "
+                              f"{bad}")
 
         self.log.info("Step 3: IPC off, same certificate")
         self.set_ipc_setting(False)
-        bad = mismatches(sweep(internal), (200,))
+        bad = mismatches(sweep(internal), ("ok",))
         self.assertFalse(bad, f"Q-02 internal cert alone with IPC off must "
                               f"be accepted everywhere: {bad}")
 
         self.log.info("Step 4: IPC on, prefix-mapped certificate")
         self.set_ipc_setting(True)
-        bad = mismatches(sweep(user_cert), (200, 403, 404))
+        bad = mismatches(sweep(user_cert), ("ok", "forbidden", "not_found"))
         self.assertFalse(bad, f"Q-03 prefix-mapped cert for {user} must "
                               f"still authenticate with IPC on: {bad}")
 
         self.log.info("Step 5: no certificate, no credentials")
-        bad = mismatches(sweep(None), (401, 403))
+        bad = mismatches(sweep(None), ("unauth",))
         self.assertFalse(bad, f"Q-04 unauthenticated request must be "
                               f"refused everywhere: {bad}")
 

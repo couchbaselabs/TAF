@@ -724,6 +724,32 @@ class IPCBase(ClusterSetup):
                     targets.append((f"[{srv.ip}] {label}", srv, prt, path))
         return targets
 
+    # Search answers an unauthenticated caller with 403, not 401; these
+    # cbauth errors in its body are what separate that from a permission
+    # refusal of an authenticated one.
+    UNAUTHENTICATED_403_MARKERS = ("no web credentials found",
+                                   "Authentication failure")
+
+    def classify_service_response(self, resp):
+        """
+        'ok' (2xx), 'unauth' (refused because the caller is not
+        authenticated), 'forbidden' (authenticated, lacking a permission),
+        'not_found' (authenticated -- services authenticate before routing),
+        or the raw status code for anything else.
+        """
+        code = resp.status_code
+        if 200 <= code < 300:
+            return "ok"
+        if code == 401:
+            return "unauth"
+        if code == 403:
+            if any(m in resp.text for m in self.UNAUTHENTICATED_403_MARKERS):
+                return "unauth"
+            return "forbidden"
+        if code == 404:
+            return "not_found"
+        return code
+
     def _service_request(self, server, port, path, cert=None, auth=None):
         """One GET to https://server:port/path, with the certificate pair
         `cert` and/or Basic `auth` -- either may be None."""
