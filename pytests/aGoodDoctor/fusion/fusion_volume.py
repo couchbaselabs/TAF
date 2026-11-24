@@ -556,7 +556,7 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
 
         # Wait for rebalance task completion
         thread = threading.Thread(
-            target=lambda res, task: res.update({"monitor_rebalance_complete": self.wait_for_rebalances([task], timeout=3600)}),
+            target=lambda res, task: res.update({"monitor_rebalance_complete": self.wait_for_rebalances([task], timeout=self.rebalance_timeout)}),
             args=(result, rebalance_task), daemon=True)
         thread.start()
         threads.append(thread)
@@ -570,7 +570,7 @@ class VolumeTest(FusionFailureLogsMixin, BaseTestCase, hostedOPD):
         cp_monitor = self._cp_monitor_for_tenant(tenant)
         deployment_job_thread = threading.Thread(
             target=lambda res, clus: res.update({"deployment_job_success": cp_monitor.wait_for_deployment_job(
-                self.pod, tenant, clus, rebalance_start_time_utc, timeout=3600)}),
+                self.pod, tenant, clus, rebalance_start_time_utc, timeout=self.rebalance_timeout)}),
             args=(result, cluster), daemon=True)
         deployment_job_thread.start()
         threads.append(deployment_job_thread)

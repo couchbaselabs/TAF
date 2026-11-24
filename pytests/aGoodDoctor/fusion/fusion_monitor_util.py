@@ -94,13 +94,23 @@ class FusionMonitorUtil():
     def wait_for_fusion_pending_byte_zero(self, cluster, timeout=3600):
         """
         Wait for fusion pending bytes to reach zero.
+
+        Raises AssertionError on timeout. Returning normally used to let
+        callers go on to rebalance a cluster that was still uploading
+        (fusion state "enabling"), which the CP serves with a plain DCP
+        rebalance and no accelerators.
         """
         if timeout is None:
             timeout = self.DEFAULT_TIMEOUT
         self.set_admin_credentials(cluster)
-        while timeout > 0:
-            status, content = FusionRestAPI(cluster.master).get_fusion_status()
-            if status:
+        deadline = time.time() + timeout
+        total_pending_bytes = None
+        while time.time() < deadline:
+            try:
+                status, content = FusionRestAPI(cluster.master).get_fusion_status()
+            except Exception as e:
+                status, content = False, e
+            if status and isinstance(content, dict):
                 table = PrettyTable()
                 table.field_names = ["Node ID", "Bucket Name", "Pending Bytes", "Sync Session Completed Bytes", "Sync Session Total Bytes"]
                 nodes = content.get("nodes") or {}
@@ -115,14 +125,16 @@ class FusionMonitorUtil():
                             bucket_stats.get("syncSessionCompletedBytes"),
                             bucket_stats.get("syncSessionTotalBytes"),
                         ])
-                self.log.info(f"Fusion Pending Bytes for cluster {cluster.id}:\n{table}")
-                if total_pending_bytes > 0:
-                    timeout -= 30
-                    time.sleep(30)
-                else:
+                self.log.info(f"Fusion Pending Bytes for cluster {cluster.id} "
+                              f"(state={content.get('state')}):\n{table}")
+                if total_pending_bytes == 0:
                     return
             else:
                 self.log.error(f"Failed to get Fusion status for cluster {cluster.id}: {content}")
+            time.sleep(30)
+        raise AssertionError(
+            f"Fusion pending bytes did not drain to 0 on cluster {cluster.id} "
+            f"within {timeout}s (last total pending bytes: {total_pending_bytes})")
 
     def wait_for_fusion_status(self, cluster, state="enabled", timeout=None):
         """
@@ -621,6 +633,8 @@ class FusionMonitorUtil():
             if find_master_func:
                 find_master_func(tenant, cluster)
             self.set_admin_credentials(cluster)
+            if not hasattr(cluster, "fusion_uploader_dict"):
+                cluster.fusion_uploader_dict = {}
             for bucket in cluster.buckets:
                 server_vb_map, server_list, num_replica = BucketHelper(cluster.master).get_vbucket_map_and_server_list(bucket.name)
                 cluster.fusion_uploader_dict[bucket.name] = dict()
@@ -1135,6 +1149,74 @@ class FusionMonitorUtil():
                 self.log.warning(f"No rebalance report available for cluster {cluster.id}")
         except Exception as e:
             self.log.error(f"Failed to fetch/analyze rebalance report for cluster {cluster.id}: {e}")
+
+    def log_node_disk_activity(self, cluster, start, end, label="", region="us-east-1"):
+        """
+        Log per-volume EBS activity (CloudWatch) for the cluster's current
+        Couchbase nodes over [start, end] (aware datetimes): average read and
+        write MB/s, average read latency, and average/peak queue length.
+
+        This is what explains a slow restore or rebalance on a restored
+        cluster: lazily loaded snapshot volumes show ~50-70 ms reads at a
+        queue depth of ~1, and heavy post-restore background work shows up
+        as hundreds of MB/s of writes with a queue of 10+. CloudWatch keeps
+        the metrics after the cluster is gone, but the volume ids do not
+        survive a restore that replaces the nodes, so log them now.
+
+        Never raises.
+        """
+        try:
+            session = self.fusion_aws_util.ec2.aws_session
+            ec2 = session.client("ec2", region_name=region)
+            cw = session.client("cloudwatch", region_name=region)
+            instances = self.fusion_aws_util.ec2.list_instances(
+                filters=self._server_node_filter(cluster))
+            names = {}
+            for inst in instances:
+                tags = {t["Key"]: t["Value"] for t in inst.get("Tags", [])}
+                names[inst["InstanceId"]] = (tags.get("Name")
+                                             or inst.get("PrivateDnsName")
+                                             or inst["InstanceId"])
+            if not names:
+                self.log.warning(f"[disk-activity] no Couchbase nodes found for {cluster.id}")
+                return
+            vols = ec2.describe_volumes(Filters=[{
+                "Name": "attachment.instance-id", "Values": list(names)}]).get("Volumes", [])
+            # Data and guest volumes only; the small root disks add noise.
+            vols = [v for v in vols if (v.get("Size") or 0) >= 100]
+            window = max(int((end - start).total_seconds()), 60)
+            period = max(60, (window // 1440 // 60 + 1) * 60)
+
+            def _sum(vol_id, metric, stat="Sum"):
+                pts = cw.get_metric_statistics(
+                    Namespace="AWS/EBS", MetricName=metric,
+                    Dimensions=[{"Name": "VolumeId", "Value": vol_id}],
+                    StartTime=start, EndTime=end, Period=period,
+                    Statistics=[stat]).get("Datapoints", [])
+                return [p[stat] for p in pts]
+
+            table = PrettyTable()
+            table.field_names = ["Node", "Volume", "GiB", "IOPS", "Read MB/s",
+                                 "Write MB/s", "Read lat ms", "Queue avg", "Queue max"]
+            for v in sorted(vols, key=lambda x: names.get(
+                    x["Attachments"][0]["InstanceId"] if x.get("Attachments") else "", "")):
+                vid = v["VolumeId"]
+                node = names.get(v["Attachments"][0]["InstanceId"], "?") if v.get("Attachments") else "?"
+                rb, wb = sum(_sum(vid, "VolumeReadBytes")), sum(_sum(vid, "VolumeWriteBytes"))
+                ro, rt = sum(_sum(vid, "VolumeReadOps")), sum(_sum(vid, "VolumeTotalReadTime"))
+                q = _sum(vid, "VolumeQueueLength", "Average")
+                table.add_row([
+                    node, vid, v.get("Size"), v.get("Iops"),
+                    round(rb / window / 1e6, 1), round(wb / window / 1e6, 1),
+                    round(rt / ro * 1000, 1) if ro else 0,
+                    round(sum(q) / len(q), 1) if q else 0,
+                    round(max(q), 1) if q else 0,
+                ])
+            self.log.info(
+                f"[disk-activity] {label} cluster {cluster.id} "
+                f"{start:%H:%M:%S}-{end:%H:%M:%S} UTC (CloudWatch, {period}s period):\n{table}")
+        except Exception as e:
+            self.log.warning(f"[disk-activity] could not read EBS metrics for {cluster.id}: {e}")
 
     def verify_fusion_bucket_empty_after_restore(self, cluster, bucket_name: str, timeout: int = 300) -> bool:
         """

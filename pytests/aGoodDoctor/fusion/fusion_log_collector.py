@@ -29,6 +29,8 @@ Test params (all optional):
     get-cbcollect-info           an explicit False skips the cbcollect part only
     failure_logs_dp_agent        collect dp-agent journals (default True)
     failure_logs_accelerator_s3  download accelerator S3 logs (default True)
+    failure_logs_supportal_dp_agent  also upload one dp-agent zip per cluster
+                                 to Supportal through the CP (default True)
     failure_logs_accelerator_live  collect from running accelerators over SSM
                                  (default True)
     dp_agent_log_days            journalctl --since window in days (default 1)
@@ -38,6 +40,13 @@ Test params (all optional):
                                  the inline-SSM-only path
     cbcollect_timeout            seconds to wait for cbcollect (default 1800)
     cbcollect_ticket             ticketId passed to the log-collection API
+
+Supportal: cbcollect zips land on Supportal under the server cluster UUID,
+so every summary carries https://supportal.couchbase.com/cluster/<uuid>
+(the per-node upload URLs are write-only). dp-agent logs are also uploaded
+as one zip per cluster through POST
+/internal/support/logcollections/clusters/<id>/agents, the same calls
+cp-cli makes, so a ticket can link both without the Jenkins artifacts.
 """
 
 import json
@@ -61,6 +70,7 @@ class FusionLogCollector:
 
     LOG_COLLECTION_TASK_TYPE = "clusterLogsCollection"
     SUMMARY_FILE = "collection_summary.log"
+    SUPPORTAL_CLUSTER_URL = "https://supportal.couchbase.com/cluster/"
 
     def __init__(self, logger):
         self.log = logger
@@ -82,6 +92,76 @@ class FusionLogCollector:
         return next((t for t in tasks
                      if t.get("type") == self.LOG_COLLECTION_TASK_TYPE), None)
 
+    def get_supportal_link(self, capella_api, cluster_id):
+        """
+        Return the cluster's Supportal page, where every cbcollect of it is
+        listed, or "" if the server cluster UUID cannot be read. Never raises.
+        """
+        url = (f"{capella_api.internal_url}/internal/support/clusters/"
+               f"{cluster_id}/pools/default/terseClusterInfo")
+        try:
+            resp = capella_api._urllib_request(
+                url, "GET", headers=capella_api.cbc_api_request_headers, timeout=30)
+            if resp is None or resp.status_code != 200:
+                self.log.warning(
+                    f"[failure-logs] terseClusterInfo for {cluster_id} returned "
+                    f"{getattr(resp, 'status_code', None)}; no Supportal link")
+                return ""
+            uuid = json.loads(resp.content).get("clusterUUID", "")
+        except Exception as e:
+            self.log.warning(f"[failure-logs] No Supportal link for {cluster_id}: {e}")
+            return ""
+        if not uuid:
+            return ""
+        link = self.SUPPORTAL_CLUSTER_URL + uuid
+        self.log.info(f"[failure-logs] Server logs of {cluster_id} on Supportal: {link}")
+        return link
+
+    def upload_dp_agent_logs_to_supportal(self, capella_api, cluster_id, days=1,
+                                          ticket_id="", timeout=900):
+        """
+        Ask the CP to zip every node's dp-agent log and upload it to Supportal
+        (POST /internal/support/logcollections/clusters/{id}/agents). The call
+        blocks until the upload is done; it is made once, because a retry
+        uploads a second zip.
+
+        :return: {'status': uploaded|no-nodes|failed, 'location': s3 URL,
+                  'collected': [node], 'failed': {node: error}, 'error': str}
+        """
+        result = {"status": "failed", "location": "", "collected": [],
+                  "failed": {}, "error": ""}
+        body = {"days": int(days)}
+        if ticket_id:
+            body["ticketId"] = str(ticket_id)
+        url = (f"{capella_api.internal_url}/internal/support/logcollections/"
+               f"clusters/{cluster_id}/agents")
+        try:
+            resp = capella_api._urllib_request(
+                url, "POST", params=json.dumps(body),
+                headers=capella_api.cbc_api_request_headers, timeout=timeout)
+            code = getattr(resp, "status_code", None)
+            if code not in (200, 201):
+                result["error"] = (f"POST agents returned {code}: "
+                                   f"{(getattr(resp, 'content', b'') or b'')[:300]}")
+                return result
+            data = json.loads(resp.content or b"{}")
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {e}"
+            return result
+        result["collected"] = [c.get("nodeId", "") for c in data.get("collected") or []]
+        result["failed"] = {f.get("nodeId", ""): f.get("error", "")
+                            for f in data.get("failed") or []}
+        if not data.get("key"):
+            result["status"] = "no-nodes"
+            return result
+        result["status"] = "uploaded"
+        result["location"] = f"s3://{data.get('bucket', '')}/{data['key']}"
+        self.log.info(
+            f"[failure-logs] dp-agent logs of {cluster_id} uploaded to Supportal: "
+            f"{result['location']} ({len(result['collected'])} node(s), "
+            f"{len(result['failed'])} failed)")
+        return result
+
     def collect_cbcollect(self, capella_api, cluster_id, timeout=1800,
                           ticket_id="", poll_interval=20):
         """
@@ -94,7 +174,8 @@ class FusionLogCollector:
         only a newer task counts.
 
         :return: {'status': completed|cancelled|timeout|failed,
-                  'per_node': {node: {status, url, path}}, 'error': str}
+                  'per_node': {node: {status, url, path}}, 'error': str,
+                  'supportal': cluster Supportal page, when anything uploaded}
         """
         result = {"status": "failed", "per_node": {}, "error": ""}
         try:
@@ -157,6 +238,8 @@ class FusionLogCollector:
                 result["per_node"] = task.get("perNode", {}) or {}
         except Exception as e:
             result["error"] = f"{type(e).__name__}: {e}"
+        if any(i.get("url") for i in result["per_node"].values()):
+            result["supportal"] = self.get_supportal_link(capella_api, cluster_id)
         return result
 
     # ------------------------------------------------------------------
@@ -169,7 +252,8 @@ class FusionLogCollector:
                              dp_agent_days=1, dp_agent_units=("dp-agent",),
                              s3_bucket="default", since=None,
                              accelerator_plan_baseline=None,
-                             accelerator_live=True, accelerator_plan_uuids=None):
+                             accelerator_live=True, accelerator_plan_uuids=None,
+                             supportal_dp_agent=True):
         """
         Collect everything for one cluster. cbcollect runs in a background
         thread while the dp-agent and accelerator logs are pulled, so the
@@ -187,6 +271,8 @@ class FusionLogCollector:
         :param accelerator_plan_uuids: explicit plan UUIDs; overrides the
                           baseline/since selection and limits the live
                           accelerators to these plans
+        :param supportal_dp_agent: also upload the dp-agent logs to Supportal
+                          through the CP (needs capella_api)
         :return: list of summary rows [source, node/instance, status, location]
         """
         cluster_id = target["cluster_id"]
@@ -207,6 +293,18 @@ class FusionLogCollector:
             cb_thread.start()
         elif cbcollect:
             rows.append(["cbcollect", "-", "skipped", "no Capella API client"])
+
+        sp_result = {}
+        sp_thread = None
+        if supportal_dp_agent and capella_api is not None:
+            def _run_supportal_dp_agent():
+                sp_result.update(self.upload_dp_agent_logs_to_supportal(
+                    capella_api, cluster_id, days=dp_agent_days,
+                    ticket_id=cbcollect_ticket))
+            sp_thread = threading.Thread(
+                target=_run_supportal_dp_agent, name=f"dp_agent_supportal_{cluster_id}",
+                daemon=True)
+            sp_thread.start()
 
         aws_util = target.get("aws_util")
         bucket = f"cbc-storage-{cluster_id}" if s3_bucket == "default" else s3_bucket
@@ -277,6 +375,21 @@ class FusionLogCollector:
                 for node, info in sorted(cb_result.get("per_node", {}).items()):
                     rows.append(["cbcollect", node, info.get("status", status),
                                  info.get("url") or info.get("path") or ""])
+                if cb_result.get("supportal"):
+                    rows.append(["server logs (Supportal)", "all nodes", "uploaded",
+                                 cb_result["supportal"]])
+        if sp_thread is not None:
+            sp_thread.join(timeout=1200)
+            if sp_thread.is_alive():
+                rows.append(["dp-agent (Supportal)", "-", "timeout",
+                             "upload call still running"])
+            else:
+                rows.append(["dp-agent (Supportal)",
+                             f"{len(sp_result.get('collected', []))} node(s)",
+                             sp_result.get("status", "failed"),
+                             sp_result.get("location") or sp_result.get("error", "")])
+                for node, err in sorted(sp_result.get("failed", {}).items()):
+                    rows.append(["dp-agent (Supportal)", node, "failed", err])
         return rows
 
     def collect(self, targets, dest_root, reason="", **kwargs):
@@ -440,6 +553,7 @@ class FusionFailureLogsMixin:
             dp_agent=params.param("failure_logs_dp_agent", True),
             accelerator_s3=params.param("failure_logs_accelerator_s3", True),
             accelerator_live=params.param("failure_logs_accelerator_live", True),
+            supportal_dp_agent=params.param("failure_logs_supportal_dp_agent", True),
             cbcollect_timeout=int(params.param("cbcollect_timeout", 1800)),
             cbcollect_ticket=str(params.param("cbcollect_ticket", "")),
             dp_agent_days=int(params.param("dp_agent_log_days", 1)),

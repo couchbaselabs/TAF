@@ -54,9 +54,12 @@ live node count and every scaling operation per wall-clock UTC hour, then
 default 20 minutes past the hour) — triggers ClusterBilling exactly once
 per hour and logs a comparison. See fusion_cp_billing_monitor.py's
 HourlyBillingWindowTracker docstring for the on-demand-trigger mechanics.
-Set fail_on_hourly_billing_mismatch=True to turn a mismatch into a hard
-test failure (default False — this surfaces a known, still-open CP gap,
-not yet something every run should hard-fail on).
+A mismatch counts as a billing failure unless
+fail_on_hourly_billing_mismatch=False (then it is only logged).
+
+Billing failures do not stop the run: each one is recorded and the test
+fails once at the end with the full list, so one bad rebalance does not
+hide problems in the rebalances after it.
 
 A minimum inter_rebalance_wait_secs gap (default 10 minutes) is enforced
 between the end of one rebalance batch and the start of the next. After
@@ -76,6 +79,7 @@ run (grep its log for "Scheduled billing check:").
 
 import re
 import threading
+import time
 from datetime import datetime, timezone
 
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
@@ -195,18 +199,35 @@ class FusionBillingVolumeTest(VolumeTest):
             HourlyBillingWindowTracker.DEFAULT_REPORT_DELAY_MINUTES,
         )
         self.hourly_billing_flush_timeout_secs = self.input.param(
+            # Grace AFTER the last pending hour becomes due (stop_and_flush
+            # measures from there): room for the tracker's retries.
             "hourly_billing_flush_timeout_secs",
-            (self.hourly_billing_report_delay_minutes + 10) * 60,
+            2400,
         )
-        # Off by default -- the hourly/peak-node mismatch this tracker
-        # surfaces is a known, still-open CP gap (AV-140399/AV-140402
-        # follow-up), not yet something every run should hard-fail on. Flip
-        # on once CP's fix lands to turn this into an enforced regression
-        # check.
+        # On by default. This used to be off, citing AV-140399/AV-140402 as
+        # an open CP gap, but both were closed "As Designed" and neither is
+        # about the billed node count -- so a billed-vs-observed node count
+        # mismatch for an hour is a finding, not known noise. Like every
+        # other billing check here it is collected and reported at the end
+        # of the run (see _billing_failure), not raised mid-run.
         self.fail_on_hourly_billing_mismatch = self.input.param(
-            "fail_on_hourly_billing_mismatch", False
+            "fail_on_hourly_billing_mismatch", True
         )
         self._hourly_trackers = {}
+
+        # Billing problems found during the run. A volume run is long and
+        # expensive, so a billing mismatch on rebalance 2 must not stop
+        # rebalances 3..N from being checked: every billing check records
+        # its failure here and the test fails once, at the end, with the
+        # full list (see _fail_on_billing_failures).
+        self._billing_failures = []
+
+        # The jenkins-cp-cli session KubectlCPDBUtil assumes expires after
+        # about an hour, and a single rebalance at 27 nodes can outlast
+        # that. Anything that queries the CP DB goes through
+        # _fresh_billing_monitor(), which reconnects once the connection is
+        # older than this.
+        self.cp_db_refresh_secs = self.input.param("cp_db_refresh_secs", 2400)
 
     def _derive_cp_eks_cluster_name(self):
         """
@@ -252,6 +273,14 @@ class FusionBillingVolumeTest(VolumeTest):
             tracker.stop()
         self._hourly_trackers = {}
 
+        # If the test died before reaching its own end-of-run report, still
+        # print whatever billing problems were found so far.
+        failures = getattr(self, "_billing_failures", [])
+        if failures:
+            self.log.error(
+                f"Billing problems found before the test stopped "
+                f"({len(failures)}):\n" + "\n".join(f"  - {f}" for f in failures))
+
         kubectl_cp_db_util = getattr(self, "kubectl_cp_db_util", None)
         if kubectl_cp_db_util:
             try:
@@ -296,11 +325,32 @@ class FusionBillingVolumeTest(VolumeTest):
         get_billing_monitor_fn), specifically so it never holds a stale
         reference across a reconnect -- but if this method's old.disconnect()
         lands mid-query from a tracker's background thread, that one query
-        can fail. Acceptable given reconnects are infrequent (once per
-        rebalance batch) and queries take a few seconds; a tracker's own
-        failed trigger/query just logs and gets picked up cleanly on that
-        hour's would-be next check, it doesn't wedge anything.
+        can fail. The reconnect now holds FusionCPBillingMonitor.N1QL_LOCK,
+        the same lock every query takes, so it waits for an in-flight query
+        instead of killing its port-forward.
         """
+        with FusionCPBillingMonitor.N1QL_LOCK:
+            self._connect_cp_db_locked()
+
+    def _fresh_billing_monitor(self):
+        """
+        Return self.billing_monitor, reconnecting first if the connection is
+        older than cp_db_refresh_secs (the assumed jenkins-cp-cli session
+        behind it lasts about an hour). Used by the hourly trackers, which
+        run in the background while a long rebalance is in progress and
+        would otherwise keep using an expired session until the next
+        rebalance batch reconnects.
+        """
+        with FusionCPBillingMonitor.N1QL_LOCK:
+            age = time.time() - getattr(self, "_cp_db_connected_at", 0.0)
+            if age > self.cp_db_refresh_secs:
+                self.log.info(
+                    f"CP DB connection is {int(age)}s old, reconnecting")
+                self._connect_cp_db_locked()
+            return self.billing_monitor
+
+    def _connect_cp_db_locked(self):
+        """Body of _connect_cp_db(); caller holds FusionCPBillingMonitor.N1QL_LOCK."""
         old = getattr(self, "kubectl_cp_db_util", None)
         if old:
             try:
@@ -335,10 +385,52 @@ class FusionBillingVolumeTest(VolumeTest):
         self.billing_monitor = FusionCPBillingMonitor(
             self.log, self.kubectl_cp_db_util, namespace=self.cp_namespace
         )
+        self._cp_db_connected_at = time.time()
 
     # -------------------------------------------------------------------------
     # Billing helpers
     # -------------------------------------------------------------------------
+
+    def _billing_failure(self, message):
+        """Record a billing problem; the test fails on all of them at the end."""
+        self.log.error(f"BILLING CHECK FAILED: {message}")
+        self._billing_failures.append(message)
+
+    def _fail_on_billing_failures(self):
+        """Fail the test once, listing every billing problem found in the run."""
+        if not self._billing_failures:
+            self.log.info("All billing checks passed for every rebalance and hour")
+            return
+        summary = "\n".join(f"  {i}. {f}" for i, f in enumerate(self._billing_failures, 1))
+        self.fail(
+            f"{len(self._billing_failures)} billing problem(s) found during the "
+            f"run:\n{summary}")
+
+    @staticmethod
+    def _usage_days_from_pager_tasks(pager_tasks):
+        """
+        The distinct UTC days the pagerTasks were completed on.
+
+        BillPagerTasks bills one UTC day at a time. Triggering it only for
+        "now" misses a rebalance that finished just before midnight UTC
+        (billing check runs after midnight) or one whose accelerators
+        finished on both sides of midnight -- the check would then report a
+        missing or short variable record that is really a test artefact.
+        """
+        days = set()
+        for task in pager_tasks or []:
+            ts = task.get("downloadCompletedAt") or task.get("registeredAt")
+            if not ts or ts.startswith("0001-01-01"):
+                continue
+            # CP writes UTC timestamps from Go, often with nanoseconds, which
+            # datetime.fromisoformat() rejects on Python 3.10 -- the date
+            # prefix is all that is needed.
+            try:
+                day = datetime.strptime(ts[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            days.add(day)
+        return sorted(days) or [datetime.now(timezone.utc)]
 
     def _collect_billing_info_for_rebalance(self, rebalance_task, uuid_before: int, cost_tracker=None):
         """
@@ -435,7 +527,7 @@ class FusionBillingVolumeTest(VolumeTest):
                     # likewise need rebuilding, so the tracker must always
                     # resolve the CURRENT object, not the one that existed
                     # when it was constructed.
-                    get_billing_monitor_fn=lambda: self.billing_monitor,
+                    get_billing_monitor_fn=self._fresh_billing_monitor,
                     get_capella_api_fn=lambda t=tenant: self._build_capella_api(t),
                     get_live_node_ids_fn=lambda t=tenant, c=cluster: self._get_live_node_ids(t, c),
                     poll_interval_secs=self.hourly_billing_poll_interval_secs,
@@ -452,21 +544,35 @@ class FusionBillingVolumeTest(VolumeTest):
         fail_on_hourly_billing_mismatch) are known.
         """
         all_mismatches = []
+        unreported = []
         for cluster_id, tracker in self._hourly_trackers.items():
             tracker.stop_and_flush(timeout=self.hourly_billing_flush_timeout_secs)
             all_mismatches.extend(tracker.mismatches)
+            gave_up = tracker.given_up_hours()
+            unreported.extend(
+                (cluster_id, h, h in gave_up) for h in tracker.unreported_hours())
         self._hourly_trackers.clear()
 
-        if all_mismatches:
-            summary = "; ".join(
-                f"cluster={m['cluster_id']} hour={m['hour']} "
-                f"observed_max={m['observed_max_nodes']} billed={m['billed_nodes']} "
-                f"(billingPeriod={m['billing_period']})"
-                for m in all_mismatches
-            )
-            self.log.error(f"Hourly billing window mismatches: {summary}")
+        for m in all_mismatches:
+            message = (
+                f"hourly billing node count mismatch: cluster={m['cluster_id']} "
+                f"hour={m['hour']} observed unique nodes={m['observed_unique_nodes']} "
+                f"(max concurrent={m['observed_max_nodes']}), "
+                f"billed nodes={m['billed_nodes']} (billingPeriod={m['billing_period']})")
             if self.fail_on_hourly_billing_mismatch:
-                self.fail(f"Hourly billing window mismatch(es) found: {summary}")
+                self._billing_failure(message)
+            else:
+                self.log.error(message)
+
+        # An hour the tracker never managed to check is a coverage hole,
+        # not a pass: report it rather than letting it vanish.
+        for cluster_id, hour, gave_up in unreported:
+            why = ("ClusterBilling trigger or record query kept failing -- see "
+                   "the HourlyBillingWindowTracker warnings" if gave_up else
+                   "the flush ended before this hour was due; no attempt failed")
+            self._billing_failure(
+                f"hourly billing for cluster={cluster_id} hour={hour.isoformat()} "
+                f"was never checked ({why})")
 
     def _run_billing_checks_for_batch(self):
         """
@@ -488,28 +594,42 @@ class FusionBillingVolumeTest(VolumeTest):
                 f"=== Billing verification: cluster={cluster.id}, planUUID={plan_uuid} ==="
             )
 
-            # Primary check: correct PagerTask documents exist in CP DB
-            pager_tasks = self.billing_monitor.query_pager_tasks_for_rebalance(
-                cluster.id, plan_uuid
+            # Accelerator instances this test itself saw for the rebalance
+            # (polled every 5s by monitor_cluster_accelerator_instances).
+            # Each accelerator writes one pagerTask when it completes, so
+            # this is the count the pagerTasks are compared against.
+            accel_tracker = self._cost_trackers.get(plan_uuid)
+            observed_accelerators = len(accel_tracker.snapshot()) if accel_tracker else None
+
+            # Primary check: correct PagerTask documents exist in CP DB.
+            # The pagerTask write is fire-and-forget from each accelerator's
+            # /complete call, so with hundreds of accelerators they arrive
+            # over time: wait until the count reaches the observed
+            # accelerator count or stops growing, and use THAT set for
+            # every later check (expected GiB included) -- not a snapshot
+            # taken before the wait.
+            pager_tasks = self.billing_monitor.wait_for_pager_tasks(
+                cluster.id, plan_uuid, expected_count=observed_accelerators
             )
             result = self.billing_monitor.verify_pager_tasks_after_rebalance(
-                cluster.id, plan_uuid
+                cluster.id, plan_uuid, tasks=pager_tasks,
+                expected_count=observed_accelerators,
             )
-            self.assertTrue(
-                result,
-                f"PagerTask billing verification FAILED for cluster={cluster.id}, "
-                f"planUUID={plan_uuid}"
-            )
+            if not result:
+                self._billing_failure(
+                    f"pagerTask check failed for cluster={cluster.id}, "
+                    f"planUUID={plan_uuid} ({len(pager_tasks or [])} pagerTask(s), "
+                    f"{observed_accelerators} accelerator instance(s) observed) -- "
+                    f"see the PagerTask validation errors above")
 
             # Secondary check: idempotency — no duplicate nodeIDs
             dedup_result = self.billing_monitor.verify_no_duplicate_pager_tasks(
                 cluster.id, plan_uuid
             )
-            self.assertTrue(
-                dedup_result,
-                f"Duplicate PagerTask detected for cluster={cluster.id}, "
-                f"planUUID={plan_uuid} — double-billing risk"
-            )
+            if not dedup_result:
+                self._billing_failure(
+                    f"duplicate pagerTask for cluster={cluster.id}, "
+                    f"planUUID={plan_uuid} -- double-billing risk")
 
             # Informational: log GiB summary for the rebalance
             self.billing_monitor.log_billing_summary(cluster.id, plan_uuid)
@@ -534,13 +654,14 @@ class FusionBillingVolumeTest(VolumeTest):
 
                 variable_result = self.billing_monitor.trigger_and_verify_variable_record(
                     capella_api, cluster.id, plan_uuid,
-                    usage_date=datetime.now(timezone.utc), expected_gib=expected_gib,
+                    usage_dates=self._usage_days_from_pager_tasks(pager_tasks),
+                    expected_gib=expected_gib,
                 )
-                self.assertTrue(
-                    variable_result,
-                    f"billing.variable verification FAILED for cluster={cluster.id}, "
-                    f"planUUID={plan_uuid}"
-                )
+                if not variable_result:
+                    self._billing_failure(
+                        f"billing.variable check failed for cluster={cluster.id}, "
+                        f"planUUID={plan_uuid} (expected {expected_gib:.4f} GiB from "
+                        f"pagerTasks) -- see the variable record errors above")
 
                 # AWS burn vs. CP-billed cost -- informational only, never
                 # asserted (see fusion_cost_monitor.py module docstring).
@@ -550,7 +671,9 @@ class FusionBillingVolumeTest(VolumeTest):
                 try:
                     variable_records = self.billing_monitor.query_variable_records(cluster.id, plan_uuid)
                     if variable_records:
-                        credit_quantity = variable_records[0].get("creditQuantity")
+                        # One record per UTC day the rebalance touched
+                        credit_quantity = sum(
+                            r.get("creditQuantity") or 0 for r in variable_records)
                 except Exception as e:
                     self.log.warning(
                         f"Could not re-query billing.variable creditQuantity for cost "
@@ -725,13 +848,12 @@ class FusionBillingVolumeTest(VolumeTest):
                            samples live node count (default: 30)
           hourly_billing_report_delay_minutes  Minutes past an hour's close
                            before checking its billing record (default: 20)
-          hourly_billing_flush_timeout_secs  Max seconds to wait, at the end
-                           of the run, for the final pending hour(s) to
-                           become due (default: (report_delay_minutes+10)*60)
-          fail_on_hourly_billing_mismatch  Set True to hard-fail the test on
-                           any hourly billed-vs-observed mismatch (default:
-                           False — the gap this surfaces is a known, still-
-                           open CP issue, not yet enforced as a regression)
+          hourly_billing_flush_timeout_secs  Grace in seconds, at the end of
+                           the run, after the last pending hour becomes due
+                           (hour end + report delay) (default: 2400)
+          fail_on_hourly_billing_mismatch  Set False to only log hourly
+                           billed-vs-observed mismatches instead of failing
+                           (default: True)
           inter_rebalance_wait_secs  Minimum gap enforced between the end of
                            one rebalance batch and the start of the next
                            (default: 600)
@@ -889,23 +1011,34 @@ class FusionBillingVolumeTest(VolumeTest):
                 self.test_cluster_on_off()
 
         # ---------------------------------------------------------------
-        # Stop hourly billing trackers, flushing any still-pending hour(s)
+        # Scaling is over: stop sampling so the trackers don't open new
+        # hours while the EBS cleanup wait runs. The flush comes after that
+        # wait, which usually lets the last (still-open) hour become due
+        # without adding wall time.
         # ---------------------------------------------------------------
-        self._stop_hourly_billing_trackers()
+        for tracker in self._hourly_trackers.values():
+            tracker.stop()
 
-        # ---------------------------------------------------------------
-        # Final EBS cleanup verification
-        # ---------------------------------------------------------------
-        for tenant in self.tenants:
-            for cluster in tenant.clusters:
-                result = self.check_ebs_cleanup_for_cluster(cluster)
-                self.assertTrue(
-                    result,
-                    f"EBS cleanup check failed for cluster={cluster.id}"
-                )
-                self.log.info(
-                    f"EBS cleanup verified for cluster={cluster.id}"
-                )
+        try:
+            # -----------------------------------------------------------
+            # Final EBS cleanup verification
+            # -----------------------------------------------------------
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    result = self.check_ebs_cleanup_for_cluster(cluster)
+                    self.assertTrue(
+                        result,
+                        f"EBS cleanup check failed for cluster={cluster.id}"
+                    )
+                    self.log.info(
+                        f"EBS cleanup verified for cluster={cluster.id}"
+                    )
+        finally:
+            # Flush every still-pending hour (waits for the last one to be due)
+            self._stop_hourly_billing_trackers()
+
+        # Every billing problem found across the whole run, in one failure
+        self._fail_on_billing_failures()
 
     def test_verify_variable_billing_records(self):
         """

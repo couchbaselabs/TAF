@@ -117,8 +117,22 @@ class FusionCPBillingMonitor:
     # -------------------------------------------------------------------------
     # Timing constants
     # -------------------------------------------------------------------------
-    # Max seconds to wait for PagerTasks to appear after rebalance
-    PAGER_TASK_WAIT_TIMEOUT = 120
+    # Max seconds to wait for PagerTasks after a rebalance. Each accelerator
+    # writes its own pagerTask on /complete (fire-and-forget), so at scale
+    # (hundreds of accelerators) they keep arriving for a while.
+    PAGER_TASK_WAIT_TIMEOUT = 600
+    # Treat the pagerTask set as complete once its count has not changed for
+    # this long (used when the expected count is unknown or never reached).
+    PAGER_TASK_SETTLE_SECS = 120
+
+    # Every N1QL query opens a kubectl port-forward on the same fixed local
+    # port and closes it afterwards. The hourly tracker queries from a
+    # background thread while the main thread runs per-rebalance checks, so
+    # two concurrent queries would fight over that port (and one's cleanup
+    # kills the other's tunnel). One lock for all queries -- and for the
+    # test's CP DB reconnect -- serialises them. Reentrant so a reconnect
+    # can be done while already holding it.
+    N1QL_LOCK = threading.RLock()
 
     # -------------------------------------------------------------------------
     # On-demand internal-support job trigger constants. The internal-support
@@ -137,7 +151,11 @@ class FusionCPBillingMonitor:
     # (internal/billing/biller/fixed/jobs/clusters.go)
     CLUSTER_BILLING_JOB_TYPE = "ClusterBilling"
     JOB_POLL_INTERVAL_SECS = 5
-    JOB_TRIGGER_TIMEOUT_SECS = 120
+    # BillPagerTasks bills every pagerTask of a whole UTC day across the
+    # sandbox, and ClusterBilling every node of the cluster for an hour; at
+    # 27 nodes with hundreds of accelerators per rebalance 2 minutes is not
+    # enough, and a timeout here reads as a billing failure.
+    JOB_TRIGGER_TIMEOUT_SECS = 900
     JOB_TERMINAL_STATUSES = {"complete", "failed"}
 
     def __init__(self, logger, kubectl_cp_db_util: KubectlCPDBUtil, namespace: str = None):
@@ -178,11 +196,12 @@ class FusionCPBillingMonitor:
         :param query: N1QL query string
         :return: List of result dicts, or None on error
         """
-        try:
-            return self.cp_db_util.run_n1ql_query(query, namespace=self.namespace)
-        except RuntimeError as e:
-            self.log.error(f"N1QL query failed: {e}")
-            return None
+        with self.N1QL_LOCK:
+            try:
+                return self.cp_db_util.run_n1ql_query(query, namespace=self.namespace)
+            except RuntimeError as e:
+                self.log.error(f"N1QL query failed: {e}")
+                return None
 
     def _query_factor_multiplier(self, factor_name: str):
         """
@@ -384,14 +403,67 @@ class FusionCPBillingMonitor:
             return False
         return True
 
+    def wait_for_pager_tasks(
+        self, cluster_id: str, plan_uuid: str, expected_count: int = None,
+        timeout: int = None, settle_secs: int = None
+    ):
+        """
+        Poll until the pagerTask set for one rebalance looks complete and
+        return it.
+
+        Complete means: the count reached expected_count (when given), or at
+        least one task exists and the count has not changed for settle_secs.
+        Returns whatever was found when timeout expires (possibly an empty
+        list); None only if every query failed.
+        """
+        timeout = timeout or self.PAGER_TASK_WAIT_TIMEOUT
+        settle_secs = settle_secs or self.PAGER_TASK_SETTLE_SECS
+        start = time.time()
+        tasks = None
+        last_count = -1
+        last_change = start
+        while True:
+            result = self.query_pager_tasks_for_rebalance(cluster_id, plan_uuid)
+            if result is not None:
+                tasks = result
+            count = len(tasks or [])
+            now = time.time()
+            if count != last_count:
+                last_count, last_change = count, now
+            if expected_count and count >= expected_count:
+                break
+            if count and now - last_change >= settle_secs:
+                break
+            if now - start >= timeout:
+                self.log.warning(
+                    f"Stopped waiting for pagerTasks after {timeout}s: "
+                    f"{count} found, expected {expected_count} "
+                    f"(cluster={cluster_id}, planUUID={plan_uuid})")
+                break
+            self.log.info(
+                f"{count} pagerTask(s) so far for planUUID={plan_uuid} "
+                f"(expected {expected_count}), {int(now - start)}s elapsed")
+            time.sleep(15)
+        return tasks
+
     def verify_pager_tasks_after_rebalance(
-        self, cluster_id: str, plan_uuid: str, timeout: int = None
+        self, cluster_id: str, plan_uuid: str, timeout: int = None,
+        tasks=None, expected_count: int = None
     ) -> bool:
         """
         Verify PagerTask documents were correctly written to CP DB after a fusion rebalance.
 
         The pager billing write is best-effort (fire-and-forget from the /complete handler)
         so this method polls until at least one task appears or the timeout expires.
+        Pass tasks (from wait_for_pager_tasks) to verify an already-collected
+        set instead of polling.
+
+        If expected_count is given (the accelerator instances observed for
+        the rebalance), a different pagerTask count is a failure: fewer means
+        accelerators that were never billed, more means billing for
+        accelerators the test never saw. An accelerator that was replaced
+        mid-rebalance can account for a difference -- the log shows both
+        numbers so it can be checked against the accelerator table.
 
         Checks per task:
           - shardSizeInBytes >= 0
@@ -414,9 +486,8 @@ class FusionCPBillingMonitor:
         )
 
         # Poll until tasks appear (billing write is async best-effort)
-        tasks = None
         start = time.time()
-        while time.time() - start < timeout:
+        while not tasks and time.time() - start < timeout:
             tasks = self.query_pager_tasks_for_rebalance(cluster_id, plan_uuid)
             if tasks:
                 break
@@ -503,6 +574,13 @@ class FusionCPBillingMonitor:
             # will grow the collection unboundedly)
             if not expiry or expiry == 0:
                 failures.append(f"TTL (META.expiration) not set for nodeID={node_id}")
+
+        if expected_count is not None and len(tasks) != expected_count:
+            failures.append(
+                f"{len(tasks)} pagerTask(s) but {expected_count} accelerator "
+                f"instance(s) were observed for this rebalance "
+                f"({'missing' if len(tasks) < expected_count else 'extra'} "
+                f"{abs(expected_count - len(tasks))})")
 
         total_gib = total_bytes / self.BYTES_PER_GIB
         self.log.info(
@@ -632,68 +710,87 @@ class FusionCPBillingMonitor:
             )
             return False
 
-        record = records[0]
-        gib = record.get("usage")
-        base_price = record.get("basePrice")
-        uplift = record.get("uplift")
-        credit_quantity = record.get("creditQuantity")
-        provider = record.get("provider")
-        region = record.get("region")
-
-        table = PrettyTable()
-        table.field_names = ["Field", "Value"]
-        table.add_row(["id", record.get("docId")])
-        table.add_row(["databaseName", record.get("databaseName")])
-        table.add_row(["usageCategory", record.get("usageCategory")])
-        table.add_row(["usageDate", record.get("usageDate")])
-        table.add_row(["usage (GiB)", gib])
-        table.add_row(["usageUnit", record.get("usageUnit")])
-        table.add_row(["basePrice", base_price])
-        table.add_row(["uplift", uplift])
-        table.add_row(["provider / region", f"{provider} / {region}"])
-        table.add_row(["creditQuantity", credit_quantity])
-        table.add_row(["manual", record.get("manual")])
-        table.add_row(["createdByUserID", record.get("createdByUserID")])
-        table.add_row(["createdAt", record.get("createdAt")])
-        self.log.info(
-            f"Variable cost (billing.variable) for cluster={cluster_id}, "
-            f"planUUID={plan_uuid}:\n{table}"
-        )
-
+        # One record per UTC day the rebalance's pagerTasks fall on (the doc
+        # id ends "<YYYY-MM-DD>-<planUUID>"), so a rebalance that crosses
+        # midnight UTC has two. Check each record on its own, then compare
+        # the summed usage against the pagerTasks.
         failures = []
-
-        internal_expected = gib * base_price * uplift
-        if not math.isclose(internal_expected, credit_quantity, rel_tol=self.CREDIT_REL_TOLERANCE):
-            failures.append(
-                f"creditQuantity ({credit_quantity}) != usage*basePrice*uplift "
-                f"({gib}*{base_price}*{uplift}={internal_expected}) — record is "
-                f"internally inconsistent"
-            )
-
         variable_price = self._query_factor_multiplier(self.FUSION_VARIABLE_PRICE_FACTOR)
-        display_provider = self.CSP_PROVIDER_DISPLAY_NAMES.get(provider, provider)
-        csp_uplift_name = f"{self.FUSION_CSP_UPLIFT_FACTOR_PREFIX} - {display_provider} {region}"
-        csp_uplift = self._query_factor_multiplier(csp_uplift_name)
-        if variable_price is None or csp_uplift is None:
-            failures.append(
-                f"Could not fetch live credit factors "
-                f"('{self.FUSION_VARIABLE_PRICE_FACTOR}'={variable_price}, "
-                f"'{csp_uplift_name}'={csp_uplift})"
+        total_gib = 0.0
+        total_credits = 0.0
+        for record in records:
+            gib = record.get("usage")
+            base_price = record.get("basePrice")
+            uplift = record.get("uplift")
+            credit_quantity = record.get("creditQuantity")
+            provider = record.get("provider")
+            region = record.get("region")
+
+            table = PrettyTable()
+            table.field_names = ["Field", "Value"]
+            table.add_row(["id", record.get("docId")])
+            table.add_row(["databaseName", record.get("databaseName")])
+            table.add_row(["usageCategory", record.get("usageCategory")])
+            table.add_row(["usageDate", record.get("usageDate")])
+            table.add_row(["usage (GiB)", gib])
+            table.add_row(["usageUnit", record.get("usageUnit")])
+            table.add_row(["basePrice", base_price])
+            table.add_row(["uplift", uplift])
+            table.add_row(["provider / region", f"{provider} / {region}"])
+            table.add_row(["creditQuantity", credit_quantity])
+            table.add_row(["manual", record.get("manual")])
+            table.add_row(["createdByUserID", record.get("createdByUserID")])
+            table.add_row(["createdAt", record.get("createdAt")])
+            self.log.info(
+                f"Variable cost (billing.variable) for cluster={cluster_id}, "
+                f"planUUID={plan_uuid}:\n{table}"
             )
-        else:
-            live_expected = gib * variable_price * csp_uplift
-            if not math.isclose(live_expected, credit_quantity, rel_tol=self.CREDIT_REL_TOLERANCE):
+
+            # A missing numeric field is itself a finding; don't crash the
+            # run on it with a TypeError.
+            missing = [name for name, value in (
+                ("usage", gib), ("basePrice", base_price), ("uplift", uplift),
+                ("creditQuantity", credit_quantity)) if value is None]
+            if missing:
                 failures.append(
-                    f"creditQuantity ({credit_quantity}) != usage*live_factors "
-                    f"({gib}*{variable_price}*{csp_uplift}={live_expected}) — "
-                    f"biller may have used stale/wrong credit factors"
+                    f"record {record.get('docId')} is missing {missing}")
+                continue
+            total_gib += gib
+            total_credits += credit_quantity
+
+            internal_expected = gib * base_price * uplift
+            if not math.isclose(internal_expected, credit_quantity, rel_tol=self.CREDIT_REL_TOLERANCE):
+                failures.append(
+                    f"creditQuantity ({credit_quantity}) != usage*basePrice*uplift "
+                    f"({gib}*{base_price}*{uplift}={internal_expected}) — record "
+                    f"{record.get('docId')} is internally inconsistent"
                 )
 
+            display_provider = self.CSP_PROVIDER_DISPLAY_NAMES.get(provider, provider)
+            csp_uplift_name = f"{self.FUSION_CSP_UPLIFT_FACTOR_PREFIX} - {display_provider} {region}"
+            csp_uplift = self._query_factor_multiplier(csp_uplift_name)
+            if variable_price is None or csp_uplift is None:
+                failures.append(
+                    f"Could not fetch live credit factors "
+                    f"('{self.FUSION_VARIABLE_PRICE_FACTOR}'={variable_price}, "
+                    f"'{csp_uplift_name}'={csp_uplift})"
+                )
+            else:
+                live_expected = gib * variable_price * csp_uplift
+                if not math.isclose(live_expected, credit_quantity, rel_tol=self.CREDIT_REL_TOLERANCE):
+                    failures.append(
+                        f"creditQuantity ({credit_quantity}) != usage*live_factors "
+                        f"({gib}*{variable_price}*{csp_uplift}={live_expected}) — "
+                        f"biller may have used stale/wrong credit factors "
+                        f"(record {record.get('docId')})"
+                    )
+
         if expected_gib is not None and not math.isclose(
-                gib, expected_gib, rel_tol=self.CREDIT_REL_TOLERANCE):
+                total_gib, expected_gib, rel_tol=self.CREDIT_REL_TOLERANCE):
             failures.append(
-                f"billed usage ({gib} GiB) != expected ({expected_gib} GiB summed "
-                f"from PagerTasks) for planUUID={plan_uuid}"
+                f"billed usage ({total_gib} GiB over {len(records)} record(s)) != "
+                f"expected ({expected_gib} GiB summed from PagerTasks) for "
+                f"planUUID={plan_uuid}"
             )
 
         if failures:
@@ -702,8 +799,9 @@ class FusionCPBillingMonitor:
             return False
 
         self.log.info(
-            f"Variable billing record verified for cluster={cluster_id}, "
-            f"planUUID={plan_uuid}: {gib:.4f} GiB billed at {credit_quantity:.6f} credits"
+            f"Variable billing verified for cluster={cluster_id}, "
+            f"planUUID={plan_uuid}: {total_gib:.4f} GiB billed at "
+            f"{total_credits:.6f} credits over {len(records)} record(s)"
         )
         return True
 
@@ -921,28 +1019,36 @@ class FusionCPBillingMonitor:
 
     def trigger_and_verify_variable_record(
         self, capella_api, cluster_id: str, plan_uuid: str,
-        usage_date: datetime = None, expected_gib: float = None
+        usage_date: datetime = None, expected_gib: float = None,
+        usage_dates=None
     ) -> bool:
         """
-        Trigger BillPagerTasks on demand for usage_date (default: today, UTC)
-        and verify the resulting billing.variable record for one rebalance.
+        Trigger BillPagerTasks on demand and verify the resulting
+        billing.variable record(s) for one rebalance.
+
+        BillPagerTasks bills one UTC day per run. Pass usage_dates (every UTC
+        day the rebalance's pagerTasks were completed on) so a rebalance
+        that crosses midnight, or is checked after midnight, gets each of
+        its days billed; usage_date (a single day, default today UTC) is
+        kept for older callers.
 
         Removes the wait-for-tomorrow's-cron limitation documented on
-        verify_variable_record_after_rebalance() — that method is unchanged
-        and still does the actual verification here, just no longer gated on
-        cron timing.
+        verify_variable_record_after_rebalance(), which still does the
+        actual verification.
 
-        :return: True if the job ran and the record verified correctly
+        :return: True if the job(s) ran and the record(s) verified correctly
         """
-        if usage_date is None:
-            usage_date = datetime.now(timezone.utc)
+        if usage_dates is None:
+            usage_dates = [usage_date or datetime.now(timezone.utc)]
 
-        if not self.trigger_bill_pager_tasks_job(capella_api, usage_date):
-            self.log.error(
-                f"BillPagerTasks job did not complete — cannot verify "
-                f"billing.variable for cluster={cluster_id}, planUUID={plan_uuid}"
-            )
-            return False
+        for day in usage_dates:
+            if not self.trigger_bill_pager_tasks_job(capella_api, day):
+                self.log.error(
+                    f"BillPagerTasks job for {day.date()} did not complete — "
+                    f"cannot verify billing.variable for cluster={cluster_id}, "
+                    f"planUUID={plan_uuid}"
+                )
+                return False
 
         return self.verify_variable_record_after_rebalance(
             cluster_id, plan_uuid, expected_gib=expected_gib
@@ -1188,7 +1294,13 @@ class HourlyBillingWindowTracker(threading.Thread):
         # a transient failure doesn't silently drop that hour's report
         # forever, and a persistent one doesn't retry indefinitely either.
         self._report_attempts = {}
-        self.MAX_REPORT_ATTEMPTS = 3
+        # 8 attempts at least 5 minutes apart: keeps retrying an hour for
+        # about 40 minutes before giving up on it.
+        self.MAX_REPORT_ATTEMPTS = 8
+        self.RETRY_SPACING_SECS = 300
+        self._last_attempt_at = {}
+        # Hours given up on after MAX_REPORT_ATTEMPTS -- never checked.
+        self._given_up_hours = []
         # Populated with a dict per hour whose CP-billed node count didn't
         # match the observed max — callers can assert on this list.
         self.mismatches = []
@@ -1227,14 +1339,20 @@ class HourlyBillingWindowTracker(threading.Thread):
                 self._poll_once()
             except Exception as e:
                 self.log.warning(f"HourlyBillingWindowTracker poll failed: {e}")
-            self._report_due_hours()
+            try:
+                self._report_due_hours()
+            except Exception as e:
+                self.log.warning(f"HourlyBillingWindowTracker report pass failed: {e}")
             self._stop_event.wait(self.poll_interval_secs)
         # One last pass in case an hour became due between the final poll
         # and stop() being called.
-        self._report_due_hours()
+        try:
+            self._report_due_hours()
+        except Exception as e:
+            self.log.warning(f"HourlyBillingWindowTracker final report pass failed: {e}")
 
-    def _poll_once(self):
-        now = datetime.now(timezone.utc)
+    def _poll_once(self, now=None):
+        now = now or datetime.now(timezone.utc)
         hour_start = now.replace(minute=0, second=0, microsecond=0)
         node_ids = set(self._get_live_node_ids())
         with self._lock:
@@ -1254,7 +1372,24 @@ class HourlyBillingWindowTracker(threading.Thread):
                     if now >= due_at:
                         to_report.append((hour_start, dict(state)))
             for hour_start, state in to_report:
-                succeeded = self._report_hour(hour_start, state)
+                # Space out retries of a failing hour: with a 30s poll, 3
+                # back-to-back attempts gave up within ~90s, so one CP blip
+                # (or an expired CP DB session during a long rebalance)
+                # silently dropped that hour.
+                last_try = self._last_attempt_at.get(hour_start)
+                if last_try is not None and time.time() - last_try < self.RETRY_SPACING_SECS:
+                    continue
+                self._last_attempt_at[hour_start] = time.time()
+                try:
+                    succeeded = self._report_hour(hour_start, state)
+                except Exception as e:
+                    # An exception here used to escape run() and kill the
+                    # tracker thread for the rest of the run.
+                    self.log.warning(
+                        f"HourlyBillingWindowTracker: report for hour="
+                        f"{hour_start.isoformat()} cluster={self.cluster_id} "
+                        f"raised {e!r} -- will retry")
+                    succeeded = False
                 with self._lock:
                     if succeeded:
                         self._reported_hours.add(hour_start)
@@ -1270,6 +1405,7 @@ class HourlyBillingWindowTracker(threading.Thread):
                                 f"no report was logged for this hour"
                             )
                             self._reported_hours.add(hour_start)
+                            self._given_up_hours.append(hour_start)
                         # else: leave it out of _reported_hours so the next
                         # _report_due_hours() call (next poll tick) retries it
 
@@ -1372,6 +1508,20 @@ class HourlyBillingWindowTracker(threading.Thread):
             )
         return True
 
+    def unreported_hours(self):
+        """
+        Hours that were never checked: given up on after repeated failures,
+        or still pending when stop_and_flush() timed out.
+        """
+        with self._lock:
+            pending = [h for h in self._hourly_state if h not in self._reported_hours]
+            return sorted(set(self._given_up_hours) | set(pending))
+
+    def given_up_hours(self):
+        """Hours abandoned after MAX_REPORT_ATTEMPTS failed trigger/query tries."""
+        with self._lock:
+            return set(self._given_up_hours)
+
     def stop(self):
         """Signal the tracker thread to stop after its current iteration."""
         self._stop_event.set()
@@ -1387,12 +1537,41 @@ class HourlyBillingWindowTracker(threading.Thread):
         most recent 1-2 hours of scaling activity never get their
         comparison report logged.
 
-        :param timeout: Max seconds to wait for pending hours to become due
-            and get reported. None waits indefinitely.
+        The hour that is still open when this is called is always pending,
+        and it only becomes due at hour end + report_delay_minutes. So the
+        deadline is measured from when the LAST pending hour becomes due,
+        not from when the flush starts: a flush started at 14:37 used to give
+        up at 15:07 on an hour that was due at 15:20 (fusion_volume_subhra
+        #20). Until that hour closes, keep sampling node IDs so its observed
+        node set stays complete, but never open a new hour.
+
+        :param timeout: Grace in seconds after the last pending hour becomes
+            due, for its retries. None waits indefinitely.
         """
         self._stop_event.set()
-        deadline = time.time() + timeout if timeout is not None else None
+        with self._lock:
+            pending = [h for h in self._hourly_state if h not in self._reported_hours]
+        last_hour_end = max(pending) + timedelta(hours=1) if pending else None
+        deadline = None
+        if timeout is not None:
+            deadline = time.time() + timeout
+            if last_hour_end is not None:
+                last_due = last_hour_end + timedelta(minutes=self.report_delay_minutes)
+                deadline = max(deadline, last_due.timestamp() + timeout)
+                self.log.info(
+                    f"HourlyBillingWindowTracker.stop_and_flush for "
+                    f"cluster={self.cluster_id}: last pending hour "
+                    f"{max(pending).isoformat()} is due at {last_due.isoformat()}; "
+                    f"waiting until {datetime.fromtimestamp(deadline, timezone.utc).isoformat()} at most"
+                )
         while True:
+            now = datetime.now(timezone.utc)
+            if last_hour_end is not None and now < last_hour_end:
+                try:
+                    self._poll_once(now)
+                except Exception as e:
+                    self.log.warning(
+                        f"HourlyBillingWindowTracker poll failed during flush: {e}")
             self._report_due_hours()
             with self._lock:
                 pending = [h for h in self._hourly_state if h not in self._reported_hours]

@@ -1356,7 +1356,9 @@ class OPD:
         # callers on failure. That silently defeated find_master()'s own
         # timeout too: find_master can't check its deadline while blocked
         # inside a refresh_cluster() call that never returns.
-        deadline = time.time() + 300
+        start = time.time()
+        deadline = start + 300
+        refetched_from_cp = False
         while True:
             if cluster.nodes_in_cluster:
                 try:
@@ -1367,6 +1369,18 @@ class OPD:
                     pass
                 except IndexError:
                     pass
+                # Every cached node can be gone, e.g. after a snapshot restore
+                # or fallback replacement swaps all nodes (fusion_volume #1067).
+                # Retrying the old list can never succeed then, so after 60s
+                # drop it once and let the branch below rebuild it from the CP.
+                if tenant is not None and not refetched_from_cp \
+                        and time.time() > start + 60:
+                    self.log.warning(
+                        f"refresh_cluster: no cached node of cluster {cluster.id} "
+                        f"reachable for 60s, refetching the node list from the CP")
+                    refetched_from_cp = True
+                    cluster.nodes_in_cluster = []
+                    continue
                 if time.time() > deadline:
                     self.fail(
                         f"refresh_cluster timed out after 300s for cluster "
@@ -1374,6 +1388,10 @@ class OPD:
                         f"cluster.nodes_in_cluster")
                 time.sleep(5)
             else:
+                if refetched_from_cp and time.time() > deadline:
+                    self.fail(
+                        f"refresh_cluster timed out after 300s for cluster "
+                        f"{cluster.id}: CP returned no reachable nodes")
                 self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
                 self.sleep(30)
                 # Local, not self.servers -- this can run concurrently, one

@@ -67,7 +67,11 @@ restore_to                : "same" (default) | "secondary"
 secondary_fusion_enabled  : True (default)  | False
 verify_snapshots          : True  (default)
 secondary_rebalance_delta : +1 (default)  — node delta used when triggering
-                            rebalances on secondary to verify health after restore
+                            rebalances on secondary to verify health after restore.
+                            The post-restore pair scales down first when scaling
+                            up would exceed max_rebl_nodes.
+max_rebl_nodes            : 27 (default)  — CP limit on data nodes per cluster
+min_secondary_nodes       : 3 (default)   — floor for secondary scale-downs
 skip_secondary_teardown   : False (default) — leave the dynamically clone-created
                             secondary cluster up after the run (debugging)
 h_scaling / v_scaling     : same as fusion_volume.py
@@ -94,6 +98,7 @@ from py_constants.cb_constants.CBServer import CbServer
 
 
 from .fusion_volume import VolumeTest
+from .fusion_log_collector import FusionLogCollector
 
 
 class FusionBackupRestoreVolumeTest(VolumeTest):
@@ -116,9 +121,22 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.verify_snapshots = self.input.param("verify_snapshots", True)
         # Node delta for rebalances triggered on secondary to build/refresh guest volumes
         self.secondary_rebalance_delta = self.input.param("secondary_rebalance_delta", 1)
+        # The CP rejects a scale past 27 data nodes (ErrTopologyMaxNodes).
+        # A restore copies the primary's topology, so after the primary reaches
+        # 27 the restored secondary is at 27 too (fusion_volume_subhra #19).
+        self.max_rebl_nodes = int(self.input.param("max_rebl_nodes", 27))
+        self.min_secondary_nodes = int(self.input.param("min_secondary_nodes", 3))
         # Skip destroying the dynamically clone-provisioned secondary cluster in
         # tearDown -- useful for debugging a failed run against the live secondary
         self.skip_secondary_teardown = self.input.param("skip_secondary_teardown", False)
+
+        # Backup/restore at multi-TiB scale needs longer limits than
+        # VolumeTest's 1h defaults: #1043 took 24 min to back up 1B docs and
+        # 1h to load them, and a 10 TiB (7.2B doc) run is ~7x that. These are
+        # bkrs-only defaults; an explicit test param still wins.
+        self.rebalance_timeout = self.input.param("rebalance_timeout", 4 * 3600)
+        self.restore_timeout = self.input.param("restore_timeout", 8 * 3600)
+        self.backup_timeout = self.input.param("backup_timeout", 8 * 3600)
 
         # self.fusion_num_uploader_threads / self.fusion_sync_rate_limit are
         # set by VolumeTest.setUp(); applied to the restore target right
@@ -174,6 +192,9 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # restored. See both methods' docstrings for why this two-sided check
         # exists instead of a single exact-match assertion.
         self._backup_guest_volume_tracking = {}
+        # Per-bucket item counts on primary at backup-trigger time, keyed by
+        # backup_id -- see _take_backup_and_verify() / _restore_and_verify().
+        self._backup_item_counts = {}
 
     # ------------------------------------------------------------- tearDown
 
@@ -254,6 +275,10 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         if hasattr(self, "mutation_th") and self.mutation_th.is_alive():
             self.log.info("[primary] Stopping mutation workload")
             self.mutation_th.join(timeout=120)
+            if self.mutation_th.is_alive():
+                self.log.warning(
+                    "[primary] Mutation thread still running 120s after stop; "
+                    "in-flight writes may still be landing")
         for task in list(getattr(self, "loader_tasks", [])):
             try:
                 self.task_manager.stop_task(task)
@@ -325,7 +350,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.log.info(f"{self._cluster_label(cluster)} Snapshot backup triggered: {backup_id}")
 
         ok = CapellaAPI.wait_for_cloud_snapshot_backup_to_complete(
-            self.pod, tenant, project_id, cluster.id, backup_id, timeout=4*3600
+            self.pod, tenant, project_id, cluster.id, backup_id, timeout=self.backup_timeout
         )
         self.assertTrue(
             ok,
@@ -396,6 +421,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             )
             gv_track_thread.start()
 
+        restore_failed = True
         try:
             self._run_restore_and_waits(
                 backup_id, source_cluster, target_cluster, target_is_fusion,
@@ -403,8 +429,13 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 src_label, tgt_label, old_instance_ids, restore_trigger_time,
                 gv_track_stop, gv_track_thread, gv_track_result,
             )
+            restore_failed = False
         finally:
             gv_track_stop.set()
+            self._capture_slow_op_evidence(
+                target_cluster, f"{tgt_label} restore of backup {backup_id}",
+                restore_trigger_time, restore_failed,
+                slow_after_mins=self.input.param("slow_restore_mins", 60))
 
     def _run_restore_and_waits(self, backup_id, source_cluster, target_cluster,
                                target_is_fusion, pre_restore_gv_ids, tenant,
@@ -619,6 +650,21 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # hostname that was torn down by the restore itself.
         self._populate_cluster_nodes(target_cluster)
 
+        # The restore also resized the target, so re-sync secondary's node
+        # counter (used by _trigger_rebalance_on_secondary) to its real data
+        # node count. Without this, fusion_volume #1069's post-restore "+1"
+        # rebalance sent count=8 to a secondary restored to 27 nodes, i.e. a
+        # 19-node scale-in instead of a 1-node scale-out.
+        if target_cluster is self.secondary_cluster:
+            restored_data_nodes = len(target_cluster.kv_nodes)
+            if self.secondary_num_nodes.get("data") != restored_data_nodes:
+                self.log.info(
+                    f"Secondary {target_cluster.id} has {restored_data_nodes} "
+                    f"data node(s) after restore; node counter was "
+                    f"{self.secondary_num_nodes.get('data')}, updating it"
+                )
+            self.secondary_num_nodes["data"] = restored_data_nodes
+
         # Re-add 0.0.0.0/0 allow-all IP — restore flushes the allowlist
         retry = 0
         while retry < 5:
@@ -709,6 +755,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         cluster.pod = self.pod
         cluster.type = "dedicated"
         cluster._taf_owned = True
+        # RebalanceTaskCapella.call() writes cluster_config["specs"] first
+        # thing. CBCluster defaults it to None, so every secondary scaling
+        # task died with a TypeError and its monitor thread asserted "Cluster
+        # Upgrade Failed" (and set stop_run) while the CP scale went ahead.
+        cluster.cluster_config = {"specs": []}
 
         self._populate_cluster_nodes(cluster)
 
@@ -829,6 +880,12 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         if backup_id is None:
             self._stop_workload()
+            # Let in-flight writes land before the snapshot. In #19 the clone
+            # backup was taken right after the 120s stop timeout with writes
+            # still landing, and 43+ replica vbuckets on the clone then had to
+            # roll back, failed, and were rebuilt from scratch over DCP, which
+            # made the first secondary rebalance take ~60 min.
+            self._get_stable_item_counts(primary)
             backup_id = self._create_snapshot_backup(primary)
             self._resume_workload()
 
@@ -1063,6 +1120,55 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         secondary.fusion_vb_uploader_map = {}
         self._secondary_ready = True
 
+    def _capture_slow_op_evidence(self, cluster, label, start, failed, slow_after_mins):
+        """
+        When a restore or rebalance failed or took longer than
+        *slow_after_mins*, record why while the evidence still exists:
+        per-node EBS activity over the operation and a cbcollect of the
+        cluster. A later restore replaces every node, which destroys their
+        server logs, so this cannot wait for teardown. Never raises.
+        """
+        end = datetime.datetime.now(datetime.timezone.utc)
+        mins = (end - start).total_seconds() / 60
+        self.log.info(f"[slow-op] {label} on {cluster.id} took {mins:.1f} min"
+                      f"{' and FAILED' if failed else ''}")
+        if not failed and mins <= float(slow_after_mins):
+            return
+        self.log.warning(
+            f"[slow-op] {label} on {cluster.id}: "
+            f"{'failed' if failed else f'over {slow_after_mins} min'}; capturing evidence")
+        self.fusion_monitor.log_node_disk_activity(
+            cluster, start, end, label=label,
+            region=self.input.param("region", "us-east-1"))
+        if not self.input.param("slow_op_cbcollect", True):
+            return
+        try:
+            api = self._fusion_failure_log_capella_api(self.primary_tenant)
+            if api is None:
+                self.log.warning("[slow-op] no Capella API client; skipping cbcollect")
+                return
+            collector = FusionLogCollector(self.log)
+            ticket = str(self.input.param("cbcollect_ticket", ""))
+            res = collector.collect_cbcollect(
+                api, cluster.id,
+                timeout=int(self.input.param("cbcollect_timeout", 1800)),
+                ticket_id=ticket)
+            self.log.info(f"[slow-op] cbcollect on {cluster.id} after {label}: "
+                          f"{res.get('status')} {res.get('error') or ''}")
+            for node, info in (res.get("per_node") or {}).items():
+                self.log.info(f"[slow-op]   {node}: {info.get('status')} {info.get('url')}")
+            if res.get("supportal"):
+                self.log.info(f"[slow-op] server logs after {label} on Supportal: "
+                              f"{res['supportal']}")
+            if self.input.param("failure_logs_supportal_dp_agent", True):
+                dp = collector.upload_dp_agent_logs_to_supportal(
+                    api, cluster.id, days=int(self.input.param("dp_agent_log_days", 1)),
+                    ticket_id=ticket)
+                self.log.info(f"[slow-op] dp-agent logs after {label}: {dp['status']} "
+                              f"{dp['location'] or dp['error']}")
+        except Exception as e:
+            self.log.warning(f"[slow-op] cbcollect after {label} failed: {e}")
+
     def _trigger_rebalance_on_secondary(self, delta, label="secondary rebalance"):
         """
         Scale secondary cluster by *delta* data nodes and monitor the rebalance
@@ -1077,9 +1183,26 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         """
         secondary = self.secondary_cluster
         tenant = self.primary_tenant
-        sync_timeout = self.input.param("sync_wait_timeout", 7200)
-        self.log.info("Waiting for pending bytes to drain to 0 after restore on Secondary")
-        self.fusion_monitor.wait_for_fusion_pending_byte_zero(self.secondary_cluster, timeout=sync_timeout)
+        # A restore resets the log store and re-uploads everything, and the
+        # cluster stays in fusion state "enabling" until that is done
+        # (AV-137945, MB-72881). The CP does not accelerate a rebalance in
+        # "enabling": it runs a plain DCP rebalance with no accelerators
+        # (AV-144383), which at 10 TiB takes hours. So gate the scale on
+        # "enabled" and fail if it never gets there. At ~70 MB/s per node
+        # (EBS lazy-load of the restored volumes) 800 GB/node needs ~3.2h,
+        # hence the 8h default.
+        target_nodes = self.secondary_num_nodes["data"] + delta
+        if not self.min_secondary_nodes <= target_nodes <= self.max_rebl_nodes:
+            self.fail(
+                f"{label}: secondary {secondary.id} would go from "
+                f"{self.secondary_num_nodes['data']} to {target_nodes} data nodes, "
+                f"outside [{self.min_secondary_nodes}, {self.max_rebl_nodes}]")
+        sync_timeout = self.input.param(
+            "sync_wait_timeout", self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS)
+        self.log.info(f"Waiting for fusion state 'enabled' on secondary {secondary.id} before {label}")
+        self.fusion_monitor.wait_for_fusion_status(secondary, state="enabled", timeout=sync_timeout)
+        self.log.info("Waiting for pending bytes to drain to 0 on secondary")
+        self.fusion_monitor.wait_for_fusion_pending_byte_zero(secondary, timeout=sync_timeout)
 
         self.PrintStep(f"{label}: delta={delta:+d} on secondary {secondary.id}")
         # rebalance_config() mutates self.num_nodes["data"] in place as a
@@ -1091,10 +1214,32 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             config = self.rebalance_config("data", delta)
         finally:
             self.num_nodes = primary_num_nodes
-        rebalance_task = self.task.async_rebalance_capella(
-            self.pod, tenant, secondary, config, timeout=self.rebalance_timeout
-        )
-        self.monitor_cluster_status(tenant, secondary, rebalance_task)
+        # Background disk work left over from the restore (seen in #18: two
+        # nodes writing ~435 MB/s at queue depth ~14 after pending bytes had
+        # already reached 0) slows the rebalance; log it before scaling.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        self.fusion_monitor.log_node_disk_activity(
+            secondary, now - datetime.timedelta(minutes=15), now,
+            label=f"before {label}", region=self.input.param("region", "us-east-1"))
+        rebalance_start = now
+        try:
+            rebalance_task = self.task.async_rebalance_capella(
+                self.pod, tenant, secondary, config, timeout=self.rebalance_timeout
+            )
+        except Exception:
+            # rebalance_config() already moved the counter; the CP rejected
+            # the scale, so put it back.
+            self.secondary_num_nodes["data"] -= delta
+            raise
+        rebalance_failed = True
+        try:
+            self.monitor_cluster_status(tenant, secondary, rebalance_task)
+            rebalance_failed = False
+        finally:
+            self.fusion_monitor.log_rebalance_report(secondary)
+            self._capture_slow_op_evidence(
+                secondary, label, rebalance_start, rebalance_failed,
+                slow_after_mins=self.input.param("slow_rebalance_mins", 30))
         self.fusion_monitor.get_fusion_uploader_map(tenant, secondary, self.find_master)
         self.sleep(60, "post-secondary-rebalance settle")
 
@@ -1170,6 +1315,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         tenant = self.primary_tenant
         primary = self.primary_cluster
 
+        # Same as VolumeTest.initial_setup: start the DocLoader fleet early
+        # so instance boot overlaps fusion enable and bucket creation.
+        if self.use_loader_fleet and not self.skip_init:
+            self.start_loader_fleet()
+
         # fusion-fallback-replace is no longer set: removed from the product in
         # AV-140819 (fallback replacement is unconditional now), so it doesn't
         # exist globally and setting it just errors.
@@ -1240,7 +1390,9 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.PrintStep("Initial data load on primary cluster")
         self.skip_read_on_error = True
         self.suppress_error_table = True
-        if not self.skip_init:
+        if self.loader_fleet:
+            self.loader_fleet.load_initial_data([primary])
+        elif not self.skip_init:
             JavaDocLoaderUtils.load_data(
                 cluster=primary,
                 buckets=primary.buckets,
@@ -1270,6 +1422,45 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
     # ----------------------------------------------- backup helpers
 
+    def _get_item_counts(self, cluster, buckets):
+        """
+        Return {bucket_name: itemCount} for *buckets* on *cluster*. A bucket
+        whose stats can't be read is left out, so callers never treat a
+        failed read as a real count of 0.
+        """
+        rest = RestConnection(cluster.master)
+        counts = {}
+        for bucket in buckets:
+            info = rest.get_bucket_details(bucket_name=bucket.name)
+            if info and "itemCount" in info.get("basicStats", {}):
+                counts[bucket.name] = info["basicStats"]["itemCount"]
+            else:
+                self.log.warning(f"Could not read item count for {cluster.id}/{bucket.name}")
+        return counts
+
+    def _get_stable_item_counts(self, cluster, interval=10, max_wait=300):
+        """
+        Item counts for primary's buckets on *cluster*, read until two reads
+        *interval* seconds apart agree (in-flight writes from the stopped
+        workload settled). Returns the last read if they never agree within
+        *max_wait*.
+        """
+        buckets = self.primary_cluster.buckets
+        previous = self._get_item_counts(cluster, buckets)
+        deadline = time.time() + max_wait
+        while time.time() < deadline:
+            time.sleep(interval)
+            current = self._get_item_counts(cluster, buckets)
+            if current == previous:
+                self.log.info(f"Stable item counts on {cluster.id}: {current}")
+                return current
+            previous = current
+        self.log.warning(
+            f"Item counts on {cluster.id} still changing after {max_wait}s; "
+            f"using last read: {previous}"
+        )
+        return previous
+
     def _take_backup_and_verify(self):
         """
         Trigger an EBS snapshot backup on primary, optionally verify EBS
@@ -1296,31 +1487,59 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self._stop_workload()
 
         # Real (in-use) guest volumes on primary right as the backup is
-        # about to be triggered -- the ground-truth set this backup should
-        # cover. Workload is already stopped, so nothing changes this
-        # between capturing it here and the trigger call just below.
+        # about to be triggered. Stopping the workload does not stop fusion
+        # background migration, so some of these can finish migrating and be
+        # deleted while the backup runs (fusion_volume #1068: 183 in use at
+        # trigger, 112 snapshotted; #1069: 13 vs 12).
         in_use_ids = self.cp_monitor.get_in_use_guest_volume_ids(primary)
 
+        # Per-bucket item counts at the same quiesced point. This is the
+        # data-level check for this backup (compared on the restore target in
+        # _restore_and_verify), and what still catches a backup that lost
+        # data when a guest volume drained mid-backup without a snapshot.
+        item_counts = self._get_stable_item_counts(primary)
+
         backup_id = self._create_snapshot_backup(primary)
+        self._backup_item_counts[backup_id] = item_counts
 
         if self.verify_snapshots:
-            num_snapshots = self.cp_monitor.count_guest_volume_snapshots_for_backup(
+            # Check coverage per volume, not by count: each snapshot names the
+            # guest volume it was taken from.
+            snapshot_sources = self.cp_monitor.get_guest_volume_snapshot_sources(
                 primary, backup_id
             )
-            self.assertGreaterEqual(
-                num_snapshots, len(in_use_ids),
-                f"Backup {backup_id} produced only {num_snapshots} guest-volume "
-                f"snapshot(s), fewer than the {len(in_use_ids)} in-use guest "
-                f"volume(s) on primary {primary.id} at trigger time: {in_use_ids}",
+            snapshotted = set(v for v in snapshot_sources.values() if v)
+            in_use_after = set(self.cp_monitor.get_in_use_guest_volume_ids(primary))
+            not_snapshotted = set(in_use_ids) - snapshotted
+            # Still attached after the backup finished, yet not snapshotted:
+            # a real coverage gap.
+            missed = sorted(not_snapshotted & in_use_after)
+            # Gone (or detached) by the time the backup finished: drained by
+            # background migration while the backup ran.
+            drained = sorted(not_snapshotted - in_use_after)
+            self.assertFalse(
+                missed,
+                f"Backup {backup_id} has no snapshot for {len(missed)} guest "
+                f"volume(s) that were in use on primary {primary.id} both before "
+                f"and after the backup: {missed}. Snapshot sources: {snapshot_sources}",
             )
+            if drained:
+                self.log.warning(
+                    f"Backup {backup_id}: {len(drained)} guest volume(s) in use at "
+                    f"trigger time drained during the backup and have no snapshot: "
+                    f"{drained}. Data coverage is checked by item count after restore."
+                )
+            covered_ids = sorted(set(in_use_ids) & snapshotted)
             self.log.info(
-                f"Backup {backup_id}: {num_snapshots} guest-volume snapshot(s) "
-                f">= {len(in_use_ids)} in-use guest volume(s) on primary at "
-                f"trigger time"
+                f"Backup {backup_id}: {len(snapshot_sources)} guest-volume snapshot(s); "
+                f"{len(covered_ids)} of {len(in_use_ids)} guest volume(s) in use at "
+                f"trigger time snapshotted, {len(drained)} drained mid-backup"
             )
+            # The restore is expected to recreate exactly the snapshotted
+            # in-use volumes.
             self._backup_guest_volume_tracking[backup_id] = {
-                "in_use_ids": in_use_ids,
-                "num_snapshots": num_snapshots,
+                "in_use_ids": covered_ids,
+                "num_snapshots": len(snapshot_sources),
             }
 
         # For same-cluster restore the workload must stay stopped — the restore
@@ -1388,26 +1607,31 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         self.sleep(30, f"{tgt_label} Wait after snapshot restore before verifying items")
 
-        # Verify item count in each of primary's buckets on the target
+        # Verify each of primary's buckets on the target has exactly the item
+        # count primary had when the backup was taken (workload stopped).
+        backup_counts = self._backup_item_counts.pop(backup_id, None) or {}
         rest = RestConnection(target.master)
         for bucket in primary.buckets:
-            expected = (
-                bucket.loadDefn.get("num_items", 0)
-                * bucket.loadDefn.get("collections", 1)
-            )
+            expected = backup_counts.get(bucket.name)
+            actual = 0
             deadline = time.time() + self.restore_timeout
             while time.time() < deadline:
                 info = rest.get_bucket_details(bucket_name=bucket.name)
                 actual = info.get("basicStats", {}).get("itemCount", 0) if info else 0
-                if actual > 0:
+                if (expected is None and actual > 0) or (expected is not None and actual == expected):
                     self.log.info(
-                        f"{tgt_label} Post-restore item count on {target.id}/{bucket.name}: {actual} "
-                        f"(expected ~{expected})"
+                        f"{tgt_label} Post-restore item count on {target.id}/{bucket.name}: "
+                        f"{actual} (at backup time on primary: {expected})"
                     )
                     break
-                self.sleep(30, f"{tgt_label} Polling item count on {target.id}/{bucket.name} after restore")
+                self.sleep(30, f"{tgt_label} Polling item count on {target.id}/{bucket.name} "
+                               f"after restore: {actual}, want {expected}")
             else:
                 self.fail(
+                    f"{tgt_label} Item count on {target.id}/{bucket.name} after restoring "
+                    f"backup {backup_id} is {actual}, expected {expected} (primary's "
+                    f"count when the backup was taken)"
+                    if expected is not None else
                     f"{tgt_label} No items on target {target.id}/{bucket.name} after restore timeout"
                 )
 
@@ -1418,14 +1642,17 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"Post-restore rebalance on secondary {target.id} "
                 f"to verify rebalance completes after restore"
             )
-            self._trigger_rebalance_on_secondary(
-                self.secondary_rebalance_delta,
-                label="post-restore scale-up on secondary",
-            )
-            self._trigger_rebalance_on_secondary(
-                -self.secondary_rebalance_delta,
-                label="post-restore scale-down on secondary",
-            )
+            # Scale down first when scaling up would pass the CP's node limit
+            # (the secondary is at 27 after restoring a 27-node primary).
+            delta = self.secondary_rebalance_delta
+            if self.secondary_num_nodes["data"] + delta > self.max_rebl_nodes:
+                delta = -delta
+            for step in (delta, -delta):
+                direction = "up" if step > 0 else "down"
+                self._trigger_rebalance_on_secondary(
+                    step,
+                    label=f"post-restore scale-{direction} on secondary",
+                )
 
         # Verify fusion state on target
         if target_fusion:
