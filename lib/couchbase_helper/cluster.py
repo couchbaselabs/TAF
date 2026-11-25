@@ -762,7 +762,8 @@ class ServerTasks(object):
         return _task
 
     def async_wait_for_stats(self, servers, bucket, stat_cmd, stat,
-                             comparison, value, timeout=60):
+                             comparison, value, timeout=60,
+                             stall_timeout=None):
         """
         Asynchronously wait for stats
 
@@ -780,6 +781,8 @@ class ServerTasks(object):
           comparison - How to compare the stat result to the value specified.
           value      - The value to compare to.
           timeout    - Timeout for stat verification task
+          stall_timeout - Optional. Fail early if the stat stays unchanged
+                          (and unmatched) for this many seconds
 
         Returns:
           StatsWaitTask - Task future that is a handle to the scheduled task
@@ -788,7 +791,8 @@ class ServerTasks(object):
                        % (stat, bucket.name))
         _task = jython_tasks.StatsWaitTask(servers, bucket, stat_cmd,
                                            stat, comparison, value,
-                                           timeout=timeout)
+                                           timeout=timeout,
+                                           stall_timeout=stall_timeout)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

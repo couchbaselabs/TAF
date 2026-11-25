@@ -3593,8 +3593,20 @@ class StatsWaitTask(Task):
     GREATER_THAN = '>'
     GREATER_THAN_EQ = '>='
 
+    # How often a long wait logs its progress at INFO level
+    PROGRESS_LOG_INTERVAL = 300
+
     def __init__(self, servers, bucket, stat_cmd, stat, comparison,
-                 value, timeout=300):
+                 value, timeout=300, stall_timeout=None):
+        """
+        :param timeout: Overall time (seconds) allowed for the stat to match
+        :param stall_timeout: Optional. Fail early if the summed stat value
+            has not changed at all for this many seconds while still not
+            matching. Lets callers keep a long `timeout` for slow but moving
+            stats (e.g. items coming back after a large restore) without
+            waiting the whole timeout on a count that is stuck. None (the
+            default) disables it.
+        """
         super(StatsWaitTask, self).__init__("StatsWaitTask_%s_%s_%s"
                                             % (bucket.name,
                                                stat,
@@ -3607,7 +3619,12 @@ class StatsWaitTask(Task):
         self.value = value
         self.stop = False
         self.timeout = timeout
+        self.stall_timeout = stall_timeout
         self.cbstatObjList = list()
+        # Last reading, kept so a timeout/stall can say what was actually seen
+        self.last_value = None
+        self.last_val_dict = dict()
+        self.last_change_time = None
 
     def call(self):
         self.start_task()
@@ -3615,6 +3632,9 @@ class StatsWaitTask(Task):
         timeout = start_time + self.timeout
         for server in self.servers:
             self.cbstatObjList.append(Cbstats(server))
+        self.last_change_time = start_time
+        next_progress_log = start_time + self.PROGRESS_LOG_INTERVAL
+        stalled = False
         try:
             while not self.stop and time.time() < timeout:
                 if self.statCmd in ["all", "dcp"]:
@@ -3626,12 +3646,38 @@ class StatsWaitTask(Task):
                     self._get_checkpoint_stats_and_compare()
                 else:
                     raise Exception("Not supported. Implement the stat call")
+                if self.stop:
+                    break
+                now = time.time()
+                if self.stall_timeout \
+                        and now - self.last_change_time >= self.stall_timeout:
+                    stalled = True
+                    break
+                if now >= next_progress_log:
+                    self.test_log.info(
+                        "Waiting for %s %s %s on bucket '%s' (%ds/%ds): "
+                        "current %s, per node %s"
+                        % (self.stat, self.comparison, self.value,
+                           self.bucket.name, int(now - start_time),
+                           self.timeout, self.last_value, self.last_val_dict))
+                    next_progress_log = now + self.PROGRESS_LOG_INTERVAL
         finally:
             for cbstat_obj in self.cbstatObjList:
                 cbstat_obj.disconnect()
-        if time.time() > timeout:
-            self.set_exception("Could not verify stat {} within timeout {}"
-                               .format(self.stat, self.timeout))
+        if stalled or time.time() > timeout:
+            reason = ("stalled: unchanged for %ds" % self.stall_timeout) \
+                if stalled else ("timed out after %ds" % self.timeout)
+            msg = ("Could not verify stat %s %s %s on bucket '%s', %s. "
+                   "Last value %s, per node %s"
+                   % (self.stat, self.comparison, self.value,
+                      self.bucket.name, reason, self.last_value,
+                      self.last_val_dict))
+            self.test_log.error(msg)
+            # set_exception() raises, so the result has to be recorded
+            # before it. Task.__init__ already defaults result to False,
+            # but set it explicitly so the failure is not implicit.
+            self.set_result(False)
+            self.set_exception(msg)
 
         self.complete_task()
 
@@ -3640,6 +3686,10 @@ class StatsWaitTask(Task):
         val_dict = dict()
         retry = 10
         while retry > 0:
+            # Reset per attempt: a read that failed part-way through the
+            # nodes must not be summed again on the retry
+            stat_result = 0
+            val_dict = dict()
             try:
                 for cb_stat_obj in self.cbstatObjList:
                     tem_stat = cb_stat_obj.all_stats(self.bucket.name,
@@ -3656,6 +3706,7 @@ class StatsWaitTask(Task):
                 self.set_exception(error)
                 self.stop = True
 
+        self._record_reading(stat_result, val_dict)
         if not self._compare(self.comparison, str(stat_result), self.value):
             self.log.debug("Not Ready: %s %s %s %s. "
                            "Received: %s for bucket '%s'"
@@ -3675,6 +3726,8 @@ class StatsWaitTask(Task):
         val_dict = dict()
         retry = 5
         while retry > 0:
+            stat_result = 0
+            val_dict = dict()
             try:
                 for cb_stat_obj in self.cbstatObjList:
                     tem_stat = cb_stat_obj.checkpoint_stats(self.bucket.name)
@@ -3691,6 +3744,7 @@ class StatsWaitTask(Task):
                     continue
                 self.set_exception(error)
                 self.stop = True
+        self._record_reading(stat_result, val_dict)
         if not self._compare(self.comparison, str(stat_result), self.value):
             self.test_log.debug("Not Ready: %s %s %s %s. "
                                 "Received: %s for bucket '%s'"
@@ -3704,6 +3758,12 @@ class StatsWaitTask(Task):
                                 % (self.stat, stat_result, self.comparison,
                                    self.value, val_dict, self.bucket.name))
             self.stop = True
+
+    def _record_reading(self, stat_result, val_dict):
+        if stat_result != self.last_value:
+            self.last_change_time = time.time()
+        self.last_value = stat_result
+        self.last_val_dict = dict(val_dict)
 
     def _compare(self, cmp_type, a, b):
         if isinstance(b, int) and a.isdigit():

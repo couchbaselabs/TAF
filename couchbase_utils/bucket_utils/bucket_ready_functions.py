@@ -3823,7 +3823,13 @@ class BucketUtils(ScopeUtils):
             return 3
         return min(min_count)
 
-    def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60, num_zone=1):
+    def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60,
+                                num_zone=1, stall_timeout=None):
+        """
+        :param stall_timeout: Optional. Fail early if an item-count stat
+            stays unchanged (and unmatched) for this many seconds, instead
+            of waiting the full timeout. See StatsWaitTask.
+        """
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
         servers = self.cluster_util.get_bucket_kv_nodes(cluster, bucket)
@@ -3871,11 +3877,11 @@ class BucketUtils(ScopeUtils):
         stats_tasks.append(self.task.async_wait_for_stats(
             servers, bucket, stat_cmd,
             'vb_replica_curr_items', '==', items * available_replicas,
-            timeout=timeout))
+            timeout=timeout, stall_timeout=stall_timeout))
         stats_tasks.append(self.task.async_wait_for_stats(
             servers, bucket, stat_cmd,
             'curr_items_tot', '==', items * (available_replicas + 1),
-            timeout=timeout))
+            timeout=timeout, stall_timeout=stall_timeout))
         try:
             for task in stats_tasks:
                 self.task_manager.get_task_result(task)
@@ -3887,7 +3893,13 @@ class BucketUtils(ScopeUtils):
                            "selected node")
 
     def verify_stats_all_buckets(self, cluster, items, timeout=1200,
-                                 num_zone=1, buckets=None):
+                                 num_zone=1, buckets=None,
+                                 stall_timeout=None):
+        """
+        :param stall_timeout: Optional. Fail early if an item-count stat
+            stays unchanged (and unmatched) for this many seconds, instead
+            of waiting the full timeout. See StatsWaitTask.
+        """
         buckets = buckets or cluster.buckets
         for bucket in buckets:
             vbucket_stats = self.get_vbucket_seqnos(
@@ -3895,7 +3907,8 @@ class BucketUtils(ScopeUtils):
                 [bucket],
                 skip_consistency=True)
             self.verify_stats_for_bucket(cluster, bucket, items,
-                                         timeout=timeout, num_zone=num_zone)
+                                         timeout=timeout, num_zone=num_zone,
+                                         stall_timeout=stall_timeout)
             #Validate seq_no snap_start/stop values with initial load
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
             self.assertTrue(result,
@@ -6497,7 +6510,8 @@ class BucketUtils(ScopeUtils):
             raise Exception("Collections stat validation failed")
 
     def validate_docs_per_collections_all_buckets(self, cluster, timeout=1200,
-                                                  num_zone=1):
+                                                  num_zone=1,
+                                                  stall_timeout=None):
         if cluster.type == "default":
             for bucket in cluster.buckets:
                 self.get_updated_bucket_server_list(cluster, bucket)
@@ -6510,8 +6524,26 @@ class BucketUtils(ScopeUtils):
         # Validate total expected doc_count matches with the overall bucket
         for bucket in cluster.buckets:
             expected_num_items = self.get_expected_total_num_items(bucket)
-            self.verify_stats_for_bucket(cluster, bucket, expected_num_items,
-                                         timeout=timeout, num_zone=num_zone)
+            self.log.info("Bucket %s: expecting %s items in total"
+                          % (bucket.name, expected_num_items))
+            try:
+                self.verify_stats_for_bucket(cluster, bucket,
+                                             expected_num_items,
+                                             timeout=timeout,
+                                             num_zone=num_zone,
+                                             stall_timeout=stall_timeout)
+            except Exception:
+                # The bucket-level stat only says the total is off. Compare
+                # per collection too, so the log shows which collections
+                # are missing items, then fail with the original error.
+                try:
+                    self.validate_doc_count_as_per_collections(cluster,
+                                                               bucket)
+                except Exception as per_col_error:
+                    self.log.error("Per-collection doc count check for "
+                                   "bucket %s: %s"
+                                   % (bucket.name, per_col_error))
+                raise
 
             status = self.validate_manifest_uid(cluster.master, bucket)
             if not status:

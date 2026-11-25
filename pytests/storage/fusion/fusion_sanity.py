@@ -97,9 +97,17 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         self.log.info("Running Fusion Data Lifecycle Test")
 
+        # Arm the crash loop paused: memcached kills during the create load
+        # lose acknowledged but unpersisted writes (no durability), and the
+        # loader doesn't retry them, so num_items can't be met afterwards
+        # (8.5.0-1510: 33,434 docs short of 63M across 3 buckets).
+        if self.crash_during_test:
+            self.crash_allowed = threading.Event()
         self.start_optional_monitor_threads()
 
         self.initial_load()
+        if self.crash_during_test:
+            self.resume_crashing()
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
 
@@ -266,6 +274,11 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
                 # Perform a data workload in parallel when rebalance is taking place
                 self.log.info("Performing data load during rebalance")
+                # No crashes while this create load runs (it ends after the
+                # rebalance): writes lost to a kill would never be retried
+                # and the count check below would be off by them.
+                if self.crash_during_test:
+                    self.pause_crashing()
                 live_before = self.num_items
                 doc_loading_tasks = self.perform_workload(
                                                 self.deleted_upto + self.num_items,
@@ -287,7 +300,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                                       rebalance_count=num_rebalance_count)
             finally:
-                if self.crash_during_test:
+                # In the non-aggressive variant the create load started above
+                # is still running; crashing resumes once it has finished.
+                if self.crash_during_test and aggressive_variant:
                     self.resume_crashing()
 
             if self.logstore_fault and self.logstore_broken_volumes:
@@ -296,8 +311,12 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
             if not aggressive_variant:
                 # Wait for doc load to complete
-                for task in doc_loading_tasks:
-                    self.doc_loading_tm.get_task_result(task)
+                try:
+                    for task in doc_loading_tasks:
+                        self.doc_loading_tm.get_task_result(task)
+                finally:
+                    if self.crash_during_test:
+                        self.resume_crashing()
 
                 # Perform reads when no extent migration has taken place yet
                 self.perform_batch_reads(start=self.deleted_upto)
@@ -1167,6 +1186,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         # Perform a data workload in parallel when rebalance is taking place
         self.log.info("Performing Write Workload during rebalance")
 
+        self.workload_errors = list()
         write_load_th = threading.Thread(target=self.run_workload_custom,
                                          args=[num_bucket_batch_size, self.num_items, self.num_items * 2, self.ops_rate, 0, "create"])
         write_load_th.start()
@@ -1299,12 +1319,15 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         write_load_th.join()
         read_load_th.join()
+        if self.workload_errors:
+            # num_items was already moved to the write load's end, so the
+            # count check would only report a misleading mismatch (8.5.0-1510:
+            # the DocLoader REST endpoint hung and the write thread died
+            # after its first bucket batch).
+            self.fail(f"Background workload failed during the rebalance "
+                      f"loop: {self.workload_errors}")
 
-        self.log.info("Validating item count after rebalance")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                  self.num_items)
+        self.verify_item_count(stage="after the rebalance loop")
 
         self.check_guest_vols = False
         cleanup_thread.join()
@@ -1423,9 +1446,22 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             buckets_batch = self.cluster.buckets[i:i+bucket_batch_size]
             bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
             self.log.info(f"Performing data load of type: {doc_op} on {bucket_names}")
-            self.perform_workload(start, end, buckets=buckets_batch,
-                                  ops_rate=ops_rate,
-                                  doc_op=doc_op)
+            try:
+                self.perform_workload(start, end, buckets=buckets_batch,
+                                      ops_rate=ops_rate,
+                                      doc_op=doc_op)
+            except Exception as e:
+                # This runs in a thread, where an exception only ends the
+                # thread. Record it so the caller can fail with the real
+                # error instead of a count mismatch for the batches that
+                # never ran.
+                self.log.error(f"{doc_op} workload {start}:{end} on "
+                               f"{bucket_names} failed: {e}")
+                if getattr(self, "workload_errors", None) is None:
+                    self.workload_errors = list()
+                self.workload_errors.append(
+                    f"{doc_op} {start}:{end} on {bucket_names}: {e}")
+                raise
             self.sleep(10, "Wait after one batch")
 
 

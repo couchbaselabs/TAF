@@ -601,8 +601,12 @@ class UpgradeBase(BaseTestCase):
                     bucket.scopes[CbServer.system_scope].collections[c_name] = collection
 
     def _populate_upgrade_chain(self):
-        chain_to_test = self.input.param("upgrade_chain", "7.2.3")
+        chain_to_test = str(self.input.param("upgrade_chain", "7.2.9"))
         upgrade_version = self.input.param("upgrade_version", "8.0.0-1000")
+        if chain_to_test not in upgrade_chains:
+            self.fail(f"Unknown upgrade_chain '{chain_to_test}'. Set "
+                      f"upgrade_chain to a key in upgrade_lib.couchbase."
+                      f"upgrade_chains")
         self.upgrade_chain = upgrade_chains[chain_to_test] + [upgrade_version]
         self.upgrade_version = self.upgrade_chain[0]
 

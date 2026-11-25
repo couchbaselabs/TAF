@@ -120,8 +120,11 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
             self.log.info(f"Total time taken for data load = {time_taken} seconds")
             self.bucket_util.print_bucket_stats(self.cluster)
 
+            # The load can take longer than the upload interval (60.3s vs
+            # 60s on 8.5.0-1510), and sleep() rejects a negative value
             time_delta = self.fusion_upload_interval - time_taken
-            self.sleep(time_delta, "Sleep after data loading")
+            if time_delta > 0:
+                self.sleep(time_delta, "Sleep after data loading")
 
             # Check stats
             self.get_fusion_sync_stats()
@@ -131,7 +134,8 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
 
         total_test_time = time.time() - first_sync_interval
         sleep_time = self.fusion_max_upload_interval - total_test_time + 60
-        self.sleep(sleep_time, "Wait before checking stats after force sync")
+        if sleep_time > 0:
+            self.sleep(sleep_time, "Wait before checking stats after force sync")
 
         # Check stats
         self.get_fusion_sync_stats()
@@ -196,6 +200,17 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
             start_offset = end_offset
             end_offset += num_items
 
+        # Each loop loads [start, end) into bucket1 and the same range scaled
+        # by small_bucket_ratio into bucket2, so the buckets end with
+        # different counts. perform_workload leaves num_items at whichever
+        # load ran last (bucket2's), so the tearDown check expected bucket2's
+        # count in bucket1 too.
+        self.expected_items_per_bucket = {
+            bucket1.name: start_offset,
+            bucket2.name: int(start_offset * small_bucket_ratio)}
+        # Keeps the tearDown doc read-back inside both buckets' key ranges
+        self.num_items = min(self.expected_items_per_bucket.values())
+
 
     def test_fusion_purge_interval_sync(self):
 
@@ -242,7 +257,14 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
         start_offset = num_items
         end_offset = num_items + (num_items // 10)
         self.log.info(f"Loading {start_offset}:{end_offset} into the bucket")
+        live_before = self.num_items
         self.perform_workload(start_offset, end_offset, "create", True, ops_rate=bucket_ops_rate)
+        # perform_workload sets num_items to create_end (2.2M), but the first
+        # half of the keys was deleted above, so the live count is the
+        # pre-load count plus this load (1.2M). Reads must also skip the
+        # deleted prefix.
+        self.num_items = live_before + (end_offset - start_offset)
+        self.deleted_upto = num_items // 2
         self.sleep(30, "Sleep after loading")
         self.bucket_util.print_bucket_stats(self.cluster)
 

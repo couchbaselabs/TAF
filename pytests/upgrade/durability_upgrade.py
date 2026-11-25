@@ -44,6 +44,10 @@ class UpgradeTests(UpgradeBase):
         # Initialize PITR timestamp dict for continuous backup tests
         # Structure: {timestamp: {bucket_name: item_count, ...}, ...}
         self.pitr_timestamps = dict()
+        # Fail the final doc-count wait once curr_items_tot hasn't moved for
+        # this many seconds. 0 disables it (wait the full timeout).
+        self.doc_count_stall_timeout = \
+            int(self.input.param("doc_count_stall_timeout", 900)) or None
 
     def tearDown(self):
         if self.range_scan_collections > 0:
@@ -63,8 +67,11 @@ class UpgradeTests(UpgradeBase):
             self.cluster, self.cluster.buckets,
             cbstat_cmd="all", stat_name="ep_queue_size",
             timeout=60)
+        # stall_timeout fails early when the count stops moving, so a
+        # stuck count doesn't burn the whole timeout.
         self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster, timeout=4800)
+            self.cluster, timeout=4800,
+            stall_timeout=self.doc_count_stall_timeout)
 
     def __trigger_cbcollect(self, log_path):
         self.log.info("Triggering cb_collect_info")
@@ -982,13 +989,8 @@ class UpgradeTests(UpgradeBase):
                 self.cluster_util.print_cluster_stats(self.cluster)
 
                 ### Validating mixed mode ###
-                self.log.info("Validating negative bucket creation cases")
-                self.create_bucket_negative_scenarios(Bucket.StorageBackend.magma,
-                                                    100, 1024, "test_bucket1")
-                self.create_bucket_negative_scenarios(Bucket.StorageBackend.magma,
-                                                    100, 128, "test_bucket2")
-                self.create_bucket_negative_scenarios(Bucket.StorageBackend.magma,
-                                                    1024, 128, "test_bucket3")
+                self.log.info("Validating magma bucket creation in mixed mode")
+                self.validate_magma_bucket_create_in_mixed_mode()
 
                 ### Fetching the next node to upgrade ###
                 node_to_upgrade = self.fetch_node_to_upgrade()
@@ -1911,13 +1913,20 @@ class UpgradeTests(UpgradeBase):
         services = self.cluster_util.get_nodes_services(self.cluster.master)
         services_on_target_node = services[
                 (self.cluster.master.ip + ":" + str(self.cluster.master.port))]
+        # RebalanceTask reads services[i] for the i-th node in to_add, so
+        # there must be one entry per spare node, not one for all of them.
+        services_to_add = \
+            [",".join(services_on_target_node)] * len(self.spare_nodes)
+        self.log.info(f"Swap rebalance all nodes: in={[n.ip for n in self.spare_nodes]}, "
+                      f"out={[n.ip for n in self.cluster.nodes_in_cluster]}, "
+                      f"services={services_to_add}")
 
         rebalance_passed = self.task.async_rebalance(
                     self.cluster,
                     to_add=self.spare_nodes,
                     to_remove=self.cluster.nodes_in_cluster,
                     check_vbucket_shuffling=False,
-                    services=[",".join(services_on_target_node)])
+                    services=services_to_add)
 
         if data_load:
             self.log.info("Starting data load during rebalance...")
@@ -2557,27 +2566,84 @@ class UpgradeTests(UpgradeBase):
         self.log.info("Initial index count = {}".format(self.index_count))
         sdk_client.close()
 
-    def create_bucket_negative_scenarios(self, storage_backend, ram_quota, vbuckets,
-                                         bucket_name, bucket_type=Bucket.Type.MEMBASE):
+    def _try_create_magma_bucket(self, bucket_name, ram_quota, vbuckets):
+        """
+        POST a magma bucket with only the params under test and return
+        (created, error_text).
 
-        log_message = "Creating a {} bucket with " \
-                        "{}MB RAM Quota and {} vbuckets".format(
-                        storage_backend, ram_quota, vbuckets)
-        self.log.info(log_message)
-        try:
-            self.bucket_util.create_default_bucket(
-                self.cluster,
-                bucket_type=bucket_type,
-                bucket_name=bucket_name,
-                ram_quota=ram_quota,
-                storage=storage_backend,
-                vbuckets=vbuckets
-            )
-        except Exception as e:
-            self.log.info(e)
-            self.log.info("Bucket creation failed as expected")
-        else:
-            self.fail("Bucket creation succeeded")
+        Deliberately bypasses bucket_util.create_default_bucket(): that
+        path always sends warmupBehavior (rejected before 7.9, so every case
+        "failed" for the wrong reason) and, for 1024-vbucket magma, sets the
+        cluster-wide magmaMinMemoryQuota internal setting, which changes the
+        outcome of every later case.
+        """
+        params = {Bucket.name: bucket_name,
+                  Bucket.bucketType: Bucket.Type.MEMBASE,
+                  Bucket.storageBackend: Bucket.StorageBackend.magma,
+                  Bucket.ramQuotaMB: ram_quota,
+                  Bucket.replicaNumber: 1,
+                  Bucket.numVBuckets: vbuckets}
+        status, response = \
+            BucketRestApi(self.cluster.master).create_bucket(params)
+        return status, getattr(response, "text", str(response))
+
+    def validate_magma_bucket_create_in_mixed_mode(self):
+        """
+        Bucket-create params are validated by ns_server on the node that
+        receives the request (cluster.master), so the expectation follows
+        that node's version (ns_server menelaus_web_buckets.erl):
+          * < 8.0 : any numVBuckets is rejected (7.6: "Support for variable
+                    number of vbuckets is not enabled"), so all cases fail
+          * >= 8.0: magma accepts 128 or 1024 vbuckets. Min RAM quota is
+                    1024 MiB for 1024 vbs and 100 MiB for 128 vbs, unless
+                    the magmaMinMemoryQuota internal setting overrides it
+        """
+        _, node_info = ClusterRestAPI(self.cluster.master).node_details()
+        master_version = node_info["version"]
+        master_ver_float = float(master_version[:3])
+        _, internal_settings = \
+            ClusterRestAPI(self.cluster.master).set_internal_settings()
+        min_quota_override = internal_settings.get("magmaMinMemoryQuota") \
+            if isinstance(internal_settings, dict) else None
+        self.log.info(f"Request node {self.cluster.master.ip} runs "
+                      f"{master_version}, magmaMinMemoryQuota override="
+                      f"{min_quota_override}")
+
+        cases = [("test_bucket1", 100, 1024),
+                 ("test_bucket2", 100, 128),
+                 ("test_bucket3", 1024, 128)]
+        for bucket_name, ram_quota, vbuckets in cases:
+            if master_ver_float < 8.0:
+                expected_to_pass = False
+                expected_err = "variable number of vbuckets" \
+                    if master_ver_float >= 7.6 else None
+            else:
+                min_quota = int(min_quota_override) \
+                    if min_quota_override is not None \
+                    else (1024 if vbuckets == 1024 else 100)
+                expected_to_pass = ram_quota >= min_quota
+                expected_err = None if expected_to_pass \
+                    else "Ram quota for magma must be at least"
+
+            created, error_text = self._try_create_magma_bucket(
+                bucket_name, ram_quota, vbuckets)
+            self.log.info(f"magma {ram_quota}MB/{vbuckets} vbs: "
+                          f"created={created}, expected={expected_to_pass}, "
+                          f"response={error_text}")
+            if created:
+                status, content = BucketRestApi(
+                    self.cluster.master).delete_bucket(bucket_name)
+                self.assertTrue(status, f"Failed to delete {bucket_name}: "
+                                        f"{content}")
+            if created != expected_to_pass:
+                self.fail(f"magma bucket {ram_quota}MB/{vbuckets} vbs via "
+                          f"{master_version} node: created={created}, "
+                          f"expected {expected_to_pass}. "
+                          f"Response: {error_text}")
+            if expected_err and expected_err not in error_text:
+                self.fail(f"magma bucket {ram_quota}MB/{vbuckets} vbs failed "
+                          f"for an unexpected reason. Expected "
+                          f"'{expected_err}', got: {error_text}")
 
     def post_upgrade_validation(self):
 

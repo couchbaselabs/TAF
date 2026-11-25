@@ -21,9 +21,17 @@ class FusionExtentMerging(MagmaBaseTest, FusionBase):
 
         self.log.info("FusionExtentMerging setUp Started")
         self.rate_limit_toggle_stop = False
+        # Docs the slow-write loop inserts per bucket (cbc-keygen keys,
+        # outside the sirius key range that num_items describes).
+        self.slow_write_docs = 0
 
     def tearDown(self):
         self.rate_limit_toggle_stop = True
+        # Added here rather than in the loop so the mid-test sirius reads of
+        # 0..num_items stay inside the keys sirius loaded. Without it the
+        # tearDown health check waited 20 min for 2M docs while each bucket
+        # held 2M + the slow-write inserts.
+        self.num_items += self.slow_write_docs
         super(FusionExtentMerging, self).tearDown()
 
 
@@ -105,6 +113,10 @@ class FusionExtentMerging(MagmaBaseTest, FusionBase):
                     for key in keys:
                         res = sdk_client.insert(key, val_obj, timeout=60)
                         self.log.info(f"Bucket: {bucket.name}, VB: {vb_no}, Key: {key}, Result: {res['status']}")
+                        # num_items is per bucket and every bucket gets the
+                        # same keys, so count them on the first bucket only
+                        if res['status'] and bucket == self.cluster.buckets[0]:
+                            self.slow_write_docs += 1
 
             vb_key_offset += num_keys_per_sync
 

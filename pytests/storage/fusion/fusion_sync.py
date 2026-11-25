@@ -181,9 +181,8 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         # Start another data workload
         self.log.info("Starting another workload")
-        self.perform_workload(self.num_items,
-                              self.num_items * 2,
-                              ops_rate=10000)
+        load_start, load_end = self.num_items, self.num_items * 2
+        self.perform_workload(load_start, load_end, ops_rate=10000)
 
         self.sleep(600, "Sleep after data loading")
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -191,6 +190,18 @@ class FusionSync(MagmaBaseTest, FusionBase):
         # Stopping crash thread
         self.stop_crash = True
         crash_th.join()
+
+        # The sirius REST loader runs with retry=0 and no durability, so
+        # writes that failed or were lost while memcached was being killed
+        # are never re-applied (8.5.0-1510: 391 docs short of 10M, and
+        # 39k-44k per bucket in the 3-bucket variant, before the rebalance
+        # ran). 'update' is an upsert, so this recreates exactly the missing
+        # keys and leaves num_items unchanged.
+        self.log.info(f"Re-applying the crash-window writes "
+                      f"{load_start}:{load_end} now that the crashes have "
+                      f"stopped")
+        self.perform_workload(load_start, load_end, doc_op="update",
+                              ops_rate=10000)
 
         self.sleep(30, "Wait before performing a Fusion Rebalance")
 
@@ -207,11 +218,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        self.log.info("Validating item count after rebalance")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                  self.num_items)
+        self.verify_item_count(stage="after the Fusion rebalance")
 
 
     def test_fusion_sync_throttling(self):
@@ -1141,17 +1148,37 @@ class FusionSync(MagmaBaseTest, FusionBase):
             self.bucket_util.update_bucket_property(self.cluster.master, bucket,
                                                     flush_enabled=Bucket.FlushBucket.ENABLED)
             self.bucket_util.flush_bucket(self.cluster, bucket)
+        # The flush empties the buckets. Without this the tearDown health
+        # check waited for the pre-flush count whenever the test failed
+        # before reloading.
+        self.num_items = 0
+        self.deleted_upto = 0
 
         # Wait for upload interval after flush for log store cleanup to catch up
         sleep_time = 120 + self.fusion_upload_interval + 60
         self.sleep(sleep_time, "Wait after flushing buckets for upload interval")
 
-        # Verify log store has no data after flush
-        self.log.info("Checking log files on NFS after flush (expected 0)")
-        log_files_exist_after_flush, log_count_after_flush = self.check_log_files_on_nfs(
-            self.nfs_server, self.nfs_server_path)
+        # Verify log store has no data after flush. Cleanup of the old logs
+        # is asynchronous, so poll for a while before calling it a failure
+        # (8.5.0-1510 still had 388 files after the single fixed sleep).
+        flush_cleanup_timeout = int(self.input.param(
+            "flush_log_cleanup_timeout", 900))
+        self.log.info(f"Checking log files on NFS after flush (expected 0, "
+                      f"waiting up to {flush_cleanup_timeout}s)")
+        end_time = time.time() + flush_cleanup_timeout
+        while True:
+            _, log_count_after_flush = self.check_log_files_on_nfs(
+                self.nfs_server, self.nfs_server_path)
+            if log_count_after_flush == 0 or time.time() > end_time:
+                break
+            self.log.info(f"{log_count_after_flush} log files still on NFS "
+                          f"after flush")
+            self.sleep(60, "Waiting for log store cleanup after flush")
         self.assertEqual(log_count_after_flush, 0,
-                         f"Expected 0 log files on NFS after flush, found {log_count_after_flush}")
+                         f"Expected 0 log files on NFS after flush, found "
+                         f"{log_count_after_flush} after waiting "
+                         f"{flush_cleanup_timeout}s past the upload "
+                         f"interval (log store not cleaned up after flush)")
 
         # Verify Fusion is (still) in 'enabled' state after flush
         fusion_enabled_after_flush = self.monitor_fusion_state_transition(state="enabled", timeout=300)
@@ -1204,8 +1231,9 @@ class FusionSync(MagmaBaseTest, FusionBase):
         guest_volume_th.start()
         guest_volume_th.join()
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster, 100000)
+        # perform_workload set num_items to the 5M reloaded after the
+        # flush; this used to wait for a hard-coded 100000.
+        self.verify_item_count(stage="after the post-flush Fusion rebalance")
 
     def test_flush_during_fusion_enabling(self):
         """

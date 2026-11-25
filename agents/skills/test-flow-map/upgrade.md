@@ -153,7 +153,8 @@ validate_test_failure()
 | Method | Purpose |
 |---|---|
 | `tasks_post_upgrade(data_load)` | Runs rebalance/failover operations after full upgrade; controlled by `rebalance_op` param |
-| `swap_rebalance_all_nodes()` | Swap-rebalances all nodes in cluster (for storage migration) |
+| `swap_rebalance_all_nodes()` | Swap-rebalances all nodes in cluster (for storage migration). Passes one `services` entry per spare node — `RebalanceTask` indexes `services[i]` per `to_add` node, so a single entry raises `IndexError` |
+| `validate_magma_bucket_create_in_mixed_mode()` | `test_upgrade_magma_default` per-node check: tries magma 100MB/1024, 100MB/128, 1024MB/128 via raw REST (`_try_create_magma_bucket`, no `warmupBehavior`, no `magmaMinMemoryQuota` side effect). Expectation follows the version of the node receiving the request: <8.0 all fail (7.6: "variable number of vbuckets"); >=8.0 only quota-below-minimum fails (1024 MiB for 1024 vbs, 100 MiB for 128 vbs, or the internal-setting override). Created buckets are deleted |
 | `swap_rebalance_all_nodes_iteratively()` | Same but one node at a time |
 | `failover_recovery_all_nodes()` | Failover+recovery all nodes (for storage migration) |
 | `migrate_node_random(node, method)` | Picks swap_rebalance or failover_recovery per node |
@@ -371,6 +372,7 @@ End-to-end upgrade with multi-service cluster (KV + Views + 2i + Eventing + N1QL
 | Param | Default | Description |
 |---|---|---|
 | `upgrade_with_data_load` | `True` | Run CRUD ops during upgrade |
+| `doc_count_stall_timeout` | `900` | `test_upgrade` final doc-count wait (`__wait_for_persistence_and_validate`, 4800s timeout) fails early once `curr_items_tot`/`vb_replica_curr_items` hasn't changed for this many seconds. `0` = wait the full timeout |
 | `bucket_spec` | `"single_bucket.default"` | Bucket spec package name |
 | `initial_data_spec` | `"initial_load"` | Spec for pre-upgrade data load |
 | `sub_data_spec` | `"subsequent_load_magma"` | Spec for async load during upgrade |
@@ -478,10 +480,17 @@ upgrade_chains = {
 
 **Usage in `_populate_upgrade_chain()`:**
 ```python
-chain_to_test = self.input.param("upgrade_chain", "7.2.3")
+chain_to_test = str(self.input.param("upgrade_chain", "7.2.9"))
 upgrade_version = self.input.param("upgrade_version", "8.0.0-1000")
+if chain_to_test not in upgrade_chains:
+    self.fail("Unknown upgrade_chain ...")   # instead of a bare KeyError
 self.upgrade_chain = upgrade_chains[chain_to_test] + [upgrade_version]
-# e.g. "7.2.3" + "8.0.0-1000" → ["7.2.3", "8.0.0-1000"]
+# e.g. "7.2.9" + "8.0.0-1000" → ["7.2.9", "8.0.0-1000"]
+```
+Every conf line should set `upgrade_chain` explicitly — including
+`community_upgrade=True` lines, where `upgrade_chain[0]` is later overwritten
+with `upgrade_version` (or `initial_ce_version`) but the key lookup still runs.
+```
 ```
 
 **Feature gating** (`get_supported_features(version)`):
@@ -553,6 +562,8 @@ While upgrading from 6.5→7.2, `cluster_features` does **not** include `"collec
 | `validate_encryption_operations` assertion fails | Called with `expected_to_fail=True` during upgrade (mixed-mode blocks AES-256 key creation) and `expected_to_fail=False` after full upgrade. Uses `rest.create_secret()` + `bucket_helper.change_bucket_props(encryptionAtRestKeyId=...)`. If timing is off, cluster may not be fully upgraded yet. |
 | `add_system_scope_to_all_buckets()` called unexpectedly | Triggered by `float(upgrade_version[:3]) >= 7.6 and float(initial_version[:3]) < 7.6`. 7.6 added `_system` scope (`_query`, `_mobile` collections) — must be mirrored in local bucket objects for downstream validation to match. |
 | `attempt_10k_collection_creation()` wrong result | Returns `True` only on 8.5+ clusters. Asserted `False` during upgrade, `True` after. Failure = cluster not fully at 8.5+ when checked. |
+| Magma bucket-create expectation wrong | `bucket_util.create_default_bucket()` always sends `warmupBehavior` (rejected before 7.9) and, for 1024-vbucket magma, sets the cluster-wide `magmaMinMemoryQuota=256` internal setting (`BucketOperations_Rest.create_bucket`). Don't use it for negative bucket-create cases — failures pass for the wrong reason and later cases inherit the 256 MiB minimum. |
+| Final doc-count wait fails with "stalled: unchanged for Ns" | `StatsWaitTask(stall_timeout=...)` stopped because the summed stat stopped moving. The error has the last value and per-node values, and `validate_docs_per_collections_all_buckets` then logs per-collection mismatches. Count stuck below expected = items missing (cbcollect + MB) or wrong expected count in the test. |
 | FBR check fails | `verify_and_configure_fbr()` only called when `float(upgrade_version[:3]) >= 8.5`. Checks `internalSettings.dataServiceFileBasedRebalanceEnabled == True`. On older versions the key is absent — guarded by `if 'dataServiceFileBasedRebalanceEnabled' in content`. |
 | `if "feature" in self.cluster_features` check seems redundant but must not be removed | `cluster_features` reflects the **current** cluster version at each step of the loop, not the final target. If `upgrade_chain` starts from a base version that predates the feature (e.g. chain `["6.5", "7.2", "8.0"] + "8.5"`), the guard is necessary during the 6.5→7.2 phase even though the target supports the feature. See "WARNING" block in Upgrade Chain Configuration for the full guard table. |
 | Upgrade rebalance hangs but the test never fails | `RebalanceTask.check()` doubles `retry_get_process_num` on every poll while `is_cluster_mixed()` (`lib/Jython_tasks/task.py`), so its hang detection effectively never trips during an upgrade. Use `RebalanceStallMonitor` (`kv_upgrade_checks.py`) around the upgrade step. |
