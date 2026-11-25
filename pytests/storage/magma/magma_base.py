@@ -717,7 +717,13 @@ class MagmaBaseTest(StorageBase):
                         dump += " --history | wc -l"
                     else:
                         dump += " | wc -l"
-                    seqnumber_count = shell.execute_command(dump)[0][0].strip()
+                    output, error = shell.execute_command(dump)
+                    seqnumber_count = output[0].strip()
+                    # wc -l still prints 0 when magma_dump fails, so surface
+                    # magma_dump's stderr instead of silently counting 0
+                    if error:
+                        self.log.error(f"{node.ip} {kvstore.strip()}: "
+                                       f"magma_dump stderr: {error}")
                     result["_".join(node.ip.split("."))][kvstore] = seqnumber_count
         self.log.info("seqnumber_count/kvstore {}".format(result))
         seqnumber_count = 0

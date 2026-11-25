@@ -725,6 +725,11 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.expiry_start = 0
         self.expiry_end = self.init_items_per_collection
         self.expiry_perc = self.input.param("expiry_perc", 100)
+        # initial_load sets num_items to the total across collections only
+        # for the default loader; the sirius loaders leave it per collection.
+        # loadgen_docs below subtracts one collection's worth per call.
+        self.items = self.init_items_per_collection * len(self.collections)
+        self.num_items = self.items
         self.generate_docs(doc_ops="expiry")
         tasks_info = dict()
         for collection in self.collections:

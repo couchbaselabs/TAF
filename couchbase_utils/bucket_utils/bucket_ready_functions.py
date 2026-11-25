@@ -1271,8 +1271,11 @@ class DocLoaderUtils(object):
         for c_thread in c_validation_threads:
             c_thread.join()
 
-        # Set doc_loading result based on the retry outcome
-        doc_loading_task.result = True
+        # Set doc_loading result based on the retry outcome. A stalled or
+        # aborted load records its exception but leaves op_data["fail"]
+        # empty, so retries alone must not turn it back into a pass.
+        doc_loading_task.result = \
+            getattr(doc_loading_task, "exception", None) is None
         for _, scope_dict in doc_loading_task.loader_spec.items():
             for _, collection_dict in scope_dict["scopes"].items():
                 for _, c_dict in collection_dict["collections"].items():
@@ -7494,7 +7497,10 @@ class BucketUtils(ScopeUtils):
                             "high_seqno {2} < {3} hist_start_seqno"
                             .format(index, vb_num, r_stat[high_seqno],
                                     r_stat[hist_start_seqno]))
-                    if not no_history_preserved \
+                    # Only curr_stats must have history. prev_stat may be a
+                    # snapshot taken before history was enabled (0 is valid
+                    # there) and was already checked as curr_stats when taken.
+                    if stat is curr_stats \
                             and r_stat[hist_start_seqno] == 0:
                         result = False
                         self.log.critical(
