@@ -164,9 +164,12 @@ class PostResync(GetAppEndpoints):
 
     def test_authorization(self):
         failures = list()
+        # Starting a resync is a write action: projectViewer and
+        # projectDataReader are denied with 403 (19895). Read access is
+        # covered by GetAppEndpointResync.
         for testcase in self.v4_RBAC_injection_init([
-                 "organizationOwner", "projectOwner", "projectDataReader",
-                 "projectViewer", "projectDataReaderWriter", "projectManager"
+                 "organizationOwner", "projectOwner",
+                 "projectDataReaderWriter", "projectManager"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
