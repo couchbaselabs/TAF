@@ -23,18 +23,57 @@ class FusionLease(MagmaBaseTest, FusionBase):
     def tearDown(self):
         super().tearDown()
 
-    def _fetch_leases(self, ssh, volume_id):
-        try:
-            cmd = f'/opt/couchbase/bin/fusion/metadata_dump --uri "chronicle://localhost:8091" --volume-id "{volume_id}"'
-            output, error = ssh.execute_command(cmd)
-            if error:
-                self.log.error(f"metadata_dump failed for {volume_id}: {error}")
-                return None
-            metadata = json.loads("\n".join(output))
-            return metadata.get("leases", [])
-        except Exception as e:
-            self.log.error(f"Error fetching leases for {volume_id}: {e}")
-            return None
+    def initial_load(self):
+        super().initial_load()
+        # StorageBase.initial_load sets num_items to the bucket-wide total
+        # only for the default loader. The sirius loaders load num_items
+        # into every collection but leave num_items at one collection's
+        # worth, so with num_collections=10/20 the tearDown count check
+        # waited for 1/10th (1/20th) of the docs actually in the bucket.
+        if self.load_docs_using != "default_loader":
+            self.num_items = (self.init_items_per_collection
+                              * self.get_loaded_collection_count())
+
+    def _fetch_leases(self, ssh, volume_id, retries=3, retry_delay=2):
+        """
+        Leases of a Fusion volume from metadata_dump, or None when
+        metadata_dump output could not be read (as opposed to [] for a
+        volume that has no leases).
+
+        8.5.0-1510 runs got empty output for every volume via
+        chronicle://localhost:8091 (json 'Expecting value: line 1 column 1'),
+        which the test then reported as 'failed to acquire lease'. Each
+        attempt tries localhost and then the node IP (as the janitor and
+        checkpoint tests do), takes the JSON from the first '{' line so log
+        lines before it don't break parsing, and logs the raw output, error
+        and exit code when nothing parses.
+        """
+        uris = ["chronicle://localhost:8091", f"chronicle://{ssh.ip}:8091"]
+        for attempt in range(1, retries + 1):
+            for uri in uris:
+                cmd = (f'/opt/couchbase/bin/fusion/metadata_dump '
+                       f'--uri "{uri}" --volume-id "{volume_id}"')
+                output, error, exit_code = ssh.execute_command(
+                    cmd, debug=False, get_exit_code=True)
+                lines = [line.strip() for line in output]
+                start = next((i for i, line in enumerate(lines)
+                              if line.startswith("{")), None)
+                if start is not None:
+                    try:
+                        metadata = json.loads("\n".join(lines[start:]))
+                        return metadata.get("leases") or []
+                    except ValueError:
+                        pass
+                self.log.warning(
+                    f"metadata_dump for {volume_id} via {uri} "
+                    f"(attempt {attempt}/{retries}) returned no JSON. "
+                    f"exit code: {exit_code}, output: {output}, "
+                    f"error: {error}")
+            if attempt < retries:
+                time.sleep(retry_delay)
+        self.log.error(f"Could not read leases for {volume_id} with "
+                       f"metadata_dump after {retries} attempts")
+        return None
 
     def extract_volume_ids_from_plan(self, ssh, plan_file_path):
         output, error = ssh.execute_command(f'cat "{plan_file_path}"')
@@ -70,10 +109,15 @@ class FusionLease(MagmaBaseTest, FusionBase):
                 if vid in lease_acquired:
                     continue
                 leases = self._fetch_leases(ssh, vid)
+                if leases is None:
+                    raise Exception(f"Could not read the leases of volume "
+                                    f"{vid} during rebalance (metadata_dump "
+                                    f"returned no JSON, see the warnings "
+                                    f"above), so lease acquisition can't be "
+                                    f"checked")
                 if not leases:
                     raise Exception(f"Volume {vid} failed to acquire lease during rebalance")
-                else:
-                    lease_acquired.add(vid)
+                lease_acquired.add(vid)
             time.sleep(poll_interval)
         self.log.info(f"All volumes acquired leases: {len(lease_acquired)}")
 
@@ -82,10 +126,16 @@ class FusionLease(MagmaBaseTest, FusionBase):
         lease_release_failures = []
         for vid in self.volume_ids:
             leases = self._fetch_leases(ssh, vid)
-            lease_count = len(leases) if leases else 0
-            # self.log.info(f"Volume {vid} final lease count: {lease_count}")  # debug print
-            if leases:
-                lease_release_failures.append(f"Volume {vid} still has leases after rebalance")
+            # Unreadable used to count as 'no leases', so this check passed
+            # without having read a single lease.
+            if leases is None:
+                lease_release_failures.append(
+                    f"Could not read the leases of volume {vid} after "
+                    f"rebalance")
+            elif leases:
+                lease_release_failures.append(
+                    f"Volume {vid} still has {len(leases)} lease(s) after "
+                    f"rebalance: {leases}")
         if lease_release_failures:
             for f in lease_release_failures:
                 self.log.error(f)

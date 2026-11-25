@@ -127,6 +127,20 @@ class FusionMagmaCrashRecovery(MagmaCrashTests, FusionBase):
         self.log.info("Test fusion crash recovery with large documents started")
 
         self.test_crash_recovery_large_docs()
+        # The base test loads only with cbc-pillowfight and never touches
+        # num_items, so the Fusion checks compared against the 100000
+        # default. Expect what it loads: the large docs plus the 20000 1MB
+        # docs of the rate-limited pillowfight thread.
+        self.num_items = sum(int(self.input.param(param, default))
+                             for param, default in (
+                                 ("num_2mb_docs", 1000),
+                                 ("num_4mb_docs", 1000),
+                                 ("num_8mb_docs", 1000),
+                                 ("num_16mb_docs", 500),
+                                 ("num_20mb_docs", 500))) + 20000
+        self.deleted_upto = 0
+        # pillowfight keys, not sirius ones
+        self.skip_doc_read_back = True
 
         self.sleep(120, "Wait before executing fusion workflow after magma test")
 

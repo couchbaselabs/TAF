@@ -617,7 +617,27 @@ class UpgradeBase(BaseTestCase):
                 bucket_selected.name, str(manifest).replace("'", '"'))
             self.log.info("Restoring original manifest for bucket {0}".format(bucket_selected.name))
 
-    def attempt_rate_limiting_enable(self):
+    # Reasons returned by attempt_rate_limiting_enable(). Callers match on
+    # these to tell *why* rate limiting was or wasn't usable.
+    RATE_LIMIT_SWITCH_REJECTED = "throttle_enabled rejected"
+    RATE_LIMIT_NOT_STORED = "bucket throttle limits not stored"
+    RATE_LIMIT_NOT_IN_MEMCACHED = "memcached did not pick up throttle limits"
+
+    def attempt_rate_limiting_enable(self, memcached_timeout=180):
+        """
+        Turn KV throttling on, set random bucket limits on buckets[0] and
+        check that memcached on every KV node runs with them. Always
+        restores the defaults.
+
+        :param memcached_timeout: How long to wait for every node's memcached
+            to report the new limits. They reach memcached asynchronously and
+            nodes just added by swap/rebalance can lag, so this is minutes,
+            not seconds.
+        :return: (ok, reason). ok is True only when the switch is accepted,
+            the limits are stored and memcached on every KV node matches.
+            reason is "" on success, else one of the RATE_LIMIT_* constants
+            followed by the details.
+        """
         bucket = self.cluster.buckets[0]
         cluster_rest = ClusterRestAPI(self.cluster.master)
         bucket_rest = BucketRestApi(self.cluster.master)
@@ -629,28 +649,52 @@ class UpgradeBase(BaseTestCase):
             enabled, content = cluster_rest.manage_global_memcached_setting(
                 throttle_enabled="true")
             self.log.info(f"throttle_enabled: {enabled}, {content}")
+            if not enabled:
+                # Mixed mode: ns_server rejects the switch until every node
+                # supports it. Don't go on to the bucket edit -- an old
+                # node returns 200 for the throttle params but drops them.
+                return False, f"{self.RATE_LIMIT_SWITCH_REJECTED}: {content}"
             status, content = bucket_rest.edit_bucket(
                 bucket.name, {Bucket.throttleReserved: reserved,
                               Bucket.throttleHardLimit: hard_limit})
-            self.log.info(f"Bucket throttle limits {reserved}/{hard_limit} "
-                          f"edit: {status}, {content}")
+            self.log.info(f"Bucket {bucket.name} throttle limits "
+                          f"{reserved}/{hard_limit} edit: {status}, {content}")
             _, info = bucket_rest.get_bucket_info(bucket.name)
             stored = isinstance(info, dict) \
                 and info.get(Bucket.throttleReserved) == reserved \
                 and info.get(Bucket.throttleHardLimit) == hard_limit
-            return enabled and stored \
-                and ThrottlingHelper(self.cluster.master, self.log) \
+            if not stored:
+                stored_vals = {k: info.get(k) for k in (
+                    Bucket.throttleReserved, Bucket.throttleHardLimit)} \
+                    if isinstance(info, dict) else info
+                return False, (f"{self.RATE_LIMIT_NOT_STORED}: expected "
+                               f"{reserved}/{hard_limit}, bucket has "
+                               f"{stored_vals}")
+            ok, per_node = ThrottlingHelper(self.cluster.master, self.log) \
                 .validate_memcached_throttle_settings(
                     self.cluster_util.get_kv_nodes(self.cluster),
-                    bucket.name, reserved, hard_limit)
+                    bucket.name, reserved, hard_limit,
+                    timeout=memcached_timeout)
+            if not ok:
+                return False, (f"{self.RATE_LIMIT_NOT_IN_MEMCACHED} within "
+                               f"{memcached_timeout}s for bucket "
+                               f"{bucket.name} (expected {reserved}/"
+                               f"{hard_limit}). Per node: {per_node}")
+            return True, ""
         finally:
             if stored:
-                bucket_rest.edit_bucket(
+                status, content = bucket_rest.edit_bucket(
                     bucket.name, {Bucket.throttleReserved: 0,
                                   Bucket.throttleHardLimit: 2 ** 64 - 1})
+                if not status:
+                    self.log.warning(f"Restoring default throttle limits on "
+                                     f"{bucket.name} failed: {content}")
             if enabled:
-                cluster_rest.manage_global_memcached_setting(
+                status, content = cluster_rest.manage_global_memcached_setting(
                     throttle_enabled="false")
+                if not status:
+                    self.log.warning(f"Disabling throttle_enabled failed: "
+                                     f"{content}")
 
     def validate_encryption_operations(self, expected_to_fail=True):
         """Validate encryption key creation and assignment."""
@@ -725,8 +769,12 @@ class UpgradeBase(BaseTestCase):
                     bucket.scopes[CbServer.system_scope].collections[c_name] = collection
 
     def _populate_upgrade_chain(self):
-        chain_to_test = self.input.param("upgrade_chain", "7.2.3")
+        chain_to_test = str(self.input.param("upgrade_chain", "7.2.9"))
         upgrade_version = self.input.param("upgrade_version", "8.0.0-1000")
+        if chain_to_test not in upgrade_chains:
+            self.fail(f"Unknown upgrade_chain '{chain_to_test}'. Set "
+                      f"upgrade_chain to a key in upgrade_lib.couchbase."
+                      f"upgrade_chains")
         self.upgrade_chain = upgrade_chains[chain_to_test] + [upgrade_version]
         self.upgrade_version = self.upgrade_chain[0]
 

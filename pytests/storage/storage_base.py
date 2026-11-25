@@ -1470,10 +1470,24 @@ class StorageBase(BaseTestCase):
         if ops_rate is not None:
             cmd += " --rate-limit {}".format(ops_rate)
 
-        self.log.info("Executing pillowfight command = {}".format(cmd))
-        _, _ = shell.execute_command(cmd)
+        timeout = self._pillowfight_timeout(items, threads, ops_rate)
+        self.log.info("Executing pillowfight command = {} (timeout {}s)"
+                      .format(cmd, timeout))
+        _, _ = shell.execute_command(cmd, timeout=timeout)
         self.sleep(30, "Wait after executing pillowfight command")
         shell.disconnect()
+
+    @staticmethod
+    def _pillowfight_timeout(items, threads, ops_rate, default=600):
+        """SSH timeout for a cbc-pillowfight run. --rate-limit is per
+        thread, so a rate-limited run needs at least
+        items / (ops_rate * threads) seconds: 20000 docs at 10/s on 1
+        thread is 2000s, which the fixed 600s timeout always cut short
+        while pillowfight kept loading in the background."""
+        if not ops_rate:
+            return default
+        needed = items / (float(ops_rate) * max(int(threads), 1))
+        return max(default, int(needed * 1.5) + 120)
 
     def read_data_cbc_pillowfight(self, server, bucket, items, key_prefix, threads=1, ops_rate=None):
 

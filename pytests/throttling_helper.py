@@ -109,17 +109,30 @@ class ThrottlingHelper:
             self.log.info(f"  {key}: {value}")
 
     def validate_memcached_throttle_settings(self, nodes, bucket_name,
-                                             reserved, hard_limit, timeout=30):
+                                             reserved, hard_limit, timeout=180,
+                                             poll_interval=5, log_interval=30):
         """
         Poll until memcached on every node runs with throttling enabled
         and the given bucket limits.
 
+        throttle_enabled comes from each node's effective memcached settings
+        (GET /pools/default/settings/memcached/effective/self), and the
+        limits from that node's `cbstats all` for bucket_name.
+
+        Args:
+            timeout: seconds to wait for all nodes to match
+            poll_interval: seconds between polls
+            log_interval: how often (seconds) to log per-node progress
+
         Returns:
-            bool: True if all nodes match within timeout
+            (bool, dict): True if all nodes match within timeout, and the
+            last per-node reading {ip: {stat: value}}
         """
         expected = {"throttle_enabled": True, "throttle_reserved": reserved,
                     "throttle_hard_limit": hard_limit}
-        end_time = time.time() + timeout
+        start_time = time.time()
+        end_time = start_time + timeout
+        next_log = start_time
         while True:
             actual = dict()
             for node in nodes:
@@ -133,11 +146,23 @@ class ThrottlingHelper:
                     "throttle_reserved": int(stats.get("throttle_reserved", -1)),
                     "throttle_hard_limit": int(stats.get("throttle_hard_limit",
                                                          -1))}
+            elapsed = int(time.time() - start_time)
             if actual and all(mc == expected for mc in actual.values()):
-                return True
+                self.log.info(f"memcached throttle settings for bucket "
+                              f"{bucket_name} match on all {len(actual)} "
+                              f"nodes after {elapsed}s: {actual}")
+                return True, actual
             if time.time() > end_time:
-                self.log.error(f"memcached throttle settings: {actual}, "
+                mismatched = [ip for ip, mc in actual.items() if mc != expected]
+                self.log.error(f"memcached throttle settings for bucket "
+                               f"{bucket_name} still differ after {elapsed}s "
+                               f"on {mismatched}. Per node: {actual}, "
                                f"expected: {expected}")
-                return False
-            time.sleep(2)
+                return False, actual
+            if time.time() >= next_log:
+                self.log.info(f"Waiting for memcached throttle settings for "
+                              f"bucket {bucket_name} ({elapsed}s/{timeout}s). "
+                              f"Per node: {actual}, expected: {expected}")
+                next_log = time.time() + log_interval
+            time.sleep(poll_interval)
 

@@ -3,6 +3,7 @@ import os
 import subprocess
 import threading
 import time
+from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
@@ -1818,8 +1819,18 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Wait for first Fusion upload")
 
+        # 8.5.0-1510: the log store path didn't exist at this point (nothing
+        # ever uploaded). Log Fusion's own view first so the failure shows
+        # whether Fusion is enabled and syncing the migrated bucket.
+        _, fusion_status = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"Fusion status after migration: {fusion_status}")
+        self.get_fusion_sync_stats()
+
         o, e, upload_size = self.get_log_store_du()
-        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertTrue(len(o) > 0,
+                        f"Nothing on the log store after the migration to "
+                        f"Magma (du output empty, error: {e}). Fusion "
+                        f"status: {fusion_status}")
         self.assertFalse(e, f"DU command failed with error: {e}")
         self.assertGreater(upload_size, 0, "Log store should contain data after Fusion upload")
 
@@ -1843,19 +1854,22 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
 
     def check_bucket_mixed_mode(self, bucket):
-        cbstats = Cbstats(self.cluster.master)
-        vb_details = cbstats.vbucket_details(bucket.name)
+        """True while the bucket's nodes run different storage backends.
 
-        backends = set()
-        for vb_num, details in vb_details.items():
-            if 'backend_type' in details:
-                backends.add(details['backend_type'])
-            elif 'db_file_name' in details:
-                db_file = details['db_file_name']
-                if 'magma' in db_file.lower():
-                    backends.add('magma')
-                elif 'couch' in db_file.lower():
-                    backends.add('couchstore')
-
-        self.log.info(f"Bucket {bucket.name} backends: {backends}")
+        During a backend migration ns_server keeps a per-node
+        'storageBackend' override in the bucket JSON for nodes that are
+        still on the old backend; nodes without one use the bucket-level
+        value. (The old check read backend fields from cbstats
+        vbucket-details that 8.5 doesn't report, so it always saw an empty
+        set and reported 'not mixed', even straight after the change.)
+        """
+        bucket_json = BucketHelper(self.cluster.master).get_buckets_json(
+            bucket.name)
+        default_backend = bucket_json.get("storageBackend")
+        per_node = {node["hostname"]: node.get("storageBackend",
+                                               default_backend)
+                    for node in bucket_json.get("nodes", [])}
+        backends = set(per_node.values())
+        self.log.info(f"Bucket {bucket.name} backend {default_backend}, "
+                      f"per node: {per_node}")
         return len(backends) > 1

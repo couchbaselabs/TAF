@@ -61,6 +61,18 @@ class FusionBase(BaseTestCase):
         # helpers skip the deleted docs instead of reporting them as misses.
         self.deleted_upto = 0
 
+        # Item count checks (verify_item_count). The count can take a while
+        # to settle after a rebalance, so the overall timeout stays long, but
+        # a count that stops moving without matching fails after the stall
+        # window instead of burning the whole timeout. 0 disables it.
+        self.item_count_timeout = int(self.input.param("item_count_timeout",
+                                                       1200))
+        self.item_count_stall_timeout = int(self.input.param(
+            "item_count_stall_timeout", 300)) or None
+        # Set when an item count check fails, so the tearDown health check
+        # doesn't wait on the same mismatch a second time.
+        self.item_count_failed = False
+
         if self.fusion_test:
             self.nfs_server_ip = self.input.param("nfs_server_ip", "172.23.219.42")
             self.nfs_server_path = self.input.param("nfs_server_path", "/data/nfs/share/buckets")
@@ -432,6 +444,35 @@ class FusionBase(BaseTestCase):
                 return float(size_str[:-1]) * multipliers.get(size_str[-1].upper(), 1)
             except (ValueError, KeyError):
                 return 0
+
+    def _get_local_bucket_du(self, bucket, bucket_uuid):
+        """Sum of `du -sb <data_path>/<bucket_uuid>` over the cluster's
+        nodes. Nodes where du prints nothing are logged and skipped."""
+        local_data_du = 0
+        du_cmd = f"du -sb {os.path.join(self.data_path, bucket_uuid)}"
+        for server in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(server)
+            o, e = shell.execute_command(du_cmd)
+            shell.disconnect()
+            node_du = self._parse_du_bytes(o)
+            if node_du is None:
+                self.log.warning(
+                    f"[validate_fusion_health] Bucket '{bucket.name}' "
+                    f"node={server.ip}: no local DU from '{du_cmd}'. "
+                    f"Output: {o}, error: {e}")
+                continue
+            local_data_du += node_du
+        return local_data_du
+
+    @staticmethod
+    def _parse_du_bytes(du_output):
+        """Bytes from `du -sb` output (first field of the first line), or
+        None when du printed nothing usable (path missing, permission
+        error)."""
+        try:
+            return int(du_output[0].split()[0])
+        except (IndexError, ValueError):
+            return None
 
     def parse_s3_human_size(self, size_str):
         """
@@ -904,6 +945,7 @@ class FusionBase(BaseTestCase):
         self.log.info(f"New nodes str = {new_node_str}")
 
         fusion_rebalance_setup = True
+        setup_errors = ""
         fusion_rebalance_result = True
 
         # Create a virtual environment and install necessary packages
@@ -1018,6 +1060,8 @@ class FusionBase(BaseTestCase):
         if output or error:
             self.log.error("Found ERROR logs during Fusion rebalance automation")
             fusion_rebalance_setup = False
+            # Keep the lines for the failure message below
+            setup_errors = (output or error)[-2000:]
 
         nodes_to_monitor = list()
         ssh = RemoteMachineShellConnection(self.cluster.master)
@@ -1061,7 +1105,8 @@ class FusionBase(BaseTestCase):
                           "caught")
         else:
             if not fusion_rebalance_setup:
-                self.fail("Error during Fusion Rebalance setup")
+                self.fail(f"Error during Fusion Rebalance setup: "
+                          f"{setup_errors}")
             if not fusion_rebalance_result and not stop_before_rebalance:
                 self.fail("Error during Fusion Rebalance")
 
@@ -1499,6 +1544,11 @@ class FusionBase(BaseTestCase):
 
         self.log.info(f"Pre-fusion rebalance memory usage: {pre_fusion_memory} MB")
 
+        # Step 1.5: Baseline item count. A mismatch here is the magma test's
+        # bookkeeping (or the base test itself), not the Fusion rebalance,
+        # and checking it first tells the two apart.
+        self.verify_item_count(stage="before the Fusion rebalance")
+
         # Step 2: Execute fusion rebalance
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=1)
@@ -1517,8 +1567,12 @@ class FusionBase(BaseTestCase):
 
         # Step 4: Validate item counts after fusion operations
         self.log.info("Starting post-fusion validation")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster, int(self.num_items))
+        self.verify_item_count(
+            stage="after the Fusion rebalance",
+            failure_hint="The count matched before the rebalance, so the "
+                         "Fusion rebalance / extent migration changed it: "
+                         "possible data loss or resurrected docs (MB "
+                         "candidate)")
 
         # Step 5: Validate resource usage after fusion operations
         self.log.info("Validating post-fusion resource usage")
@@ -1752,21 +1806,120 @@ class FusionBase(BaseTestCase):
                 count += 1
         return max(count, 1)
 
+    def get_bucket_item_counts(self, bucket):
+        """Per-node item count stats for a bucket, read with cbstats
+        `all`: {ip: {curr_items, curr_items_tot, vb_replica_curr_items}}.
+        A node that can't be read maps to the error string."""
+        counts = dict()
+        for node in self.cluster_util.get_bucket_kv_nodes(self.cluster,
+                                                          bucket):
+            cbstats = Cbstats(node)
+            try:
+                stats = cbstats.all_stats(bucket.name)
+                counts[node.ip] = {
+                    stat: int(stats.get(stat, -1))
+                    for stat in ("curr_items", "curr_items_tot",
+                                 "vb_replica_curr_items")}
+            except Exception as e:
+                counts[node.ip] = f"error: {e}"
+            finally:
+                cbstats.disconnect()
+        return counts
+
+    def verify_item_count(self, expected_items=None, stage="",
+                          failure_hint=None):
+        """
+        Wait for persistence, then check every bucket holds the expected
+        number of live docs: expected_items when given, else the bucket's
+        entry in self.expected_items_per_bucket (for tests whose buckets get
+        different loads), else self.num_items (the bucket-wide count).
+
+        Fails after item_count_stall_timeout when the count stops moving,
+        rather than after the full item_count_timeout. On failure it logs
+        the actual per-node counts of every bucket, marks
+        self.item_count_failed so the tearDown health check doesn't repeat
+        the wait, and fails the test with the expected vs actual totals.
+        """
+        per_bucket = getattr(self, "expected_items_per_bucket", None) or {}
+        expected = dict()
+        for bucket in self.cluster.buckets:
+            if expected_items is not None:
+                expected[bucket.name] = int(expected_items)
+            else:
+                expected[bucket.name] = int(per_bucket.get(bucket.name,
+                                                           self.num_items))
+        self.log.info(f"Validating item count {stage}: expecting live docs "
+                      f"per bucket {expected}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        error = None
+        for bucket in self.cluster.buckets:
+            try:
+                self.bucket_util.verify_stats_all_buckets(
+                    self.cluster, expected[bucket.name], buckets=[bucket],
+                    timeout=self.item_count_timeout,
+                    stall_timeout=self.item_count_stall_timeout)
+            except Exception as e:
+                error = e
+                break
+        if error is None:
+            return
+
+        self.item_count_failed = True
+        summary = list()
+        for bucket in self.cluster.buckets:
+            per_node = self.get_bucket_item_counts(bucket)
+            active = sum(c["curr_items"] for c in per_node.values()
+                         if isinstance(c, dict))
+            replica = sum(c["vb_replica_curr_items"]
+                          for c in per_node.values() if isinstance(c, dict))
+            self.log.error(f"Item count {stage}, bucket {bucket.name}: "
+                           f"expected {expected[bucket.name]} active, found "
+                           f"{active} active / {replica} replica. "
+                           f"Per node: {per_node}")
+            summary.append(f"{bucket.name} expected "
+                           f"{expected[bucket.name]}, found {active} "
+                           f"active / {replica} replica")
+        msg = (f"Item count check failed {stage}: {'; '.join(summary)}.")
+        if failure_hint:
+            msg += f" {failure_hint}."
+        self.fail(f"{msg} ({error})")
+
     def validate_fusion_health(self):
         self.log.info("FUSION HEALTH CHECK - START")
         failure_messages = list()
 
         expected_items = int(self.num_items)
-        self.log.info("Validating item count across all buckets")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster, expected_items)
+        count_ok = False
+        if self.item_count_failed:
+            # The test body already failed (and logged) this mismatch; a
+            # second wait would only repeat it.
+            self.log.warning("Skipping the item count check and doc "
+                             "read-back: an earlier item count check in "
+                             "this test already failed")
+        else:
+            try:
+                self.verify_item_count(stage="tearDown health check")
+                count_ok = True
+            except Exception as e:
+                failure_messages.append(str(e))
 
         # self.num_items is the bucket-wide count (what verify_stats compares
         # against), while perform_batch_reads reads the same key range in
         # every loaded collection, so the read count must be per collection.
         loaded_collections = self.get_loaded_collection_count()
         docs_to_validate = min(expected_items // loaded_collections, 1000000)
-        if docs_to_validate > 0:
+        if not count_ok:
+            # Reading back a key range the count already disagrees with
+            # only adds read misses on top of the count failure.
+            self.log.info("Item count check did not pass, skipping doc "
+                          "read-back")
+        elif getattr(self, "skip_doc_read_back", False):
+            # The read-back reads sirius keys; tests that load with other
+            # tools (e.g. cbc-pillowfight) have none to read
+            self.log.info("Docs were not loaded by sirius, skipping doc "
+                          "read-back")
+        elif docs_to_validate > 0:
             self.log.info(f"Validating data by reading back {docs_to_validate} "
                           f"docs per collection across {loaded_collections} "
                           f"collection(s)")
@@ -1826,8 +1979,17 @@ class FusionBase(BaseTestCase):
             try:
                 bucket_uuid = self.get_bucket_uuid(bucket.name)
                 fusion_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
-                o, _ = nfs_ssh.execute_command(f"du -sb {fusion_bucket_path}")
-                log_store_du = int(o[0].split("\t")[0])
+                du_cmd = f"du -sb {fusion_bucket_path}"
+                o, e = nfs_ssh.execute_command(du_cmd)
+                log_store_du = self._parse_du_bytes(o)
+                if log_store_du is None:
+                    # e.g. nothing uploaded yet, so the path doesn't exist
+                    self.log.warning(
+                        f"[validate_fusion_health] Bucket '{bucket.name}': "
+                        f"no log-store DU from '{du_cmd}' on "
+                        f"{self.nfs_server.ip}. Output: {o}, error: {e}. "
+                        f"Skipping the DU checks for this bucket")
+                    continue
 
                 cbstats_total = 0
                 for node in self.cluster.nodes_in_cluster:
@@ -1860,42 +2022,48 @@ class FusionBase(BaseTestCase):
                         failure_messages.append(msg)
 
                 # ---- Log-store DU vs local data DU check (≤4x multiplier) ----
-                local_data_du = 0
-                local_bucket_path = os.path.join(self.data_path, bucket_uuid)
-                for server in self.cluster.nodes_in_cluster:
-                    try:
-                        shell = RemoteMachineShellConnection(server)
-                        o, _ = shell.execute_command(f"du -sb {local_bucket_path}")
-                        shell.disconnect()
-                        local_data_du += int(o[0].split("\t")[0])
-                    except (IndexError, ValueError) as exc:
+                # Log cleaning on the log store lags behind local data: after
+                # collection drops / deletes, local data shrinks at once
+                # while the log store only shrinks once cleaning runs
+                # (8.5.0-1510: 5.53x right after collection drop/recreate).
+                # Re-measure both sides for up to log_store_du_settle_timeout
+                # before calling it a violation; still over 4x after that
+                # means log-store garbage is not being reclaimed.
+                settle_timeout = int(self.input.param(
+                    "log_store_du_settle_timeout", 900))
+                settle_end = time.time() + settle_timeout
+                while True:
+                    local_data_du = self._get_local_bucket_du(bucket,
+                                                              bucket_uuid)
+                    if local_data_du == 0:
                         self.log.warning(
-                            f"[validate_fusion_health] Bucket '{bucket.name}' "
-                            f"node={server.ip}: could not parse local du output: {exc}"
-                        )
-
-                if local_data_du == 0:
-                    self.log.warning(
-                        f"[validate_fusion_health] Bucket '{bucket.name}': "
-                        f"local data DU=0 — skipping log-store multiplier check"
-                    )
-                else:
+                            f"[validate_fusion_health] Bucket '{bucket.name}': "
+                            f"local data DU=0 — skipping log-store multiplier check")
+                        break
                     ratio = log_store_du / local_data_du
                     self.log.info(
                         f"[validate_fusion_health] Bucket '{bucket.name}': "
                         f"log_store={log_store_du / (1024**3):.3f} GiB, "
                         f"local_data={local_data_du / (1024**3):.3f} GiB, "
-                        f"ratio={ratio:.2f}x"
-                    )
-                    if log_store_du > 4 * local_data_du:
+                        f"ratio={ratio:.2f}x")
+                    if log_store_du <= 4 * local_data_du:
+                        break
+                    if time.time() > settle_end:
                         msg = (
                             f"Bucket '{bucket.name}': log-store DU is {ratio:.2f}x local data, "
-                            f"exceeds 4x threshold "
+                            f"exceeds 4x threshold after waiting {settle_timeout}s "
+                            f"for log cleaning "
                             f"(log_store={log_store_du / (1024**3):.3f} GiB, "
                             f"local_data={local_data_du / (1024**3):.3f} GiB)"
                         )
                         self.log.error(f"[validate_fusion_health] [VIOLATION] {msg}")
                         failure_messages.append(msg)
+                        break
+                    self.sleep(60, f"Log store {ratio:.2f}x local data for "
+                                   f"{bucket.name}, waiting for log cleaning")
+                    o, _ = nfs_ssh.execute_command(
+                        f"du -sb {fusion_bucket_path}")
+                    log_store_du = self._parse_du_bytes(o) or log_store_du
 
             except Exception as e:
                 self.log.warning(
