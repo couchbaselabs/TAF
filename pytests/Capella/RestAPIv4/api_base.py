@@ -1309,6 +1309,10 @@ class APIBase(CouchbaseBaseTest):
         create_api_key, plus:
         - 429: retried up to 3 times (owner-key swap when the owner keys
           exist, else a plain wait for Retry-After).
+        - 5xx: retried up to 3 times with a short backoff. The control
+          plane occasionally returns a one-off 500 (code 10000) on key
+          creation; failing the TC for it hides an otherwise passing
+          run (V4 #29, FlushBucket.test_authorization revoked-key case).
         - org-wide API key limit reached: clean up stale automation keys
           and retry at once; if still full (other builds sharing the org
           are holding keys for their running TCs), keep cleaning up and
@@ -1319,9 +1323,21 @@ class APIBase(CouchbaseBaseTest):
                                            20)) * 60
         deadline = None
         throttled = 0
+        server_errors = 0
         while True:
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 *args, **kwargs)
+            if resp.status_code >= 500 and server_errors < 3:
+                server_errors += 1
+                self.log.warning(
+                    "API key creation returned {} (attempt {}/3), "
+                    "retrying in {}s. request_id={} body={}".format(
+                        resp.status_code, server_errors, 10 * server_errors,
+                        resp.headers.get(
+                            "Vnd-Cloud-Couchbase-Com-Request-Id"),
+                        resp.content))
+                time.sleep(10 * server_errors)
+                continue
             if resp.status_code == 429 and throttled < 3:
                 throttled += 1
                 retry_after = int(resp.headers.get("Retry-After", 60))
@@ -1821,8 +1837,10 @@ class APIBase(CouchbaseBaseTest):
                         resource_ready_check=None):
         if "expire_key" in testcase:
             self.update_auth_with_api_token(self.curr_owner_key)
-            # create a new API key with expiry of approx 2 mins
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
+            # create a new API key with expiry of approx 2 mins. Goes
+            # through the retry helper so a 429/5xx/quota hit on key
+            # creation doesn't fail the whole authorization test.
+            resp = self.create_api_key_with_quota_retry(
                 self.organisation_id, "Expiry_Key", ["organizationOwner"])
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_new"] = resp.json()
@@ -1835,13 +1853,19 @@ class APIBase(CouchbaseBaseTest):
             del self.api_keys["organizationOwner_new"]
         elif "revoke_key" in testcase:
             self.update_auth_with_api_token(self.curr_owner_key)
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
+            # A one-off 500 here failed FlushBucket.test_authorization after
+            # every role case had passed (V4 #29), so retry 429/5xx/quota.
+            resp = self.create_api_key_with_quota_retry(
                 self.organisation_id, "Revoked_Key", ["organizationOwner"])
             if resp.status_code == 201:
                 self.api_keys["revoked_key"] = resp.json()
             else:
                 self.fail("Error while creating API key for organization "
-                          "owner for revoking later")
+                          "owner for revoking later: {} request_id={} {}"
+                          .format(resp.status_code,
+                                  resp.headers.get(
+                                      "Vnd-Cloud-Couchbase-Com-Request-Id"),
+                                  resp.content))
             resp = self.capellaAPI.org_ops_apis.delete_api_key(
                 self.organisation_id, self.api_keys["revoked_key"]["id"])
             if resp.status_code != 204:
